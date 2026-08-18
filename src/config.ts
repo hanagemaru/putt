@@ -32,4 +32,22 @@ export const CONFIG = {
     /** 端末の devicePixelRatio の上限。上げすぎると重い */
     maxPixelRatio: 2,
   },
+
+  /** /swipe-test/ のスワイプ速度計測ページ専用。ゲーム本体では使わない */
+  swipeTest: {
+    /** ボールを模した円の半径 [px] */
+    ballRadius: 28,
+    /** インパクト判定に必要な最小バックスイング幅 [px]。これ未満なら無効 */
+    minBackswingPx: 40,
+    /** 最小二乗フィットに使う、インパクト直前の時間窓 [ms] */
+    fitWindowMs: 40,
+    /** フィットに必要な最小サンプル数。窓内がこれ未満なら窓を広げる */
+    fitMinSamples: 3,
+    /** サンプルのリングバッファ長 */
+    bufferSize: 512,
+    /** 履歴として保持・集計する計測回数 */
+    historySize: 10,
+    /** 軌跡として描画する直近の時間 [ms] */
+    trailMs: 600,
+  },
 } as const;
