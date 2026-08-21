@@ -60,7 +60,9 @@ canvas.addEventListener('pointermove', (e) => {
   if (e.pointerId !== pointerId) return;
   for (const s of samplesOf(e)) {
     live = s;
+    const wasArmed = measure.armed();
     const r = measure.add(s);
+    if (!wasArmed && measure.armed()) setStatus('振り抜いてください', 'wait');
     if (r === null) continue;
     if (r === 'no-backswing') {
       setStatus('バックスイングなし — 無効', 'ng');
@@ -76,7 +78,9 @@ function end(e: PointerEvent): void {
   if (e.pointerId !== pointerId) return;
   pointerId = null;
   live = null;
-  measure.cancel();
+  if (measure.end() === 'no-backswing') {
+    setStatus('右へ引いていません — 無効', 'ng');
+  }
 }
 canvas.addEventListener('pointerup', end);
 canvas.addEventListener('pointercancel', end);
@@ -138,13 +142,30 @@ function draw(): void {
   const h = window.innerHeight;
   ctx.clearRect(0, 0, w, h);
 
-  // インパクトライン（ボールの X 座標）
-  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+  const armed = measure.armed();
+
+  // インパクトライン（ボールの X 座標）。打てる状態でだけ実線で明るくする
+  ctx.setLineDash(armed ? [] : [4, 6]);
+  ctx.strokeStyle = armed ? 'rgba(140,255,180,0.75)' : 'rgba(255,255,255,0.18)';
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(ballX, 0);
   ctx.lineTo(ballX, h);
   ctx.stroke();
+  ctx.setLineDash([]);
+
+  // バックスイングのゲート線。ここまで右へ引かないとダウンスイングが解禁されない
+  if (live) {
+    const gx = measure.gateX();
+    ctx.setLineDash([4, 6]);
+    ctx.strokeStyle = armed ? 'rgba(140,255,180,0.5)' : 'rgba(255,180,120,0.8)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(gx, 0);
+    ctx.lineTo(gx, h);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
 
   // 軌跡
   const all = measure.samples();
@@ -187,6 +208,17 @@ function draw(): void {
     ctx.stroke();
   }
 
+  // パターヘッド。指の X に立てる。アームされるまでは打てないことを色で示す
+  if (live) {
+    ctx.fillStyle = armed ? 'rgba(140,255,180,0.95)' : 'rgba(255,180,120,0.6)';
+    ctx.fillRect(
+      live.x - C.putterWidth / 2,
+      ballY - C.putterHeight / 2,
+      C.putterWidth,
+      C.putterHeight,
+    );
+  }
+
   // 指の現在位置
   if (live) {
     ctx.beginPath();
@@ -200,4 +232,4 @@ function draw(): void {
 requestAnimationFrame(draw);
 
 renderHistory();
-setStatus('画面に指を置いて、右→左にスワイプ', 'wait');
+setStatus('画面に指を置いて、右へ引いてから左へ振り抜く', 'wait');
