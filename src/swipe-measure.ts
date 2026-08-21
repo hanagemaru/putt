@@ -22,7 +22,7 @@ export type Measurement = {
   speed: number;
   /** 真左（インパクト方向）からのズレ角 [rad]。画面下向きが正 */
   angle: number;
-  /** バックスイング幅（ボール中心から右への最大変位）[px] */
+  /** バックスイング幅（指を置いた点から右への最大変位）[px] */
   backswingPx: number;
   /** フィットに使ったサンプル数 */
   fitSamples: number;
@@ -40,6 +40,10 @@ type Phase = 'idle' | 'backswing' | 'downswing';
 /**
  * 右へのバックスイング → 反転して左へ → ボールの X 座標を横切った瞬間をインパクト、
  * とみなしてインパクト直前の速度を最小二乗フィットで求める。
+ *
+ * バックスイング幅は「指を置いた点から右へ実際に動かした量」で測る。ボール中心からの
+ * 距離ではない。後者だとボールより右に指を置いただけで幅が計上され、右に引かずに
+ * 左へ払うだけで打ててしまう。
  */
 export class SwipeMeasure {
   /** リングバッファ */
@@ -49,7 +53,11 @@ export class SwipeMeasure {
 
   private phase: Phase = 'idle';
   private ballX = 0;
+  /** 指を置いた X。バックスイング幅の原点 */
+  private startX = 0;
   private maxX = 0;
+  /** 未アームのままボールの X を左へ横切ったか。指を離したときの通知に使う */
+  private crossedUnarmed = false;
   /** 直前サンプル。インパクトの交差判定に使う */
   private prev: Sample | null = null;
 
@@ -60,7 +68,9 @@ export class SwipeMeasure {
     this.count = 0;
     this.phase = 'backswing';
     this.ballX = ballX;
+    this.startX = first.x;
     this.maxX = first.x;
+    this.crossedUnarmed = false;
     this.prev = null;
     this.push(first);
     this.prev = first;
@@ -77,16 +87,21 @@ export class SwipeMeasure {
 
     if (s.x > this.maxX) this.maxX = s.x;
 
-    const backswingPx = this.maxX - this.ballX;
+    const backswingPx = this.maxX - this.startX;
+
+    // 十分に右へ引けたらダウンスイングを解禁する（アーム）
+    if (this.phase === 'backswing' && backswingPx >= C.minBackswingPx) {
+      this.phase = 'downswing';
+    }
 
     // ボールの X 座標を右から左へ横切った瞬間がインパクト
     const crossed = prev.x >= this.ballX && s.x < this.ballX;
     if (!crossed) return null;
 
-    // バックスイングなしにいきなり左へ動かした場合は無効
-    if (backswingPx < C.minBackswingPx) {
-      this.phase = 'idle';
-      return 'no-backswing';
+    // 未アームなら打たない。ストロークは終わらせず、引き直してから振れば成立する
+    if (this.phase !== 'downswing') {
+      this.crossedUnarmed = true;
+      return null;
     }
 
     this.phase = 'idle';
@@ -99,9 +114,30 @@ export class SwipeMeasure {
     return this.fit(tImpact, backswingPx);
   }
 
+  /**
+   * 指を離したときに呼ぶ。バックスイングせずに振ろうとしていた場合だけ理由を返す。
+   * ただのタップや、引きかけて止めただけの場合は null。
+   */
+  end(): Failure | null {
+    const failed = this.phase !== 'idle' && this.crossedUnarmed;
+    this.cancel();
+    return failed ? 'no-backswing' : null;
+  }
+
   cancel(): void {
     this.phase = 'idle';
+    this.crossedUnarmed = false;
     this.prev = null;
+  }
+
+  /** 描画用。ダウンスイングが解禁されているか */
+  armed(): boolean {
+    return this.phase === 'downswing';
+  }
+
+  /** 描画用。ゲート線の X 座標（指を置いた点 + 必要な引き幅） */
+  gateX(): number {
+    return this.startX + C.minBackswingPx;
   }
 
   /** 描画用。古い順のサンプル列 */
