@@ -1,9 +1,8 @@
-# デプロイ先は Netlify に移行済み（netlify.toml）。
-# このワークフローは自動では走らない。GitHub Pages に戻す必要が出たときのために
-# 手動実行だけ残してある。不要になったらファイルごと削除してよい。
 name: Deploy to GitHub Pages
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
