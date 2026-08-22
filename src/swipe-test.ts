@@ -29,8 +29,6 @@ let ballX = 0;
 let ballY = 0;
 let live: Sample | null = null;
 let lastImpactAt = -Infinity;
-/** スイング軌跡の向き [rad]。速度が出ていないときは直前の向きを保つ */
-let swingAngle = 0;
 
 /** 転がるボール（演出）。停止・画面外から ballResetMs 後に中央へ戻す */
 const ball = {
@@ -43,13 +41,39 @@ const ball = {
   stoppedAt: -Infinity,
 };
 
-function resetBall(): void {
+/**
+ * パターヘッド（§4.4）。指を置く前から待機位置にいる。
+ * rest = アドレス、follow = 指に追従、through = インパクト後の惰性。
+ */
+const putter = {
+  x: 0,
+  y: 0,
+  /** 軌跡の向き [rad]。真左（狙い方向）が π。ローカル X が軌跡方向、ローカル Y がフェース */
+  angle: Math.PI,
+  vx: 0,
+  vy: 0,
+  mode: 'rest' as 'rest' | 'follow' | 'through',
+};
+
+/** パターをアドレス位置（ボールの右）へ戻す */
+function restPutter(): void {
+  putter.x = ballX + C.putterRestOffsetPx;
+  putter.y = ballY;
+  putter.angle = Math.PI;
+  putter.vx = 0;
+  putter.vy = 0;
+  putter.mode = 'rest';
+}
+
+/** ボールとパターをまとめて構え直しの状態へ戻す */
+function resetStroke(): void {
   ball.x = ballX;
   ball.y = ballY;
   ball.vx = 0;
   ball.vy = 0;
   ball.rolling = false;
   ball.stoppedAt = -Infinity;
+  restPutter();
 }
 
 function resize(): void {
@@ -59,7 +83,7 @@ function resize(): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ballX = window.innerWidth / 2;
   ballY = window.innerHeight / 2;
-  resetBall();
+  resetStroke();
 }
 window.addEventListener('resize', resize);
 resize();
@@ -79,10 +103,12 @@ canvas.addEventListener('pointerdown', (e) => {
   if (pointerId !== null) return;
   pointerId = e.pointerId;
   canvas.setPointerCapture(e.pointerId);
-  resetBall();
+  resetStroke();
   measure.begin(ballX, toSample(e));
   live = toSample(e);
-  swingAngle = 0;
+  putter.mode = 'follow';
+  putter.x = e.clientX;
+  putter.y = ballY;
   setStatus('右へ引いてください', 'wait');
 });
 
@@ -92,9 +118,14 @@ canvas.addEventListener('pointermove', (e) => {
     live = s;
     const wasArmed = measure.armed();
     const r = measure.add(s);
-    const v = measure.liveVelocity();
-    if (v && (v.vx !== 0 || v.vy !== 0)) swingAngle = Math.atan2(v.vy, v.vx);
     if (!wasArmed && measure.armed()) setStatus('振り抜いてください', 'wait');
+    // インパクトするまでは指に追従する。空振りのあともそのまま振り抜かせる
+    if (putter.mode === 'follow') {
+      const v = measure.liveVelocity();
+      if (v) putter.angle = faceAngleFrom(v.vx, v.vy, putter.angle);
+      putter.x = s.x;
+      putter.y = measure.putterY(ballY, s);
+    }
     if (r === null) continue;
     if (r === 'no-backswing') {
       setStatus('バックスイングなし — 無効', 'ng');
@@ -116,6 +147,8 @@ function end(e: PointerEvent): void {
   if (e.pointerId !== pointerId) return;
   pointerId = null;
   live = null;
+  // 惰性で流れている最中は触らない。それ以外はアドレスへ戻す
+  if (putter.mode !== 'through') restPutter();
   if (measure.end() === 'no-backswing') {
     setStatus('右へ引いていません — 無効', 'ng');
   }
@@ -133,7 +166,7 @@ function record(m: Measurement): void {
   history.unshift(m);
   if (history.length > C.historySize) history.length = C.historySize;
 
-  launchBall(m);
+  launchStroke(m);
 
   elSpeed.textContent = Math.round(m.speed).toString();
   elBallSpeed.textContent = m.speedMs.toFixed(2);
@@ -149,8 +182,11 @@ function record(m: Measurement): void {
   renderHistory();
 }
 
-/** 計測速度（減衰込み）に応じてボールを転がす。見た目のフィードバック（§4.7） */
-function launchBall(m: Measurement): void {
+/**
+ * 計測速度（減衰込み）に応じてボールを転がし、パターを惰性へ移す。
+ * 見た目のフィードバック（§4.7）。
+ */
+function launchStroke(m: Measurement): void {
   const v = Math.abs(m.vx) * C.ballSpeedScale * m.gain;
   ball.x = ballX;
   ball.y = ballY;
@@ -158,38 +194,72 @@ function launchBall(m: Measurement): void {
   ball.vy = v * Math.sin(m.launchAngle);
   ball.rolling = v > 0;
   ball.stoppedAt = ball.rolling ? -Infinity : performance.now();
+
+  // パターは指から切り離し、フェースの向きへ流す。ボールと同じ減速で初速だけ遅いので
+  // 追い越しは起こらない（§4.4）
+  const pv = v * C.putterFollowRatio;
+  putter.x = ballX;
+  putter.y = ballY - m.offsetPx;
+  putter.vx = pv * Math.cos(putter.angle);
+  putter.vy = pv * Math.sin(putter.angle);
+  putter.mode = 'through';
 }
 
-/** 一定減速で転がす。速度が 0 を切ったら停止 */
+/** 一定減速で流す。位置を進めて速度を落とし、止まったら true */
+type Moving = { x: number; y: number; vx: number; vy: number };
+
+function coast(o: Moving, dt: number, decel: number): boolean {
+  const speed = Math.hypot(o.vx, o.vy);
+  o.x += o.vx * dt;
+  o.y += o.vy * dt;
+  const next = speed - decel * dt;
+  if (next <= 0) {
+    o.vx = 0;
+    o.vy = 0;
+    return true;
+  }
+  const k = next / speed;
+  o.vx *= k;
+  o.vy *= k;
+  return false;
+}
+
+/** 転がるボール。止まるか画面外へ抜けたら、しばらくして構え直しの状態に戻る */
 function stepBall(dt: number, now: number): void {
   if (ball.rolling) {
-    const speed = Math.hypot(ball.vx, ball.vy);
-    const next = speed - C.ballDecelPx * dt;
-    if (next <= 0) {
-      ball.x += ball.vx * dt;
-      ball.y += ball.vy * dt;
-      ball.vx = 0;
-      ball.vy = 0;
-      ball.rolling = false;
-      ball.stoppedAt = now;
-      return;
-    }
-    const k = next / speed;
-    ball.x += ball.vx * dt;
-    ball.y += ball.vy * dt;
-    ball.vx *= k;
-    ball.vy *= k;
-    // 画面外へ抜けたらそこで終わり
     const r = C.ballRadius;
     const off = ball.x < -r || ball.y < -r || ball.y > window.innerHeight + r;
-    if (off) {
+    if (coast(ball, dt, C.ballDecelPx) || off) {
       ball.rolling = false;
       ball.stoppedAt = now;
     }
     return;
   }
-  // 停止してしばらくしたら中央へ戻す。構えている間は戻さない
-  if (pointerId === null && now - ball.stoppedAt > C.ballResetMs) resetBall();
+  // 停止してしばらくしたら戻す。構えている間は戻さない
+  if (pointerId === null && now - ball.stoppedAt > C.ballResetMs) resetStroke();
+}
+
+/** インパクト後のフォロースルー */
+function stepPutter(dt: number): void {
+  if (putter.mode === 'through') coast(putter, dt, C.ballDecelPx);
+}
+
+/** [-π, π) に畳む */
+function wrapPi(a: number): number {
+  return Math.atan2(Math.sin(a), Math.cos(a));
+}
+
+/**
+ * スイング速度からフェースの向きを決める（§4.4）。
+ * 真左（狙い方向）を基準に、右向きの動きは鏡映して反転を防ぎ、傾きは faceMaxAngleDeg で頭打ちにする。
+ * 止まっている間は直前の向きを保つ。
+ */
+function faceAngleFrom(vx: number, vy: number, current: number): number {
+  if (Math.hypot(vx, vy) < C.faceMinSpeedPx) return current;
+  let d = wrapPi(Math.atan2(vy, vx) - Math.PI);
+  if (Math.abs(d) > Math.PI / 2) d = wrapPi(d + Math.PI);
+  const max = (C.faceMaxAngleDeg * Math.PI) / 180;
+  return Math.PI + Math.max(-max, Math.min(max, d));
 }
 
 function fmt(v: number, digits: number): string {
@@ -229,13 +299,25 @@ function renderHistory(): void {
  * フェースをスイング軌跡と直角に描く（§4.4）。芯の範囲は色を変える。
  * 軌跡の向きに回転させると、ローカル X が軌跡方向・ローカル Y がフェース方向になる。
  */
-function drawPutter(x: number, y: number, armed: boolean): void {
+function drawPutter(armed: boolean): void {
+  const face =
+    putter.mode === 'rest'
+      ? 'rgba(150,175,160,0.55)'
+      : armed
+        ? 'rgba(140,255,180,0.95)'
+        : 'rgba(255,180,120,0.6)';
+  const spot =
+    putter.mode === 'rest'
+      ? 'rgba(18,26,22,0.7)'
+      : armed
+        ? 'rgba(20,40,28,0.85)'
+        : 'rgba(40,26,14,0.7)';
   ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(swingAngle);
-  ctx.fillStyle = armed ? 'rgba(140,255,180,0.95)' : 'rgba(255,180,120,0.6)';
+  ctx.translate(putter.x, putter.y);
+  ctx.rotate(putter.angle);
+  ctx.fillStyle = face;
   ctx.fillRect(-C.putterWidth / 2, -C.putterLength / 2, C.putterWidth, C.putterLength);
-  ctx.fillStyle = armed ? 'rgba(20,40,28,0.85)' : 'rgba(40,26,14,0.7)';
+  ctx.fillStyle = spot;
   ctx.fillRect(-C.putterWidth / 2, -C.sweetSpotPx, C.putterWidth, C.sweetSpotPx * 2);
   ctx.restore();
 }
@@ -246,6 +328,7 @@ function draw(now: number): void {
   const dt = lastFrame < 0 ? 0 : Math.min((now - lastFrame) / 1000, 0.05);
   lastFrame = now;
   stepBall(dt, now);
+  stepPutter(dt);
 
   const w = window.innerWidth;
   const h = window.innerHeight;
@@ -317,10 +400,8 @@ function draw(now: number): void {
     ctx.stroke();
   }
 
-  // パターヘッド。指の X に立て、Y は指を置いた点からの変位で上下する（§4.4）
-  if (live) {
-    drawPutter(live.x, measure.putterY(ballY, live), armed);
-  }
+  // パターヘッド。指を置く前から待機位置に見えている（§4.4）
+  drawPutter(armed);
 
   // 指の現在位置
   if (live) {
