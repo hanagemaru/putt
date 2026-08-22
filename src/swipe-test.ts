@@ -187,7 +187,8 @@ function record(m: Measurement): void {
  * 見た目のフィードバック（§4.7）。
  */
 function launchStroke(m: Measurement): void {
-  const v = Math.abs(m.vx) * C.ballSpeedScale * m.gain;
+  // 減衰込みのボール初速 [m/s] を画面のピクセルに直す。スワイプの px/s ではなく物理速度が基準
+  const v = m.speedMs * C.ballPxPerMeter;
   ball.x = ballX;
   ball.y = ballY;
   ball.vx = -v * Math.cos(m.launchAngle);
@@ -204,6 +205,9 @@ function launchStroke(m: Measurement): void {
   putter.vy = pv * Math.sin(putter.angle);
   putter.mode = 'through';
 }
+
+/** 転がりの減速 [px/s^2]。スティンプ相当の摩擦を画面スケールに直したもの */
+const decelPx = C.ballDecelMs2 * C.ballPxPerMeter;
 
 /** 一定減速で流す。位置を進めて速度を落とし、止まったら true */
 type Moving = { x: number; y: number; vx: number; vy: number };
@@ -229,7 +233,7 @@ function stepBall(dt: number, now: number): void {
   if (ball.rolling) {
     const r = C.ballRadius;
     const off = ball.x < -r || ball.y < -r || ball.y > window.innerHeight + r;
-    if (coast(ball, dt, C.ballDecelPx) || off) {
+    if (coast(ball, dt, decelPx) || off) {
       ball.rolling = false;
       ball.stoppedAt = now;
     }
@@ -241,7 +245,7 @@ function stepBall(dt: number, now: number): void {
 
 /** インパクト後のフォロースルー */
 function stepPutter(dt: number): void {
-  if (putter.mode === 'through') coast(putter, dt, C.ballDecelPx);
+  if (putter.mode === 'through') coast(putter, dt, decelPx);
 }
 
 /** [-π, π) に畳む */
