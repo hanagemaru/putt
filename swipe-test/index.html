@@ -101,7 +101,7 @@
         right: 12px;
         bottom: 12px;
         width: 268px;
-        max-width: 46vw;
+        max-width: calc(100vw - 24px);
         padding: 10px 12px;
         border-radius: 10px;
         background: #0e1210cc;
@@ -121,17 +121,17 @@
       #history li {
         display: flex;
         align-items: baseline;
-        gap: 8px;
+        gap: 6px;
         font-size: 13px;
         padding: 1px 0;
       }
       #history .n {
-        width: 18px;
+        width: 14px;
         color: #6d8278;
         font-size: 11px;
       }
       #history .v {
-        width: 82px;
+        width: 70px;
         text-align: right;
         font-weight: 600;
       }
@@ -142,14 +142,20 @@
         margin-left: 3px;
       }
       #history .a {
-        width: 52px;
+        width: 42px;
         text-align: right;
         color: #b9cfc2;
       }
-      #history .b {
-        width: 50px;
+      #history .o {
+        width: 44px;
         text-align: right;
         color: #7e948a;
+        font-size: 12px;
+      }
+      #history .g {
+        width: 42px;
+        text-align: right;
+        color: #b9cfc2;
         font-size: 12px;
       }
       #stats {
@@ -161,13 +167,48 @@
         color: #9ab5a6;
       }
 
-      #hint {
+      /* 横画面のときだけ出す「縦にしてください」オーバーレイ。縦画面専用（spec §0） */
+      #rotate-overlay {
         position: fixed;
-        left: 16px;
-        bottom: 14px;
+        inset: 0;
+        z-index: 100;
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 24px;
+        background: #0e1210;
+        color: #e8f0e8;
+        font-size: 20px;
+        letter-spacing: 0.08em;
+        text-align: center;
+      }
+      #rotate-overlay .icon {
+        font-size: 56px;
+        line-height: 1;
+        animation: rotate-hint 2s ease-in-out infinite;
+      }
+      @keyframes rotate-hint {
+        0%,
+        40% {
+          transform: rotate(90deg);
+        }
+        60%,
+        100% {
+          transform: rotate(0deg);
+        }
+      }
+      @media (orientation: landscape) {
+        #rotate-overlay {
+          display: flex;
+        }
+      }
+
+      #hint {
+        margin-top: 8px;
         font-size: 12px;
+        line-height: 1.5;
         color: #56685e;
-        pointer-events: none;
       }
     </style>
   </head>
@@ -177,6 +218,11 @@
     <div id="readout">
       <div id="numbers">
         <div class="metric">
+          <span class="label">初速</span>
+          <span class="value" id="ballspeed">—</span>
+          <span class="unit">m/s</span>
+        </div>
+        <div class="metric sub">
           <span class="label">速度</span>
           <span class="value" id="speed">—</span>
           <span class="unit">px/s</span>
@@ -187,6 +233,16 @@
           <span class="unit">°(真左から)</span>
         </div>
         <div class="metric sub">
+          <span class="label">芯からのズレ</span>
+          <span class="value" id="offset">—</span>
+          <span class="unit">px</span>
+        </div>
+        <div class="metric sub">
+          <span class="label">減衰</span>
+          <span class="value" id="gain">—</span>
+          <span class="unit">×</span>
+        </div>
+        <div class="metric sub">
           <span class="label">バックスイング</span>
           <span class="value" id="backswing">—</span>
           <span class="unit">px</span>
@@ -194,6 +250,10 @@
       </div>
       <div id="detail"></div>
       <div id="status" class="wait"></div>
+      <div id="hint">
+        指を置く → オレンジの線を越えるまで右へ引く → 左へ振り抜く（ボールの線を横切った瞬間が計測点）。<br />
+        パターは指の上下に追従します。芯（濃い帯）で当てるほど強く出ます。
+      </div>
     </div>
 
     <div id="panel">
@@ -202,7 +262,10 @@
       <div id="stats"></div>
     </div>
 
-    <div id="hint">指を置く → オレンジの線を越えるまで右へ引く → 左へ振り抜く（ボールの線を横切った瞬間が計測点）</div>
+    <div id="rotate-overlay">
+      <div class="icon">📱</div>
+      <div>縦にしてください</div>
+    </div>
 
     <script type="module" src="/src/swipe-test.ts"></script>
   </body>

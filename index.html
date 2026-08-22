@@ -35,7 +35,7 @@
         height: 100%;
       }
 
-      /* 縦画面のときだけ出す「横にしてください」オーバーレイ */
+      /* 横画面のときだけ出す「縦にしてください」オーバーレイ。縦画面専用（spec §0） */
       #rotate-overlay {
         position: fixed;
         inset: 0;
@@ -60,14 +60,14 @@
       @keyframes rotate-hint {
         0%,
         40% {
-          transform: rotate(0deg);
+          transform: rotate(90deg);
         }
         60%,
         100% {
-          transform: rotate(90deg);
+          transform: rotate(0deg);
         }
       }
-      @media (orientation: portrait) {
+      @media (orientation: landscape) {
         #rotate-overlay {
           display: flex;
         }
@@ -78,7 +78,7 @@
     <div id="app"></div>
     <div id="rotate-overlay">
       <div class="icon">📱</div>
-      <div>横にしてください</div>
+      <div>縦にしてください</div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
