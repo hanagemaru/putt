@@ -48,16 +48,16 @@ const ball = {
 
 /**
  * パターヘッド（§4.4）。指を置く前から待機位置にいる。
- * rest = アドレス、follow = 指に追従、through = インパクト後の惰性。
+ * rest = アドレス、follow = 指に追従（インパクト後も追従したまま）。
  */
 const putter = {
   x: 0,
   y: 0,
   /** 軌跡の向き [rad]。真左（狙い方向）が π。ローカル X が軌跡方向、ローカル Y がフェース */
   angle: Math.PI,
-  vx: 0,
-  vy: 0,
-  mode: 'rest' as 'rest' | 'follow' | 'through',
+  mode: 'rest' as 'rest' | 'follow',
+  /** この一振りでインパクト済みか。以降はボールを追い越さないよう X を頭打ちにする（§4.4） */
+  struck: false,
 };
 
 /** パターをアドレス位置（ボールの右）へ戻す */
@@ -65,9 +65,8 @@ function restPutter(): void {
   putter.x = ballX + C.putterRestOffsetPx;
   putter.y = ballY;
   putter.angle = Math.PI;
-  putter.vx = 0;
-  putter.vy = 0;
   putter.mode = 'rest';
+  putter.struck = false;
 }
 
 /** ボールとパターをまとめて構え直しの状態へ戻す */
@@ -125,11 +124,11 @@ canvas.addEventListener('pointermove', (e) => {
     const wasArmed = measure.armed();
     const r = measure.add(s);
     if (!wasArmed && measure.armed()) setStatus('振り抜いてください', 'wait');
-    // インパクトするまでは指に追従する。空振りのあともそのまま振り抜かせる
+    // 指に追従する。インパクト後も空振りのあとも追従したまま振り抜かせる
     if (putter.mode === 'follow') {
       const v = measure.liveVelocity();
       if (v) putter.angle = faceAngleFrom(v.vx, v.vy, putter.angle);
-      putter.x = s.x;
+      putter.x = followX(s.x);
       putter.y = measure.putterY(ballY, s);
     }
     if (r === null) continue;
@@ -153,8 +152,7 @@ function end(e: PointerEvent): void {
   if (e.pointerId !== pointerId) return;
   pointerId = null;
   live = null;
-  // 惰性で流れている最中は触らない。それ以外はアドレスへ戻す
-  if (putter.mode !== 'through') restPutter();
+  restPutter();
   if (measure.end() === 'no-backswing') {
     setStatus('右へ引いていません — 無効', 'ng');
   }
@@ -189,8 +187,8 @@ function record(m: Measurement): void {
 }
 
 /**
- * 計測速度（減衰込み）に応じてボールを転がし、パターを惰性へ移す。
- * 見た目のフィードバック（§4.7）。
+ * 計測速度（減衰込み）に応じてボールを転がす。見た目のフィードバック（§4.7）。
+ * パターは指に追従したままで、以降はボールを追い越さない。
  */
 function launchStroke(m: Measurement): void {
   // 減衰込みのボール初速 [m/s] を画面のピクセルに直す。スワイプの px/s ではなく物理速度が基準
@@ -202,14 +200,19 @@ function launchStroke(m: Measurement): void {
   ball.rolling = v > 0;
   ball.stoppedAt = ball.rolling ? -Infinity : performance.now();
 
-  // パターは指から切り離し、フェースの向きへ流す。ボールと同じ減速で初速だけ遅いので
-  // 追い越しは起こらない（§4.4）
-  const pv = v * C.putterFollowRatio;
   putter.x = impactX;
   putter.y = ballY - m.offsetPx;
-  putter.vx = pv * Math.cos(putter.angle);
-  putter.vy = pv * Math.sin(putter.angle);
-  putter.mode = 'through';
+  putter.struck = true;
+}
+
+/**
+ * 指の X をパターの X に直す（§4.4）。
+ * インパクト後は、フェースがボールの右端より左へ行かないよう頭打ちにする。
+ * ボールは指より速く離れていくので、普段はすぐ効かなくなる。
+ */
+function followX(fingerX: number): number {
+  if (!putter.struck) return fingerX;
+  return Math.max(fingerX, ball.x + C.ballRadius + C.putterWidth / 2);
 }
 
 /** 転がりの減速 [px/s^2]。スティンプ相当の摩擦を画面スケールに直したもの */
@@ -249,9 +252,9 @@ function stepBall(dt: number, now: number): void {
   if (pointerId === null && now - ball.stoppedAt > C.ballResetMs) resetStroke();
 }
 
-/** インパクト後のフォロースルー */
-function stepPutter(dt: number): void {
-  if (putter.mode === 'through') coast(putter, dt, decelPx);
+/** 転がるボールから離れていくぶんだけ、頭打ちを緩める（§4.4） */
+function stepPutter(): void {
+  if (putter.mode === 'follow' && live) putter.x = followX(live.x);
 }
 
 /** [-π, π) に畳む */
@@ -338,7 +341,7 @@ function draw(now: number): void {
   const dt = lastFrame < 0 ? 0 : Math.min((now - lastFrame) / 1000, 0.05);
   lastFrame = now;
   stepBall(dt, now);
-  stepPutter(dt);
+  stepPutter();
 
   const w = window.innerWidth;
   const h = window.innerHeight;
