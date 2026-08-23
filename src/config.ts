@@ -38,9 +38,15 @@ export const CONFIG = {
     gaussianSpread: 0.9,
     /**
      * 頂点カラーの濃淡の強さ（§1 のアンジュレーション表現の主軸）。
-     * 0 で単色、1 で最も低い点が真っ黒になる
+     * 0 で単色、1 で shadeRangeMeters の下端が真っ黒になる
      */
-    shadeStrength: 0.55,
+    shadeStrength: 0.7,
+    /**
+     * 濃淡がフルレンジで表す高低差 [m]。読みの単位を決める値。
+     * シードによらず「明るさがこれだけ変わる ＝ 何メートル下がっている」を一定にするため、
+     * グリーンごとの最小最大での正規化はしない
+     */
+    shadeRangeMeters: 0.35,
   },
 
   hole: {
@@ -184,6 +190,9 @@ export const CONFIG = {
       shadeMin: 0,
       shadeMax: 1,
       shadeStep: 0.01,
+      shadeRangeMin: 0.1,
+      shadeRangeMax: 1,
+      shadeRangeStep: 0.05,
       lightMin: 0,
       lightMax: 2,
       lightStep: 0.05,

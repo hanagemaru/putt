@@ -23,7 +23,7 @@ camera.lookAt(0, 0, 0);
 // グリーン。ハイトマップが表示と物理の唯一の情報源（spec §1）
 const params = defaultGreenParams();
 const green = new Green(params);
-scene.add(new GreenMesh(green, CONFIG.green.shadeStrength).mesh);
+scene.add(new GreenMesh(green, CONFIG.green.shadeStrength, CONFIG.green.shadeRangeMeters).mesh);
 scene.add(createSurround(green));
 scene.add(createHole(green));
 scene.add(createTrees(green, params.seed));

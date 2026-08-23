@@ -205,6 +205,7 @@ export class GreenMesh {
   constructor(
     private green: Green,
     shadeStrength: number,
+    shadeRange: number,
   ) {
     this.geometry = new THREE.PlaneGeometry(green.size, green.size, C.segments, C.segments);
     // XZ 平面へ倒しておく。以降は頂点の x/z がそのままワールド座標になる
@@ -215,22 +216,26 @@ export class GreenMesh {
       this.geometry,
       new THREE.MeshLambertMaterial({ vertexColors: true }),
     );
-    this.update(green, shadeStrength);
+    this.update(green, shadeStrength, shadeRange);
   }
 
   /** ハイトマップが変わったら呼ぶ。頂点の高さと色を貼り直す */
-  update(green: Green, shadeStrength: number): void {
+  update(green: Green, shadeStrength: number, shadeRange: number): void {
     this.green = green;
     const position = this.geometry.attributes.position as THREE.BufferAttribute;
     const color = this.geometry.attributes.color as THREE.BufferAttribute;
-    const range = green.maxHeight - green.minHeight;
+    // 絶対スケール。高さ 0 が中間の明るさで、shadeRange がフルレンジ。
+    // グリーンごとに正規化しないので、同じ濃淡の傾きはどのシードでも同じ勾配を意味する
+    const halfRange = shadeRange / 2;
     for (let i = 0; i < position.count; i++) {
       const x = position.getX(i);
       const z = position.getZ(i);
       const h = green.sampleHeight(x, z);
       position.setY(i, h);
-      // 最も低い点で base * (1 - shadeStrength)、最も高い点で base
-      const t = range > 0 ? (h - green.minHeight) / range : 1;
+      // 中央付近は傾き 1 の直線（微妙なうねりを潰さない）、端だけ緩やかに飽和させて
+      // 起伏の大きいグリーンでも黒つぶれ・白飛びさせない
+      const s = halfRange > 0 ? h / halfRange : 0;
+      const t = 0.5 + (0.5 * s) / Math.sqrt(1 + s * s);
       const k = 1 - shadeStrength * (1 - t);
       color.setXYZ(i, this.base.r * k, this.base.g * k, this.base.b * k);
     }
@@ -240,9 +245,9 @@ export class GreenMesh {
     this.geometry.computeBoundingSphere();
   }
 
-  /** 濃淡の強さだけを変える（高さは変わらないので色だけ貼り直す） */
-  setShadeStrength(shadeStrength: number): void {
-    this.update(this.green, shadeStrength);
+  /** 濃淡の設定だけを変える（高さは変わらないので色だけ貼り直す） */
+  setShadeStrength(shadeStrength: number, shadeRange: number): void {
+    this.update(this.green, shadeStrength, shadeRange);
   }
 }
 

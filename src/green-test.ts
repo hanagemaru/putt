@@ -63,7 +63,7 @@ scene.add(ambient);
 
 const params = defaultGreenParams();
 const green = new Green(params);
-const greenMesh = new GreenMesh(green, CONFIG.green.shadeStrength);
+const greenMesh = new GreenMesh(green, CONFIG.green.shadeStrength, CONFIG.green.shadeRangeMeters);
 scene.add(greenMesh.mesh);
 
 /** シードで作り直すたびに差し替えるオブジェクト（カップ・地面・木） */
@@ -200,6 +200,7 @@ const tuning: {
   undulationAmplitude: number;
   tiltPercent: number;
   shadeStrength: number;
+  shadeRangeMeters: number;
   directionalIntensity: number;
   ambientIntensity: number;
 } = {
@@ -208,6 +209,7 @@ const tuning: {
   undulationAmplitude: params.undulationAmplitude,
   tiltPercent: params.tiltPercent,
   shadeStrength: CONFIG.green.shadeStrength,
+  shadeRangeMeters: CONFIG.green.shadeRangeMeters,
   directionalIntensity: CONFIG.light.directionalIntensity,
   ambientIntensity: CONFIG.light.ambientIntensity,
 };
@@ -219,7 +221,7 @@ function regenerate(): void {
     undulationAmplitude: tuning.undulationAmplitude,
     tiltPercent: tuning.tiltPercent,
   });
-  greenMesh.update(green, tuning.shadeStrength);
+  greenMesh.update(green, tuning.shadeStrength, tuning.shadeRangeMeters);
   rebuildProps();
   updateSeverity();
   placeFromInputs();
@@ -244,7 +246,11 @@ gui
 gui
   .add(tuning, 'shadeStrength', G.shadeMin, G.shadeMax, G.shadeStep)
   .name('濃淡の強さ')
-  .onChange((v: number) => greenMesh.setShadeStrength(v));
+  .onChange((v: number) => greenMesh.setShadeStrength(v, tuning.shadeRangeMeters));
+gui
+  .add(tuning, 'shadeRangeMeters', G.shadeRangeMin, G.shadeRangeMax, G.shadeRangeStep)
+  .name('濃淡のレンジ [m]')
+  .onChange((v: number) => greenMesh.setShadeStrength(tuning.shadeStrength, v));
 gui
   .add(tuning, 'directionalIntensity', G.lightMin, G.lightMax, G.lightStep)
   .name('ライト強度')
