@@ -23,6 +23,7 @@ const elDist = document.getElementById('dist')!;
 const elSlope = document.getElementById('slope')!;
 const elMu = document.getElementById('mu')!;
 const elToCup = document.getElementById('tocup')!;
+const elSevere = document.getElementById('severe')!;
 const inX = document.getElementById('in-x') as HTMLInputElement;
 const inZ = document.getElementById('in-z') as HTMLInputElement;
 const inSpeed = document.getElementById('in-speed') as HTMLInputElement;
@@ -197,6 +198,7 @@ const tuning: {
   stimpFeet: number;
   seed: number;
   undulationAmplitude: number;
+  tiltPercent: number;
   shadeStrength: number;
   directionalIntensity: number;
   ambientIntensity: number;
@@ -204,6 +206,7 @@ const tuning: {
   stimpFeet: CONFIG.physics.stimpFeet,
   seed: params.seed,
   undulationAmplitude: params.undulationAmplitude,
+  tiltPercent: params.tiltPercent,
   shadeStrength: CONFIG.green.shadeStrength,
   directionalIntensity: CONFIG.light.directionalIntensity,
   ambientIntensity: CONFIG.light.ambientIntensity,
@@ -211,9 +214,14 @@ const tuning: {
 
 /** ハイトマップを作り直す。ボールは今の入力位置へ戻す */
 function regenerate(): void {
-  green.generate({ seed: tuning.seed, undulationAmplitude: tuning.undulationAmplitude });
+  green.generate({
+    seed: tuning.seed,
+    undulationAmplitude: tuning.undulationAmplitude,
+    tiltPercent: tuning.tiltPercent,
+  });
   greenMesh.update(green, tuning.shadeStrength);
   rebuildProps();
+  updateSeverity();
   placeFromInputs();
 }
 
@@ -222,8 +230,13 @@ gui.add(tuning, 'stimpFeet', G.stimpMin, G.stimpMax, G.stimpStep)
   .name('スティンプ [ft]')
   .onChange((v: number) => {
     roller.stimpFeet = v;
+    updateSeverity();
   });
 gui.add(tuning, 'seed', G.seedMin, G.seedMax, G.seedStep).name('シード').onChange(regenerate);
+gui
+  .add(tuning, 'tiltPercent', G.tiltMin, G.tiltMax, G.tiltStep)
+  .name('全体傾斜 [%]')
+  .onChange(regenerate);
 gui
   .add(tuning, 'undulationAmplitude', G.amplitudeMin, G.amplitudeMax, G.amplitudeStep)
   .name('うねりの振幅 [m]')
@@ -258,6 +271,29 @@ const STATUS_LABEL: Record<RollStatus, string> = {
 
 const grad = { x: 0, z: 0 };
 
+/**
+ * 勾配が摩擦を上回る面の割合 [%]。ここに止まったボールは止まれずに転がり続ける。
+ * 「下りで止まらない」がグリーン全体で起きているのか、きつい所だけなのかの目安。
+ * グリーンかスティンプが変わったときだけ測り直す
+ */
+let severityPercent = 0;
+
+function updateSeverity(): void {
+  const critical = criticalGradient(roller.stimpFeet);
+  const n = C.severitySamples;
+  const half = green.size / 2;
+  let over = 0;
+  for (let j = 0; j < n; j++) {
+    const z = -half + (j / (n - 1)) * green.size;
+    for (let i = 0; i < n; i++) {
+      green.sampleGradient(-half + (i / (n - 1)) * green.size, z, grad);
+      if (Math.hypot(grad.x, grad.z) > critical) over++;
+    }
+  }
+  severityPercent = (100 * over) / (n * n);
+}
+updateSeverity();
+
 function updateReadout(): void {
   elStatus.textContent = STATUS_LABEL[roller.status];
   elPos.textContent = `${roller.x.toFixed(2)}, ${roller.z.toFixed(2)}`;
@@ -268,6 +304,7 @@ function updateReadout(): void {
   const slope = Math.hypot(grad.x, grad.z) * 100;
   const critical = criticalGradient(roller.stimpFeet) * 100;
   elSlope.textContent = `${slope.toFixed(1)} % / 臨界 ${critical.toFixed(1)} %`;
+  elSevere.textContent = `${severityPercent.toFixed(1)} %`;
   elMu.textContent = `${roller.friction.toFixed(2)} m/s²`;
   const toCup = Math.hypot(
     roller.x - CONFIG.hole.position.x,

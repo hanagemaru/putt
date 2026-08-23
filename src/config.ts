@@ -15,9 +15,13 @@ export const CONFIG = {
     heightmapResolution: 256,
     /** 手続き生成のシード。同じ値なら同じ地形になる */
     seed: 20250823,
-    /** 全体傾斜 [%]。シードごとにこの範囲から選ぶ（実際のグリーン相当で 1〜3%） */
-    tiltMinPercent: 1,
-    tiltMaxPercent: 3,
+    /**
+     * 全体傾斜 [%]（spec §1 は 1〜3%）。向きだけシードから決める。
+     * 20m 一辺に対して一様にかかるので、これが大きいとグリーンの半分がずっと下りになる。
+     * 2% だと転がりの 90%点が 4.9m → 5.5m に伸び、頂点カラーの濃淡も傾斜に食われて
+     * うねりが読めなくなるので、範囲の下端に置いている
+     */
+    tiltPercent: 1,
     /** うねりの振幅 [m]。合成したガウシアンをこの振幅（±）へ正規化する */
     undulationAmplitude: 0.15,
     /** 合成するガウシアンの数 */
@@ -146,8 +150,11 @@ export const CONFIG = {
     viewWidth: 23,
     /** ボールの初期位置 [m] */
     ballStart: { x: -1.5, z: 5.5 },
-    /** 初速の初期値 [m/s] */
-    initialSpeed: 3.2,
+    /**
+     * 初速の初期値 [m/s]。2.0 で平坦なら 3.6m 転がる。
+     * 3.2 だと平坦でも 9.3m 転がり、20m のグリーンでは半分近くが場外に出る
+     */
+    initialSpeed: 2.0,
     /** 方向の初期値 [度]。0 が -Z（画面奥）、+ が右回り */
     initialDirectionDeg: 0,
     /** 見やすさのためにボールを実寸より大きく描く倍率。20m を画面幅に収めるとかなり小さい */
@@ -158,6 +165,8 @@ export const CONFIG = {
     trailLift: 0.02,
     /** 軌跡の頂点バッファ長。これを超えたぶんは描かない */
     trailMaxPoints: 4096,
+    /** 「止まれない面積」を測るときのグリッド分割数。表示用の目安なので粗くてよい */
+    severitySamples: 96,
     /** lil-gui のスライダーの範囲 */
     gui: {
       stimpMin: 6,
@@ -166,6 +175,9 @@ export const CONFIG = {
       seedMin: 0,
       seedMax: 99999,
       seedStep: 1,
+      tiltMin: 0,
+      tiltMax: 4,
+      tiltStep: 0.1,
       amplitudeMin: 0,
       amplitudeMax: 0.5,
       amplitudeStep: 0.01,

@@ -10,10 +10,16 @@ export interface GreenParams {
   seed: number;
   /** うねりの振幅 [m]（±） */
   undulationAmplitude: number;
+  /** 全体傾斜 [%]。向きはシードから決まる */
+  tiltPercent: number;
 }
 
 export function defaultGreenParams(): GreenParams {
-  return { seed: C.seed, undulationAmplitude: C.undulationAmplitude };
+  return {
+    seed: C.seed,
+    undulationAmplitude: C.undulationAmplitude,
+    tiltPercent: C.tiltPercent,
+  };
 }
 
 /** mulberry32。シードから再現可能な擬似乱数 */
@@ -60,7 +66,7 @@ export class Green {
 
   minHeight = 0;
   maxHeight = 0;
-  /** 全体傾斜 [%]。デバッグ表示用 */
+  /** 全体傾斜 [%] */
   tiltPercent = 0;
 
   constructor(params: GreenParams) {
@@ -76,9 +82,9 @@ export class Green {
     const rng = makeRng(params.seed);
     const half = this.size / 2;
 
-    // 緩やかな全体傾斜。向きと大きさをシードから決める
+    // 緩やかな全体傾斜。向きだけシードから決め、大きさは params で指定する
     const tiltAngle = rng() * Math.PI * 2;
-    this.tiltPercent = lerp(C.tiltMinPercent, C.tiltMaxPercent, rng());
+    this.tiltPercent = params.tiltPercent;
     const tilt = this.tiltPercent / 100;
     const tiltX = Math.cos(tiltAngle) * tilt;
     const tiltZ = Math.sin(tiltAngle) * tilt;
