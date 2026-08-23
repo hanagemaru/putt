@@ -24,9 +24,14 @@ const measure = new SwipeMeasure();
 const history: Measurement[] = [];
 
 let pointerId: number | null = null;
-/** インパクトライン。画面中央に固定で、転がっているボールの位置とは別 */
+/** ボールの定位置。画面中央に固定で、転がっているボールの位置とは別 */
 let ballX = 0;
 let ballY = 0;
+/**
+ * インパクトライン（§4.2）。フェースがボールの右端に触れる位置。
+ * ボール中心で判定すると、当たる前にパターがボールへめり込んで見える。
+ */
+let impactX = 0;
 let live: Sample | null = null;
 let lastImpactAt = -Infinity;
 
@@ -83,6 +88,7 @@ function resize(): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ballX = window.innerWidth / 2;
   ballY = window.innerHeight / 2;
+  impactX = ballX + C.ballRadius + C.putterWidth / 2;
   resetStroke();
 }
 window.addEventListener('resize', resize);
@@ -104,7 +110,7 @@ canvas.addEventListener('pointerdown', (e) => {
   pointerId = e.pointerId;
   canvas.setPointerCapture(e.pointerId);
   resetStroke();
-  measure.begin(ballX, toSample(e));
+  measure.begin(impactX, toSample(e));
   live = toSample(e);
   putter.mode = 'follow';
   putter.x = e.clientX;
@@ -199,7 +205,7 @@ function launchStroke(m: Measurement): void {
   // パターは指から切り離し、フェースの向きへ流す。ボールと同じ減速で初速だけ遅いので
   // 追い越しは起こらない（§4.4）
   const pv = v * C.putterFollowRatio;
-  putter.x = ballX;
+  putter.x = impactX;
   putter.y = ballY - m.offsetPx;
   putter.vx = pv * Math.cos(putter.angle);
   putter.vy = pv * Math.sin(putter.angle);
@@ -345,8 +351,8 @@ function draw(now: number): void {
   ctx.strokeStyle = armed ? 'rgba(140,255,180,0.75)' : 'rgba(255,255,255,0.18)';
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(ballX, 0);
-  ctx.lineTo(ballX, h);
+  ctx.moveTo(impactX, 0);
+  ctx.lineTo(impactX, h);
   ctx.stroke();
   ctx.setLineDash([]);
 
