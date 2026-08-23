@@ -185,9 +185,12 @@ READ → ADDRESS → STROKE → FOLLOW → CUP → RESULT → (次のパット o
 ループ軌道になると打つ瞬間に面が入れ替わる。真上・真下へ動いた瞬間には面が横倒しになる。
 狙い方向を基準に、右向きの動きは鏡映して扱い、傾きは `faceMaxAngle`（初期値 35度）で頭打ちにする。
 
-**インパクト後、パターは指から切り離されて惰性で流れる。** 指はそのまま速く動き続けるが、パターは
-ボールより遅い速度（`putterFollowRatio`、初期値 0.7）でフォロースルーして止まる。
-**パターがボールを追い越さないこと。**
+**インパクト後もパターは指に追従する。** 指から切り離して惰性で流すと、打ったあとにパターだけが
+左へ滑っていくように見えて不自然だった。指を離したらアドレス位置へ戻る。
+
+**ただしパターがボールを追い越さないこと。** インパクト後は、フェースの X をボールの右端
+（ボールの X ＋ ボール半径 ＋ フェース厚みの半分）で頭打ちにする。ボールは指より速く離れていくので、
+普段はすぐ効かなくなる。
 
 ### 4.5 芯とミスヒット
 
@@ -261,7 +264,7 @@ lil-gui で調整可能にする項目:
 - `SPEED_K`、`DIRECTION_SENSITIVITY`
 - `minBackswingPx`（バックスイングのゲート）
 - `putterLength`、`sweetSpotPx`、`mishitMinGain`（パターと芯）
-- `faceMaxAngle`、`putterRestOffsetPx`、`putterFollowRatio`（フェース角の上限と所作）
+- `faceMaxAngle`、`putterRestOffsetPx`（フェース角の上限と待機位置）
 - `ballPxPerMeter`、`ballDecelMs2`（検証ページのボールの転がり）
 - ADDRESS の ROLL 角度
 - 濃淡の強さ／ライト強度の比率
