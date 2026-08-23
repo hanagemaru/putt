@@ -1,6 +1,9 @@
 // チューニング可能な数値は全てここに置く。他のファイルにマジックナンバーを書かない。
 // 単位はメートル・秒。角度は内部ではラジアン。
 
+/** 単位の定義であってチューニング値ではない */
+export const FEET_TO_METERS = 0.3048;
+
 export const CONFIG = {
   green: {
     /** グリーンの一辺 [m] */
@@ -8,6 +11,102 @@ export const CONFIG = {
     /** 表示メッシュの分割数 */
     segments: 128,
     color: 0x4a8b3a,
+    /** 物理・描画の唯一の情報源であるハイトマップの解像度（正方 res×res） */
+    heightmapResolution: 256,
+    /** 手続き生成のシード。同じ値なら同じ地形になる */
+    seed: 20250823,
+    /** 全体傾斜 [%]。シードごとにこの範囲から選ぶ（実際のグリーン相当で 1〜3%） */
+    tiltMinPercent: 1,
+    tiltMaxPercent: 3,
+    /** うねりの振幅 [m]。合成したガウシアンをこの振幅（±）へ正規化する */
+    undulationAmplitude: 0.15,
+    /** 合成するガウシアンの数 */
+    gaussianCount: 7,
+    /**
+     * ガウシアンの広がり [m] の範囲。小さいほど局所的に急な斜面ができる。
+     * 振幅は正規化されるので、ここが「どれだけ急な面ができるか」を決める。
+     * 勾配が MU*7/(5g)（スティンプ 10ft で約 7.8%）を超える面がないと
+     * 「下りで止まらない」が起きないので、下限は狭めに取ってある
+     */
+    gaussianSigmaMin: 0.7,
+    gaussianSigmaMax: 3.5,
+    /** ガウシアンの中心を置く範囲。グリーンの一辺に対する割合 */
+    gaussianSpread: 0.9,
+    /**
+     * 頂点カラーの濃淡の強さ（§1 のアンジュレーション表現の主軸）。
+     * 0 で単色、1 で最も低い点が真っ黒になる
+     */
+    shadeStrength: 0.55,
+  },
+
+  hole: {
+    /** カップの直径 [m]（規定 108mm） */
+    diameter: 0.108,
+    /** カップの深さ [m] */
+    depth: 0.1,
+    /** カップの位置 [m]。XZ 平面 */
+    position: { x: 0.6, z: -5.5 },
+    /** 旗竿の高さ [m]。必ず鉛直に立てる（傾き表現の基準） */
+    flagstickHeight: 1.5,
+    flagstickRadius: 0.008,
+    flagWidth: 0.32,
+    flagHeight: 0.22,
+    flagColor: 0xd94f3d,
+    cupColor: 0x121a12,
+  },
+
+  ball: {
+    /** ゴルフボールの半径 [m]（直径 42.7mm） */
+    radius: 0.0213,
+    color: 0xf6f8f4,
+  },
+
+  /** グリーンの外に敷く地面。グリーンが宙に浮いて見えないようにするだけ */
+  surround: {
+    size: 60,
+    color: 0x2f5d2a,
+    /** グリーンの最低点からどれだけ下げるか [m] */
+    drop: 0.35,
+  },
+
+  /** 背景の木。傾きの基準になるので必ず鉛直に立てる */
+  trees: {
+    count: 14,
+    /** グリーン中心からの距離 [m] の範囲 */
+    radiusMin: 13,
+    radiusMax: 18,
+    heightMin: 3.5,
+    heightMax: 6.5,
+    trunkColor: 0x5b4632,
+    leafColor: 0x2f6b32,
+  },
+
+  physics: {
+    /** 固定タイムステップ [s]。決定論的に保つ（後でリプレイに使う） */
+    timeStep: 1 / 240,
+    /** 重力加速度 [m/s^2] */
+    gravity: 9.81,
+    /** 勾配による加速度の係数。転がる球なので 5/7 */
+    slopeFactor: 5 / 7,
+    /** スティンプ値 [ft]。摩擦 MU はここから逆算する */
+    stimpFeet: 10,
+    /**
+     * スティンプメーターの解放速度 [m/s]。
+     * 「この初速で stimpFeet だけ転がる」から MU = v^2 / (2 * 距離) を出す
+     */
+    stimpReleaseSpeed: 1.83,
+    /** これを下回ったら停止判定に入る [m/s] */
+    stopSpeed: 0.02,
+    /** カップ中心からこの距離に入ったら判定 [m]（54mm） */
+    cupCaptureRadius: 0.054,
+    /** この速度未満ならカップイン。以上ならリップアウト [m/s] */
+    cupCaptureSpeed: 1.4,
+    /** リップアウト時に残る速度の割合 */
+    lipOutDamping: 0.7,
+    /** 1フレームで進めるシミュレーション時間の上限 [s]。タブ復帰時の暴走を防ぐ */
+    maxStepPerFrame: 0.1,
+    /** 軌跡を記録する間隔（物理ステップ数）。8 なら 30Hz */
+    pathSampleSteps: 8,
   },
 
   camera: {
@@ -31,6 +130,52 @@ export const CONFIG = {
     background: 0x87b7e0,
     /** 端末の devicePixelRatio の上限。上げすぎると重い */
     maxPixelRatio: 2,
+  },
+
+  /** /green-test/ のグリーン・物理の確認ページ専用。ゲーム本体では使わない */
+  greenTest: {
+    /**
+     * 俯瞰カメラ。20m 四方のグリーンは縦画面の横幅に透視投影では収まらないので、
+     * グリーンにフィットさせた正射影で見る。確認用の固定カメラで、ゲーム本体には持ち込まない
+     */
+    /** 見下ろし角 [度]。90 で真上 */
+    cameraPitchDeg: 62,
+    /** カメラを置く距離 [m]。正射影なので見た目の大きさには効かない。near/far に収まればよい */
+    cameraDistance: 40,
+    /** 画面の横幅に収める範囲 [m]。グリーンの一辺より少し広く取って外周も見せる */
+    viewWidth: 23,
+    /** ボールの初期位置 [m] */
+    ballStart: { x: -1.5, z: 5.5 },
+    /** 初速の初期値 [m/s] */
+    initialSpeed: 3.2,
+    /** 方向の初期値 [度]。0 が -Z（画面奥）、+ が右回り */
+    initialDirectionDeg: 0,
+    /** 見やすさのためにボールを実寸より大きく描く倍率。20m を画面幅に収めるとかなり小さい */
+    ballScale: 15,
+    /** 軌跡の色 */
+    trailColor: 0xffe66d,
+    /** 軌跡をグリーン面から浮かせる高さ [m]。Z ファイティング防止 */
+    trailLift: 0.02,
+    /** 軌跡の頂点バッファ長。これを超えたぶんは描かない */
+    trailMaxPoints: 4096,
+    /** lil-gui のスライダーの範囲 */
+    gui: {
+      stimpMin: 6,
+      stimpMax: 14,
+      stimpStep: 0.5,
+      seedMin: 0,
+      seedMax: 99999,
+      seedStep: 1,
+      amplitudeMin: 0,
+      amplitudeMax: 0.5,
+      amplitudeStep: 0.01,
+      shadeMin: 0,
+      shadeMax: 1,
+      shadeStep: 0.01,
+      lightMin: 0,
+      lightMax: 2,
+      lightStep: 0.05,
+    },
   },
 
   /** /swipe-test/ のスワイプ速度計測ページ専用。ゲーム本体では使わない */

@@ -11,6 +11,8 @@ export default defineConfig({
         main: 'index.html',
         // スワイプ速度計測の検証ページ → /putt/swipe-test/
         swipeTest: 'swipe-test/index.html',
+        // グリーンと転がりの検証ページ → /putt/green-test/
+        greenTest: 'green-test/index.html',
       },
     },
   },

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { CONFIG } from './config';
+import { Green, GreenMesh, createHole, createSurround, createTrees, defaultGreenParams } from './green';
 
 const app = document.getElementById('app')!;
 
@@ -19,18 +20,13 @@ const camera = new THREE.PerspectiveCamera(
 camera.position.set(0, CONFIG.camera.eyeHeight, CONFIG.camera.distance);
 camera.lookAt(0, 0, 0);
 
-// グリーン（今は平らな緑の面を1枚置くだけ）
-const green = new THREE.Mesh(
-  new THREE.PlaneGeometry(
-    CONFIG.green.size,
-    CONFIG.green.size,
-    CONFIG.green.segments,
-    CONFIG.green.segments,
-  ),
-  new THREE.MeshLambertMaterial({ color: CONFIG.green.color }),
-);
-green.rotation.x = -Math.PI / 2;
-scene.add(green);
+// グリーン。ハイトマップが表示と物理の唯一の情報源（spec §1）
+const params = defaultGreenParams();
+const green = new Green(params);
+scene.add(new GreenMesh(green, CONFIG.green.shadeStrength).mesh);
+scene.add(createSurround(green));
+scene.add(createHole(green));
+scene.add(createTrees(green, params.seed));
 
 const dir = new THREE.DirectionalLight(0xffffff, CONFIG.light.directionalIntensity);
 dir.position.set(
