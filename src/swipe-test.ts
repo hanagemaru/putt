@@ -2,7 +2,14 @@
 // ゲームのロジック（物理・カメラ・状態機械）は一切持たない。
 // ボールの転がりは §4.7 の「打てたことが分かる」ための演出であって、§2 の物理とは別物。
 import { CONFIG } from './config';
-import { SwipeMeasure, mean, stddev, type Measurement, type Sample } from './swipe-measure';
+import {
+  SwipeMeasure,
+  faceAngleFrom,
+  mean,
+  stddev,
+  type Measurement,
+  type Sample,
+} from './swipe-measure';
 
 const C = CONFIG.swipeTest;
 
@@ -255,24 +262,6 @@ function stepBall(dt: number, now: number): void {
 /** 転がるボールから離れていくぶんだけ、頭打ちを緩める（§4.4） */
 function stepPutter(): void {
   if (putter.mode === 'follow' && live) putter.x = followX(live.x);
-}
-
-/** [-π, π) に畳む */
-function wrapPi(a: number): number {
-  return Math.atan2(Math.sin(a), Math.cos(a));
-}
-
-/**
- * スイング速度からフェースの向きを決める（§4.4）。
- * 真左（狙い方向）を基準に、右向きの動きは鏡映して反転を防ぎ、傾きは faceMaxAngleDeg で頭打ちにする。
- * 止まっている間は直前の向きを保つ。
- */
-function faceAngleFrom(vx: number, vy: number, current: number): number {
-  if (Math.hypot(vx, vy) < C.faceMinSpeedPx) return current;
-  let d = wrapPi(Math.atan2(vy, vx) - Math.PI);
-  if (Math.abs(d) > Math.PI / 2) d = wrapPi(d + Math.PI);
-  const max = (C.faceMaxAngleDeg * Math.PI) / 180;
-  return Math.PI + Math.max(-max, Math.min(max, d));
 }
 
 function fmt(v: number, digits: number): string {

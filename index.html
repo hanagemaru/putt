@@ -35,6 +35,55 @@
         height: 100%;
       }
 
+      /* STROKE の 2D オーバーレイ。ボール・パターヘッド・つま先だけを px 空間で描く（spec §4） */
+      #stroke {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: none;
+        z-index: 10;
+      }
+
+      /* デバッグ表示（spec §5 の一部。全項目と lil-gui は T4） */
+      #hud {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 20;
+        padding: 8px 12px calc(8px + 6px);
+        pointer-events: none;
+        font-family: system-ui, -apple-system, sans-serif;
+        color: #e8f0e8;
+        font-variant-numeric: tabular-nums;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+      }
+      #hud .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 2px 14px;
+        font-size: 12px;
+        color: #cfe0d2;
+      }
+      #hud .state {
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        color: #9ede8a;
+      }
+      #hud .result {
+        margin-top: 2px;
+        font-size: 15px;
+        font-weight: 600;
+      }
+      #hud .notice {
+        margin-top: 2px;
+        font-size: 12px;
+        color: #ffd08a;
+        min-height: 15px;
+      }
+
       /* 横画面のときだけ出す「縦にしてください」オーバーレイ。縦画面専用（spec §0） */
       #rotate-overlay {
         position: fixed;
@@ -76,6 +125,21 @@
   </head>
   <body>
     <div id="app"></div>
+    <canvas id="stroke"></canvas>
+
+    <div id="hud">
+      <div class="row">
+        <span class="state" id="hud-state">READ</span>
+        <span id="hud-view"></span>
+        <span id="hud-aim"></span>
+        <span id="hud-dist"></span>
+        <span id="hud-shots"></span>
+      </div>
+      <div class="row" id="hud-swing"></div>
+      <div class="result" id="hud-result"></div>
+      <div class="notice" id="hud-notice"></div>
+    </div>
+
     <div id="rotate-overlay">
       <div class="icon">📱</div>
       <div>縦にしてください</div>

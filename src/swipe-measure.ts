@@ -294,6 +294,24 @@ export class SwipeMeasure {
   }
 }
 
+/** [-π, π) に畳む */
+export function wrapPi(a: number): number {
+  return Math.atan2(Math.sin(a), Math.cos(a));
+}
+
+/**
+ * スイング速度からフェースの向きを決める（§4.4）。
+ * 真左（狙い方向）を基準に、右向きの動きは鏡映して反転を防ぎ、傾きは faceMaxAngleDeg で頭打ちにする。
+ * 止まっている間は直前の向きを保つ。
+ */
+export function faceAngleFrom(vx: number, vy: number, current: number): number {
+  if (Math.hypot(vx, vy) < C.faceMinSpeedPx) return current;
+  let d = wrapPi(Math.atan2(vy, vx) - Math.PI);
+  if (Math.abs(d) > Math.PI / 2) d = wrapPi(d + Math.PI);
+  const max = (C.faceMaxAngleDeg * Math.PI) / 180;
+  return Math.PI + Math.max(-max, Math.min(max, d));
+}
+
 /** 標本標準偏差（n-1）。1個以下なら 0 */
 export function stddev(values: number[]): number {
   if (values.length < 2) return 0;
