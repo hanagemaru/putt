@@ -26,7 +26,6 @@ import {
   READ_VIEWS,
   READ_VIEW_LABEL,
   addressPose,
-  aimVector,
   cupPose,
   ease,
   followFov,
@@ -34,6 +33,7 @@ import {
   readPose,
   resultPose,
   strokePose,
+  strokeUp,
   type ReadView,
 } from './cameras';
 
@@ -212,7 +212,7 @@ function enterStroke(): void {
   props.visible = false;
   ballMesh.visible = false;
   // ROLL は 0 に戻す。ボールを見る姿勢では視野は傾かない（§3）
-  rig.transition(strokePose(ball, green), G.stroke.transition, aimVector(aim, tmpUp));
+  rig.transition(strokePose(ball, green), G.stroke.transition, strokeUp(aim, tmpUp));
 }
 
 /** インパクト（§4.6）。計測結果を初速と方向に直して打ち出す */

@@ -121,7 +121,7 @@ export function addressPose(
 
 /**
  * STROKE（§3）。ボールの真上から真下を見下ろす。ROLL は 0（ボールを見る姿勢では視野は傾かない）。
- * 画面上方向＝狙った方向になるよう、注視点はボールの真下に置いてカメラの up を狙い方向へ向ける。
+ * 注視点はボールの真下。向きは呼び出し側が渡す up で決める（strokeUp を使う）。
  */
 export function strokePose(ball: THREE.Vector2, green: Green): CameraPose {
   const position = above(green, ball.x, ball.y, G.stroke.eyeHeight);
@@ -191,9 +191,15 @@ export function lerpAngle(a: number, b: number, t: number): number {
   return a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * t;
 }
 
-/** 狙い方向の水平ベクトル。physics と同じ約束（0 が -Z、+ で +X へ回る） */
-export function aimVector(aim: number, out: THREE.Vector3): THREE.Vector3 {
-  return out.set(Math.sin(aim), 0, -Math.cos(aim));
+/**
+ * STROKE のカメラの up（＝画面の上方向）。
+ * スワイプは右から左へ振るので、**画面の左が狙った方向**になっていないと、
+ * 左へ振ったボールが画面の上へ飛んでいくように見える。狙い方向が画面左に写る up は、
+ * 狙いベクトル (ax, az)（physics と同じ約束で 0 が -Z、+ で +X へ回る）を XZ 平面で 90 度回した (-az, ax)。
+ * 右打ちで目標が左、足元が画面手前という真上からの見え方とも一致する。
+ */
+export function strokeUp(aim: number, out: THREE.Vector3): THREE.Vector3 {
+  return out.set(Math.cos(aim), 0, Math.sin(aim));
 }
 
 const UP_Y = new THREE.Vector3(0, 1, 0);
@@ -204,7 +210,7 @@ const ROLL_AXIS = new THREE.Vector3(0, 0, 1);
 /**
  * 姿勢を回転に直す。
  * up は「画面の上方向」。真下を見下ろす STROKE では lookAt が縮退するので、
- * 呼び出し側から狙い方向を up として渡す（画面上方向＝狙った方向、§4.1）。
+ * 呼び出し側から up を渡す（STROKE は strokeUp。画面左方向＝狙った方向、§4.1）。
  * ROLL は視線まわりの回転なので、向きを決めたあとにローカル Z 軸で回す。
  */
 export function poseQuaternion(p: CameraPose, out: THREE.Quaternion, up?: THREE.Vector3): THREE.Quaternion {
