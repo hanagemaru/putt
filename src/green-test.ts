@@ -10,6 +10,7 @@ import {
   createSurround,
   createTrees,
   defaultGreenParams,
+  defaultShadeParams,
 } from './green';
 import { Roller, criticalGradient, type RollStatus } from './physics';
 
@@ -63,7 +64,8 @@ scene.add(ambient);
 
 const params = defaultGreenParams();
 const green = new Green(params);
-const greenMesh = new GreenMesh(green, CONFIG.green.shadeStrength, CONFIG.green.shadeRangeMeters);
+const shade = defaultShadeParams();
+const greenMesh = new GreenMesh(green, shade);
 scene.add(greenMesh.mesh);
 
 /** シードで作り直すたびに差し替えるオブジェクト（カップ・地面・木） */
@@ -199,8 +201,6 @@ const tuning: {
   seed: number;
   undulationAmplitude: number;
   tiltPercent: number;
-  shadeStrength: number;
-  shadeRangeMeters: number;
   directionalIntensity: number;
   ambientIntensity: number;
 } = {
@@ -208,8 +208,6 @@ const tuning: {
   seed: params.seed,
   undulationAmplitude: params.undulationAmplitude,
   tiltPercent: params.tiltPercent,
-  shadeStrength: CONFIG.green.shadeStrength,
-  shadeRangeMeters: CONFIG.green.shadeRangeMeters,
   directionalIntensity: CONFIG.light.directionalIntensity,
   ambientIntensity: CONFIG.light.ambientIntensity,
 };
@@ -221,7 +219,7 @@ function regenerate(): void {
     undulationAmplitude: tuning.undulationAmplitude,
     tiltPercent: tuning.tiltPercent,
   });
-  greenMesh.update(green, tuning.shadeStrength, tuning.shadeRangeMeters);
+  greenMesh.update(green, shade);
   rebuildProps();
   updateSeverity();
   placeFromInputs();
@@ -244,13 +242,17 @@ gui
   .name('うねりの振幅 [m]')
   .onChange(regenerate);
 gui
-  .add(tuning, 'shadeStrength', G.shadeMin, G.shadeMax, G.shadeStep)
-  .name('濃淡の強さ')
-  .onChange((v: number) => greenMesh.setShadeStrength(v, tuning.shadeRangeMeters));
+  .add(shade, 'gradientStrength', G.shadeMin, G.shadeMax, G.shadeStep)
+  .name('濃淡の強さ（勾配）')
+  .onChange(() => greenMesh.setShade(shade));
 gui
-  .add(tuning, 'shadeRangeMeters', G.shadeRangeMin, G.shadeRangeMax, G.shadeRangeStep)
-  .name('濃淡のレンジ [m]')
-  .onChange((v: number) => greenMesh.setShadeStrength(tuning.shadeStrength, v));
+  .add(shade, 'gradientRange', G.shadeRangeMin, G.shadeRangeMax, G.shadeRangeStep)
+  .name('濃淡のレンジ [勾配]')
+  .onChange(() => greenMesh.setShade(shade));
+gui
+  .add(shade, 'heightStrength', G.shadeMin, G.shadeMax, G.shadeStep)
+  .name('高さの濃淡')
+  .onChange(() => greenMesh.setShade(shade));
 gui
   .add(tuning, 'directionalIntensity', G.lightMin, G.lightMax, G.lightStep)
   .name('ライト強度')

@@ -67,6 +67,13 @@ export class StrokeView {
 
   private live: Sample | null = null;
 
+  /**
+   * 打ったあとのボールの画面位置 [px]。物理のワールド座標をカメラで投影したものを
+   * main.ts から入れてもらう。null の間はボールは定位置（画面中央）にいる。
+   * 打った直後は視点を動かさないので、ボールが画面から出ていくところまでここで見せる（§3 FOLLOW）
+   */
+  private released: { x: number; y: number } | null = null;
+
   private readonly putter: Putter = {
     x: 0,
     y: 0,
@@ -107,6 +114,7 @@ export class StrokeView {
     this.active = true;
     this.pointerId = null;
     this.live = null;
+    this.released = null;
     this.measure.cancel();
     this.restPutter();
     this.canvas.style.display = 'block';
@@ -117,8 +125,17 @@ export class StrokeView {
     this.active = false;
     this.pointerId = null;
     this.live = null;
+    this.released = null;
     this.measure.cancel();
     this.canvas.style.display = 'none';
+  }
+
+  /**
+   * 打ったあとのボールの画面位置を入れる [px]。ここから先はボールは物理で動いている。
+   * 画面の外に出たら描かない
+   */
+  setBallScreen(x: number, y: number): void {
+    this.released = { x, y };
   }
 
   /**
@@ -251,15 +268,53 @@ export class StrokeView {
       ctx.setLineDash([]);
     }
 
+    this.drawTrail();
     this.drawToes(w, h);
 
-    // ボール。真下視点では実寸だと小さすぎるので px で描く
-    ctx.beginPath();
-    ctx.arc(this.ballX, this.ballY, C.ballRadius, 0, Math.PI * 2);
-    ctx.fillStyle = '#f4f6f2';
-    ctx.fill();
+    // ボール。真下視点では実寸だと小さすぎるので px で描く。
+    // 打ったあとは物理の位置（投影済み）へ移る
+    const bx = this.released ? this.released.x : this.ballX;
+    const by = this.released ? this.released.y : this.ballY;
+    const r = C.ballRadius;
+    if (bx > -r && bx < w + r && by > -r && by < h + r) {
+      ctx.beginPath();
+      ctx.arc(bx, by, r, 0, Math.PI * 2);
+      ctx.fillStyle = '#f4f6f2';
+      ctx.fill();
+    }
 
     this.drawPutter(armed);
+  }
+
+  /**
+   * 指の軌跡（直近 trailMs）。/swipe-test/ と同じ描き方。
+   * サンプル点も打つので、密度＝サンプリングレートが目で見える
+   */
+  private drawTrail(): void {
+    const all = this.measure.samples();
+    if (all.length < 2) return;
+    const ctx = this.ctx;
+    const tEnd = all[all.length - 1].t;
+
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(120,200,255,0.7)';
+    ctx.beginPath();
+    let started = false;
+    for (const s of all) {
+      if (tEnd - s.t > C.trailMs) continue;
+      if (started) ctx.lineTo(s.x, s.y);
+      else {
+        ctx.moveTo(s.x, s.y);
+        started = true;
+      }
+    }
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(120,200,255,0.9)';
+    for (const s of all) {
+      if (tEnd - s.t > C.trailMs) continue;
+      ctx.fillRect(s.x - 1, s.y - 1, 2, 2);
+    }
   }
 
   /** つま先。STROKE で見えるのはボール・パターヘッド・つま先だけ（§3） */

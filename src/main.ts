@@ -17,6 +17,7 @@ import {
   createSurround,
   createTrees,
   defaultGreenParams,
+  defaultShadeParams,
 } from './green';
 import { Roller } from './physics';
 import { StrokeView } from './stroke-view';
@@ -60,7 +61,7 @@ const rig = new CameraRig(camera);
 // グリーン。ハイトマップが表示と物理の唯一の情報源（spec §1）
 const params = defaultGreenParams();
 const green = new Green(params);
-scene.add(new GreenMesh(green, CONFIG.green.shadeStrength, CONFIG.green.shadeRangeMeters).mesh);
+scene.add(new GreenMesh(green, defaultShadeParams()).mesh);
 
 /** STROKE の間だけ消すもの。ホール・旗竿・背景は一切見えない（§3） */
 const props = new THREE.Group();
@@ -83,6 +84,22 @@ const ballMesh = new THREE.Mesh(
   new THREE.MeshLambertMaterial({ color: CONFIG.ball.color }),
 );
 scene.add(ballMesh);
+
+/**
+ * ボールの影。影の計算はせず、真下に半透明の円を1枚置くだけ。
+ * 接地点が分かると、転がっている間の距離と曲がりが読める（§3 FOLLOW）
+ */
+const ballShadow = new THREE.Mesh(
+  new THREE.CircleGeometry(CONFIG.ball.radius * CONFIG.ball.shadowScale, 16),
+  new THREE.MeshBasicMaterial({
+    color: 0x000000,
+    transparent: true,
+    opacity: CONFIG.ball.shadowOpacity,
+    depthWrite: false,
+  }),
+);
+ballShadow.rotation.x = -Math.PI / 2;
+scene.add(ballShadow);
 
 /** 軌跡。走行中は表示しない。止まってから出す（§3 RESULT） */
 const trailPositions = new Float32Array(G.result.trailMaxPoints * 3);
@@ -123,6 +140,12 @@ let lastSwing = '';
 let followYaw = 0;
 let followPitch = -Math.PI / 2;
 let riseElapsed = 0;
+/**
+ * 打った直後、ボールが STROKE の視界から出るまでは視点を動かさない区間（§3 FOLLOW）。
+ * すぐに顔や目線を動かさないのが安定したストロークの所作
+ */
+let holding = false;
+let holdElapsed = 0;
 /** RESULT に入ってから俯瞰へ動き出すまでの待ち [s] */
 let settleElapsed = 0;
 let resultReady = false;
@@ -205,14 +228,25 @@ function launch(speedMs: number, launchAngle: number): void {
 function enterFollow(): void {
   state = 'FOLLOW';
   notice = '';
-  strokeView.exit();
-  // ここで初めてホールが視界に入る（§3）
-  props.visible = true;
-  ballMesh.visible = true;
   trail.visible = false;
   followYaw = -aim;
   followPitch = -Math.PI / 2;
   riseElapsed = 0;
+  holdElapsed = 0;
+  // 打った直後は視点を動かさない。ボールが STROKE の視界から出るまで真下を見下ろしたまま。
+  // ボールはオーバーレイの中を（物理の位置を投影して）転がっていく
+  holding = G.follow.holdUntilOffscreen;
+  if (holding) ballMesh.visible = false;
+  else revealCourse();
+}
+
+/** 顔を上げる。ここで初めてホールが視界に入る（§3） */
+function revealCourse(): void {
+  holding = false;
+  strokeView.exit();
+  props.visible = true;
+  ballMesh.visible = roller.status !== 'holed';
+  updateBallMesh();
 }
 
 function enterCup(): void {
@@ -224,6 +258,7 @@ function enterCup(): void {
 /** ボールが完全に停止してから呼ぶ。ここで初めて俯瞰と軌跡を出す（§3） */
 function enterResult(): void {
   state = 'RESULT';
+  if (holding) revealCourse();
   settleElapsed = 0;
   resultReady = false;
   lastResult = describeResult();
@@ -287,6 +322,12 @@ function updateTrail(): void {
 
 function updateBallMesh(): void {
   ballMesh.position.copy(ballWorld(tmpBall));
+  ballShadow.position.set(
+    tmpBall.x,
+    green.sampleHeight(ball.x, ball.y) + CONFIG.ball.shadowLift,
+    tmpBall.z,
+  );
+  ballShadow.visible = ballMesh.visible;
 }
 
 // --- 入力 -----------------------------------------------------------------
@@ -358,8 +399,26 @@ surface.addEventListener('pointercancel', pointerEnd);
 function stepPhysics(dt: number): void {
   roller.advance(dt);
   ball.set(roller.x, roller.z);
+  if (!holding) ballMesh.visible = roller.status !== 'holed';
   updateBallMesh();
-  ballMesh.visible = roller.status !== 'holed';
+}
+
+/**
+ * 打った直後（視点を動かさない区間）。ボールのワールド座標をカメラで投影して、
+ * オーバーレイの中で転がっているように見せる。画面から出たら true
+ */
+function updateHold(dt: number): boolean {
+  holdElapsed += dt;
+  ballWorld(tmpBall).project(camera);
+  const w = app.clientWidth;
+  const h = app.clientHeight;
+  strokeView.setBallScreen((tmpBall.x * 0.5 + 0.5) * w, (-tmpBall.y * 0.5 + 0.5) * h);
+  strokeView.update(dt);
+
+  const m = 1 + G.follow.offscreenMargin;
+  const offscreen = Math.abs(tmpBall.x) > m || Math.abs(tmpBall.y) > m || tmpBall.z > 1;
+  // ボールが画面内で止まってしまった場合と、保険の上限時間でも顔を上げる
+  return offscreen || roller.status !== 'rolling' || holdElapsed >= G.follow.holdMax;
 }
 
 /** FOLLOW（§3）。カメラ位置は固定。ヨーとピッチだけでボールを追い、遠ざかるほど FOV を絞る */
@@ -370,13 +429,23 @@ function updateFollow(dt: number): void {
   const dz = tmpBall.z - camera.position.z;
   const len = Math.hypot(dx, dy, dz) || 1;
   const targetYaw = Math.atan2(-dx, -dz);
-  const targetPitch = Math.asin(THREE.MathUtils.clamp(dy / len, -1, 1));
+  // ボールを画面中央より下に置く。進む先が見えるように、ボールより少し上を見る
+  const targetPitch =
+    Math.asin(THREE.MathUtils.clamp(dy / len, -1, 1)) + THREE.MathUtils.degToRad(G.follow.leadDeg);
 
-  // インパクト直後 0.15 秒かけて視点が下から上がる。ここで初めてホールが視界に入る
   riseElapsed = Math.min(riseElapsed + dt, G.follow.riseTime);
-  const t = ease(riseElapsed / G.follow.riseTime);
-  followYaw = lerpAngle(-aim, targetYaw, t);
-  followPitch = -Math.PI / 2 + (targetPitch + Math.PI / 2) * t;
+  if (riseElapsed < G.follow.riseTime) {
+    // ボールが視界から出たあと、0.15 秒かけて視点が上がる
+    const t = ease(riseElapsed / G.follow.riseTime);
+    followYaw = lerpAngle(-aim, targetYaw, t);
+    followPitch = -Math.PI / 2 + (targetPitch + Math.PI / 2) * t;
+  } else {
+    // 顔が上がったあとは時定数で遅れて追う。
+    // 毎フレーム画面中心へ貼りつけると相対運動がゼロになって実質静止画に見える
+    const k = 1 - Math.exp(-dt / G.follow.trackingTau);
+    followYaw = lerpAngle(followYaw, targetYaw, k);
+    followPitch += (targetPitch - followPitch) * k;
+  }
   rig.applyYawPitch(followYaw, followPitch, followFov(len));
 }
 
@@ -404,10 +473,15 @@ renderer.setAnimationLoop((now) => {
 
     case 'FOLLOW': {
       stepPhysics(dt);
-      updateFollow(dt);
+      if (holding) {
+        // 打った直後は視点を動かさない。ボールが視界から出たら顔を上げる
+        if (updateHold(dt)) revealCourse();
+      } else {
+        updateFollow(dt);
+      }
       if (roller.status !== 'rolling') enterResult();
-      // カップまで 1.5m を切ったらカット（§3）
-      else if (distanceToCup() < G.cup.triggerDistance) enterCup();
+      // カップまで 1.5m を切ったらカット（§3）。顔を上げるまではカメラを動かさない
+      else if (!holding && distanceToCup() < G.cup.triggerDistance) enterCup();
       break;
     }
 

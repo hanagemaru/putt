@@ -193,19 +193,52 @@ export class Green {
   }
 }
 
+/** 濃淡の設定（§1）。lil-gui から変えられる */
+export interface ShadeParams {
+  /** 勾配の濃淡の強さ。0 で単色 */
+  gradientStrength: number;
+  /** 濃淡がフルレンジで表す勾配（無次元、0.08 で 8%）。読みの単位 */
+  gradientRange: number;
+  /** 光の方位 [度]。固定方向 */
+  lightAzimuthDeg: number;
+  /** 高さの濃淡の強さ */
+  heightStrength: number;
+  /** 高さの濃淡がフルレンジで表す高低差 [m] */
+  heightRange: number;
+}
+
+export function defaultShadeParams(): ShadeParams {
+  return { ...C.shade };
+}
+
+/** 中央付近は傾き 1 の直線、端だけ緩やかに飽和させる。黒つぶれ・白飛びを防ぐ */
+function softRamp(value: number, fullRange: number): number {
+  const half = fullRange / 2;
+  if (half <= 0) return 0.5;
+  const s = value / half;
+  return 0.5 + (0.5 * s) / Math.sqrt(1 + s * s);
+}
+
 /**
  * グリーンの表示メッシュ。PlaneGeometry の頂点をハイトマップで変位させ、頂点カラーで濃淡をつける。
- * 低いところほど暗い（§1）。これがアンジュレーション表現の主軸で、陰影はその補助。
+ *
+ * **濃淡が表すのは「高さ」ではなく「斜面の向きと強さ」**（§1）。固定方位の光ベクトルと勾配 ∇h の
+ * 内積で明暗を決める。一人称の視野に入るのは半径数メートルで、そこの高低差は数センチしかないので、
+ * 高さベースでは明度差が出ない（実測：4.5m のライン上で 1.6cm ＝ 明度差 3%）。
+ * 読みに要るのは勾配なので、勾配を直接出す。
+ *
+ * **絶対スケール。** フルレンジは gradientRange で、グリーンごとの最小最大では正規化しない。
+ * 同じ明暗差はどのシードでも同じ勾配 % を意味する。ここを正規化に戻すと読みゲームとして成立しない。
  */
 export class GreenMesh {
   readonly mesh: THREE.Mesh;
   private readonly geometry: THREE.PlaneGeometry;
   private readonly base = new THREE.Color(C.color);
+  private readonly grad = { x: 0, z: 0 };
 
   constructor(
     private green: Green,
-    shadeStrength: number,
-    shadeRange: number,
+    shade: ShadeParams,
   ) {
     this.geometry = new THREE.PlaneGeometry(green.size, green.size, C.segments, C.segments);
     // XZ 平面へ倒しておく。以降は頂点の x/z がそのままワールド座標になる
@@ -216,27 +249,35 @@ export class GreenMesh {
       this.geometry,
       new THREE.MeshLambertMaterial({ vertexColors: true }),
     );
-    this.update(green, shadeStrength, shadeRange);
+    this.update(green, shade);
   }
 
-  /** ハイトマップが変わったら呼ぶ。頂点の高さと色を貼り直す */
-  update(green: Green, shadeStrength: number, shadeRange: number): void {
+  /** ハイトマップか濃淡の設定が変わったら呼ぶ。頂点の高さと色を貼り直す */
+  update(green: Green, shade: ShadeParams): void {
     this.green = green;
     const position = this.geometry.attributes.position as THREE.BufferAttribute;
     const color = this.geometry.attributes.color as THREE.BufferAttribute;
-    // 絶対スケール。高さ 0 が中間の明るさで、shadeRange がフルレンジ。
-    // グリーンごとに正規化しないので、同じ濃淡の傾きはどのシードでも同じ勾配を意味する
-    const halfRange = shadeRange / 2;
+    // 光の方位。プレイヤーが回っても地形の見え方が変わらないよう固定方向にする
+    const azimuth = (shade.lightAzimuthDeg * Math.PI) / 180;
+    const lx = Math.cos(azimuth);
+    const lz = Math.sin(azimuth);
+
     for (let i = 0; i < position.count; i++) {
       const x = position.getX(i);
       const z = position.getZ(i);
       const h = green.sampleHeight(x, z);
       position.setY(i, h);
-      // 中央付近は傾き 1 の直線（微妙なうねりを潰さない）、端だけ緩やかに飽和させて
-      // 起伏の大きいグリーンでも黒つぶれ・白飛びさせない
-      const s = halfRange > 0 ? h / halfRange : 0;
-      const t = 0.5 + (0.5 * s) / Math.sqrt(1 + s * s);
-      const k = 1 - shadeStrength * (1 - t);
+
+      // 光の方向へ下っている面は暗く、光の方へ登っている面は明るい
+      green.sampleGradient(x, z, this.grad);
+      const towardLight = this.grad.x * lx + this.grad.z * lz;
+      const gradient = softRamp(towardLight, shade.gradientRange);
+      const height = softRamp(h, shade.heightRange);
+
+      const k =
+        1 -
+        shade.gradientStrength * (1 - gradient) -
+        shade.heightStrength * (1 - height);
       color.setXYZ(i, this.base.r * k, this.base.g * k, this.base.b * k);
     }
     position.needsUpdate = true;
@@ -246,8 +287,8 @@ export class GreenMesh {
   }
 
   /** 濃淡の設定だけを変える（高さは変わらないので色だけ貼り直す） */
-  setShadeStrength(shadeStrength: number, shadeRange: number): void {
-    this.update(this.green, shadeStrength, shadeRange);
+  setShade(shade: ShadeParams): void {
+    this.update(this.green, shade);
   }
 }
 
