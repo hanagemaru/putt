@@ -32,6 +32,7 @@ import {
   lerpAngle,
   readPose,
   resultPose,
+  projectedRadiusPx,
   strokePose,
   strokeUp,
   type ReadView,
@@ -63,12 +64,18 @@ const params = defaultGreenParams();
 const green = new Green(params);
 scene.add(new GreenMesh(green, defaultShadeParams()).mesh);
 
-/** STROKE の間だけ消すもの。ホール・旗竿・背景は一切見えない（§3） */
+/** STROKE の間だけ消すもの。背景の木と外周の地面（真下を向いていれば映らない） */
 const props = new THREE.Group();
 props.add(createSurround(green));
-props.add(createHole(green));
 props.add(createTrees(green, params.seed));
 scene.add(props);
+
+/**
+ * カップと旗竿。**常に表示する。**
+ * 実在するものなので、真下を見下ろす STROKE でも視野に入るなら見える（＝タップインの距離）。
+ * 真下 1.5m・FOV 70度の視野は横 ±0.49m しかないので、遠いカップは自然に映らない
+ */
+scene.add(createHole(green));
 
 const dir = new THREE.DirectionalLight(0xffffff, CONFIG.light.directionalIntensity);
 dir.position.set(
@@ -201,17 +208,18 @@ function switchReadView(step: number): void {
 function enterAddress(): void {
   state = 'ADDRESS';
   notice = '左右スワイプで狙い、タップで構える';
-  rig.transition(addressPose(ball, aim, green), G.address.transition);
+  rig.transition(addressPose(ball, aim, green, distanceToCup()), G.address.transition);
 }
 
 function enterStroke(): void {
   state = 'STROKE';
   notice = '';
   strokeArmed = false;
-  // ホール・旗竿・背景は一切見えない。ボールはオーバーレイが px で描く（§3 / §4）
+  // 背景は見えない。ボールとカップは 3D のまま実寸で見せる（§3 / §4）。
+  // 真下を向いた視野は狭いので、カップが映るのはタップインの距離だけ
   props.visible = false;
-  ballMesh.visible = false;
-  // ROLL は 0 に戻す。ボールを見る姿勢では視野は傾かない（§3）
+  ballMesh.visible = true;
+  updateBallMesh();
   rig.transition(strokePose(ball, green), G.stroke.transition, strokeUp(aim, tmpUp));
 }
 
@@ -233,11 +241,9 @@ function enterFollow(): void {
   followPitch = -Math.PI / 2;
   riseElapsed = 0;
   holdElapsed = 0;
-  // 打った直後は視点を動かさない。ボールが STROKE の視界から出るまで真下を見下ろしたまま。
-  // ボールはオーバーレイの中を（物理の位置を投影して）転がっていく
+  // 打った直後は視点を動かさない。ボールが STROKE の視界から出るまで真下を見下ろしたまま
   holding = G.follow.holdUntilOffscreen;
-  if (holding) ballMesh.visible = false;
-  else revealCourse();
+  if (!holding) revealCourse();
 }
 
 /** 顔を上げる。ここで初めてホールが視界に入る（§3） */
@@ -399,20 +405,17 @@ surface.addEventListener('pointercancel', pointerEnd);
 function stepPhysics(dt: number): void {
   roller.advance(dt);
   ball.set(roller.x, roller.z);
-  if (!holding) ballMesh.visible = roller.status !== 'holed';
+  ballMesh.visible = roller.status !== 'holed';
   updateBallMesh();
 }
 
 /**
- * 打った直後（視点を動かさない区間）。ボールのワールド座標をカメラで投影して、
- * オーバーレイの中で転がっているように見せる。画面から出たら true
+ * 打った直後（視点を動かさない区間）。カメラは真下を向いたまま、
+ * 3D のボールが実際に転がって画面から出ていくのを見せる。出たら true
  */
 function updateHold(dt: number): boolean {
   holdElapsed += dt;
   ballWorld(tmpBall).project(camera);
-  const w = app.clientWidth;
-  const h = app.clientHeight;
-  strokeView.setBallScreen((tmpBall.x * 0.5 + 0.5) * w, (-tmpBall.y * 0.5 + 0.5) * h);
   strokeView.update(dt);
 
   const m = 1 + G.follow.offscreenMargin;
@@ -460,7 +463,7 @@ renderer.setAnimationLoop((now) => {
   switch (state) {
     case 'ADDRESS':
       // 遷移が終わったら、狙いの変化に追従させる
-      if (!transitioning) rig.apply(addressPose(ball, aim, green));
+      if (!transitioning) rig.apply(addressPose(ball, aim, green, distanceToCup()));
       break;
 
     case 'STROKE':
@@ -544,6 +547,16 @@ function resize(): void {
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   strokeView.resize();
+  // インパクトラインをボールの見かけの大きさに合わせる（§4.2）。
+  // 真下から見たボールまでの距離は、視点高さから半径を引いたぶん
+  strokeView.setBallRadiusPx(
+    projectedRadiusPx(
+      CONFIG.ball.radius,
+      G.stroke.eyeHeight - CONFIG.ball.radius,
+      CONFIG.camera.fov,
+      h,
+    ),
+  );
 }
 resize();
 window.addEventListener('resize', resize);

@@ -243,7 +243,7 @@ gui
   .onChange(regenerate);
 gui
   .add(shade, 'gradientStrength', G.shadeMin, G.shadeMax, G.shadeStep)
-  .name('濃淡の強さ（勾配）')
+  .name('濃淡の振れ幅（勾配）')
   .onChange(() => greenMesh.setShade(shade));
 gui
   .add(shade, 'gradientRange', G.shadeRangeMin, G.shadeRangeMax, G.shadeRangeStep)
@@ -251,7 +251,7 @@ gui
   .onChange(() => greenMesh.setShade(shade));
 gui
   .add(shade, 'heightStrength', G.shadeMin, G.shadeMax, G.shadeStep)
-  .name('高さの濃淡')
+  .name('高さの濃淡の振れ幅')
   .onChange(() => greenMesh.setShade(shade));
 gui
   .add(tuning, 'directionalIntensity', G.lightMin, G.lightMax, G.lightStep)

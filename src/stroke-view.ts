@@ -1,5 +1,6 @@
 // STROKE の 2D オーバーレイ（spec §4）。真下を見下ろす 3D の上に重ねて、
-// ボール・パターヘッド・つま先・ゲート線だけを px 空間で描く。
+// パターヘッド・つま先・ゲート線・指の軌跡を px 空間で描く。
+// ボールとカップは 3D のまま（実寸）。ここで px の円を描くと転がる画面と大きさが食い違う。
 //
 // 計測そのものは /swipe-test/ で検証済みの SwipeMeasure をそのまま使う。
 // px → m の換算を新しく作らないので、ゲーム本体でも検証ページと同じ手応えになる。
@@ -60,19 +61,17 @@ export class StrokeView {
   private ballX = 0;
   private ballY = 0;
   /**
+   * ボールの見かけの半径 [px]。3D のボールを投影した実寸で、main.ts から入れてもらう。
+   * ここで px の定数を持つと、転がる画面のボールと大きさが食い違う
+   */
+  private ballRadiusPx = 0;
+  /**
    * インパクトライン（§4.2）。フェースがボールの右端に触れる位置。
    * ボール中心で判定すると、当たる前にパターがボールへめり込んで見える。
    */
   private impactX = 0;
 
   private live: Sample | null = null;
-
-  /**
-   * 打ったあとのボールの画面位置 [px]。物理のワールド座標をカメラで投影したものを
-   * main.ts から入れてもらう。null の間はボールは定位置（画面中央）にいる。
-   * 打った直後は視点を動かさないので、ボールが画面から出ていくところまでここで見せる（§3 FOLLOW）
-   */
-  private released: { x: number; y: number } | null = null;
 
   private readonly putter: Putter = {
     x: 0,
@@ -95,6 +94,16 @@ export class StrokeView {
     this.resize();
   }
 
+  /**
+   * ボールの見かけの半径 [px]。3D のボールを投影した値を渡す。
+   * インパクトラインの位置がこれで決まるので、リサイズのたびに入れ直す
+   */
+  setBallRadiusPx(radiusPx: number): void {
+    this.ballRadiusPx = radiusPx;
+    this.impactX = this.ballX + radiusPx + C.putterWidth / 2;
+    if (!this.active || this.pointerId === null) this.restPutter();
+  }
+
   /** 画面サイズが変わったら呼ぶ */
   resize(): void {
     const dpr = Math.min(window.devicePixelRatio, CONFIG.renderer.maxPixelRatio);
@@ -105,7 +114,7 @@ export class StrokeView {
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.ballX = w / 2;
     this.ballY = h / 2;
-    this.impactX = this.ballX + C.ballRadius + C.putterWidth / 2;
+    this.impactX = this.ballX + this.ballRadiusPx + C.putterWidth / 2;
     if (!this.active || this.pointerId === null) this.restPutter();
   }
 
@@ -114,7 +123,6 @@ export class StrokeView {
     this.active = true;
     this.pointerId = null;
     this.live = null;
-    this.released = null;
     this.measure.cancel();
     this.restPutter();
     this.canvas.style.display = 'block';
@@ -125,17 +133,8 @@ export class StrokeView {
     this.active = false;
     this.pointerId = null;
     this.live = null;
-    this.released = null;
     this.measure.cancel();
     this.canvas.style.display = 'none';
-  }
-
-  /**
-   * 打ったあとのボールの画面位置を入れる [px]。ここから先はボールは物理で動いている。
-   * 画面の外に出たら描かない
-   */
-  setBallScreen(x: number, y: number): void {
-    this.released = { x, y };
   }
 
   /**
@@ -270,19 +269,8 @@ export class StrokeView {
 
     this.drawTrail();
     this.drawToes(w, h);
-
-    // ボール。真下視点では実寸だと小さすぎるので px で描く。
-    // 打ったあとは物理の位置（投影済み）へ移る
-    const bx = this.released ? this.released.x : this.ballX;
-    const by = this.released ? this.released.y : this.ballY;
-    const r = C.ballRadius;
-    if (bx > -r && bx < w + r && by > -r && by < h + r) {
-      ctx.beginPath();
-      ctx.arc(bx, by, r, 0, Math.PI * 2);
-      ctx.fillStyle = '#f4f6f2';
-      ctx.fill();
-    }
-
+    // ボールは 3D のメッシュをそのまま見せる。ここで px の円を描くと、
+    // 転がる画面のボールと大きさが食い違う（§4.1）
     this.drawPutter(armed);
   }
 

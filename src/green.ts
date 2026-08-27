@@ -195,13 +195,13 @@ export class Green {
 
 /** 濃淡の設定（§1）。lil-gui から変えられる */
 export interface ShadeParams {
-  /** 勾配の濃淡の強さ。0 で単色 */
+  /** 勾配の濃淡の振れ幅（±）。0 で単色 */
   gradientStrength: number;
   /** 濃淡がフルレンジで表す勾配（無次元、0.08 で 8%）。読みの単位 */
   gradientRange: number;
   /** 光の方位 [度]。固定方向 */
   lightAzimuthDeg: number;
-  /** 高さの濃淡の強さ */
+  /** 高さの濃淡の振れ幅（±） */
   heightStrength: number;
   /** 高さの濃淡がフルレンジで表す高低差 [m] */
   heightRange: number;
@@ -229,6 +229,9 @@ function softRamp(value: number, fullRange: number): number {
  *
  * **絶対スケール。** フルレンジは gradientRange で、グリーンごとの最小最大では正規化しない。
  * 同じ明暗差はどのシードでも同じ勾配 % を意味する。ここを正規化に戻すと読みゲームとして成立しない。
+ *
+ * 明暗は基準の明るさ（係数 1）を中心に上下へ振る。片側だけ暗くしていた頃は、
+ * 濃くするほど平均が下がって（実測 45/255）暗い場所では全体が沈み、読めなくなっていた。
  */
 export class GreenMesh {
   readonly mesh: THREE.Mesh;
@@ -274,10 +277,12 @@ export class GreenMesh {
       const gradient = softRamp(towardLight, shade.gradientRange);
       const height = softRamp(h, shade.heightRange);
 
+      // 1 を中心に両方向へ振る。上りは明るく、下りは暗く。
+      // 片側だけ暗くする式だと、濃くするほど画面全体が沈んで暗いところで真っ先に潰れる
       const k =
-        1 -
-        shade.gradientStrength * (1 - gradient) -
-        shade.heightStrength * (1 - height);
+        1 +
+        shade.gradientStrength * (2 * gradient - 1) +
+        shade.heightStrength * (2 * height - 1);
       color.setXYZ(i, this.base.r * k, this.base.g * k, this.base.b * k);
     }
     position.needsUpdate = true;

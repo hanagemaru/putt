@@ -92,31 +92,28 @@ export function readPose(view: ReadView, ball: THREE.Vector2, cup: THREE.Vector2
 }
 
 /**
- * ADDRESS（§3）。ボールの後方に立ち、見下ろす角度でカップ方向を向く。
- * ROLL をかける。これはアドレス姿勢で顔を傾けたままピンを見ている状態の表現。
+ * ADDRESS（§3）。ボールの後方に立ち、狙った方向をまっすぐ見る。
+ *
+ * 傾けた視野（ROLL）で狙いを合わせても遊びとして意味がなかったので持たない。
+ * 見下ろし角も角度では決めない。注視点をボールから狙い方向へ lookDistance 進んだ芝の上に置くと、
+ * ピッチは幾何から決まり、距離が変わっても狙った先が画面に入る。
+ * lookDistance はふだんカップまでの距離を渡す（＝狙った先にピンが見える）。
  */
 export function addressPose(
   ball: THREE.Vector2,
   aim: number,
   green: Green,
+  lookDistance: number,
 ): CameraPose {
   const A = G.address;
   // 狙い方向の単位ベクトル。physics と同じ約束（0 が -Z、+ で +X へ回る）
   const dx = Math.sin(aim);
   const dz = -Math.cos(aim);
-  const x = ball.x - dx * A.back;
-  const z = ball.y - dz * A.back;
-  const position = above(green, x, z, A.eyeHeight);
-  // 狙い方向へ pitchDeg だけ見下ろす。ボールを直接見ると足元しか映らないので、
-  // 視線の先はボールの向こう側に置く（ボールが画面下端、ピンが上寄りに入る）
-  const pitch = THREE.MathUtils.degToRad(A.pitchDeg);
-  const reach = A.eyeHeight / Math.tan(pitch);
-  const target = new THREE.Vector3(
-    position.x + dx * reach,
-    position.y - A.eyeHeight,
-    position.z + dz * reach,
-  );
-  return pose(position, target, THREE.MathUtils.degToRad(A.rollDeg));
+  const position = above(green, ball.x - dx * A.back, ball.y - dz * A.back, A.eyeHeight);
+  const reach = Math.max(lookDistance, A.lookDistanceMin);
+  const tx = ball.x + dx * reach;
+  const tz = ball.y + dz * reach;
+  return pose(position, above(green, tx, tz, 0));
 }
 
 /**
@@ -200,6 +197,21 @@ export function lerpAngle(a: number, b: number, t: number): number {
  */
 export function strokeUp(aim: number, out: THREE.Vector3): THREE.Vector3 {
   return out.set(Math.cos(aim), 0, Math.sin(aim));
+}
+
+/**
+ * 半径 radius [m] の球が distance [m] 先にあるときの画面上の半径 [px]。
+ * ストローク画面のインパクトラインを実寸に合わせるために使う（§4.2）。
+ * 3D で描いているボールと同じ大きさになるので、px の定数を別に持たない
+ */
+export function projectedRadiusPx(
+  radius: number,
+  distance: number,
+  fovDeg: number,
+  viewportHeightPx: number,
+): number {
+  const half = Math.tan(THREE.MathUtils.degToRad(fovDeg) / 2) * distance;
+  return (radius / half) * (viewportHeightPx / 2);
 }
 
 const UP_Y = new THREE.Vector3(0, 1, 0);
