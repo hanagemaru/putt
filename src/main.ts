@@ -59,23 +59,54 @@ const camera = new THREE.PerspectiveCamera(
 );
 const rig = new CameraRig(camera);
 
-// グリーン。ハイトマップが表示と物理の唯一の情報源（spec §1）
-const params = defaultGreenParams();
-const green = new Green(params);
-scene.add(new GreenMesh(green, defaultShadeParams()).mesh);
+// グリーン。ハイトマップが表示と物理の唯一の情報源（spec §1）。
+// シードを差し替えられるように、地形にぶら下がるものはまとめて作り直す
+const shade = defaultShadeParams();
+let seed = seedFromUrl() ?? CONFIG.green.seed;
+let green = new Green({ ...defaultGreenParams(), seed });
 
 /** STROKE の間だけ消すもの。背景の木と外周の地面（真下を向いていれば映らない） */
 const props = new THREE.Group();
-props.add(createSurround(green));
-props.add(createTrees(green, params.seed));
 scene.add(props);
 
 /**
- * カップと旗竿。**常に表示する。**
- * 実在するものなので、真下を見下ろす STROKE でも視野に入るなら見える（＝タップインの距離）。
+ * グリーンの表示メッシュと、**常に表示する**カップ・旗竿。
+ * カップは実在するものなので、真下を見下ろす STROKE でも視野に入るなら見える（＝タップインの距離）。
  * 真下 1.5m・FOV 70度の視野は横 ±0.49m しかないので、遠いカップは自然に映らない
  */
-scene.add(createHole(green));
+const terrain = new THREE.Group();
+scene.add(terrain);
+
+/** URL の ?seed=... 。同じグリーンをもう一度出したいときのため */
+function seedFromUrl(): number | null {
+  const raw = new URLSearchParams(location.search).get('seed');
+  if (raw === null) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? Math.floor(n) : null;
+}
+
+/** three.js のオブジェクトを畳む。作り直すたびに GPU のバッファを捨てる */
+function disposeGroup(group: THREE.Group): void {
+  group.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    m.geometry.dispose();
+    const mat = m.material;
+    if (Array.isArray(mat)) mat.forEach((x) => x.dispose());
+    else mat.dispose();
+  });
+  group.clear();
+}
+
+/** 地形と、地形にぶら下がるものを作り直す */
+function buildTerrain(): void {
+  disposeGroup(terrain);
+  disposeGroup(props);
+  terrain.add(new GreenMesh(green, shade).mesh);
+  terrain.add(createHole(green));
+  props.add(createSurround(green));
+  props.add(createTrees(green, seed));
+}
 
 const dir = new THREE.DirectionalLight(0xffffff, CONFIG.light.directionalIntensity);
 dir.position.set(
@@ -125,7 +156,7 @@ scene.add(trail);
 
 type State = 'READ' | 'ADDRESS' | 'STROKE' | 'FOLLOW' | 'CUP' | 'RESULT';
 
-const roller = new Roller(green);
+let roller = new Roller(green);
 const cup = new THREE.Vector2(CONFIG.hole.position.x, CONFIG.hole.position.z);
 /** ボールの現在位置（XZ）。roller から毎フレーム写す */
 const ball = new THREE.Vector2(G.ballStart.x, G.ballStart.z);
@@ -194,7 +225,7 @@ function enterRead(cut = false): void {
   aimBase = Math.atan2(cup.x - ball.x, -(cup.y - ball.y));
   aim = aimBase;
   readView = READ_VIEWS[0];
-  const p = readPose(readView, ball, cup, green);
+  const p = readPose(readView, ball, cup, green, camera.aspect);
   if (cut) rig.cut(p);
   else rig.transition(p, G.read.transition);
 }
@@ -202,7 +233,7 @@ function enterRead(cut = false): void {
 function switchReadView(step: number): void {
   const i = READ_VIEWS.indexOf(readView);
   readView = READ_VIEWS[(i + step + READ_VIEWS.length) % READ_VIEWS.length];
-  rig.transition(readPose(readView, ball, cup, green), G.read.transition);
+  rig.transition(readPose(readView, ball, cup, green, camera.aspect), G.read.transition);
 }
 
 function enterAddress(): void {
@@ -308,6 +339,29 @@ function nextPutt(): void {
   roller.place(ball.x, ball.y);
   updateBallMesh();
   enterRead();
+}
+
+/**
+ * 別のグリーンにする。うねりはシード次第なので、いろいろな地形で読みを試すために要る。
+ * URL にも書いておくので、面白い地形が出たらその URL でもう一度出せる
+ */
+function newGreen(next: number): void {
+  seed = next >>> 0;
+  green = new Green({ ...defaultGreenParams(), seed });
+  roller = new Roller(green);
+  buildTerrain();
+  ball.set(G.ballStart.x, G.ballStart.z);
+  shotStart.copy(ball);
+  roller.place(ball.x, ball.y);
+  shots = 0;
+  lastResult = '';
+  lastSwing = '';
+  trail.visible = false;
+  updateBallMesh();
+  const url = new URL(location.href);
+  url.searchParams.set('seed', String(seed));
+  history.replaceState(null, '', url);
+  enterRead(true);
 }
 
 // --- 軌跡 -----------------------------------------------------------------
@@ -523,7 +577,14 @@ const hud = {
   swing: document.getElementById('hud-swing')!,
   result: document.getElementById('hud-result')!,
   notice: document.getElementById('hud-notice')!,
+  seed: document.getElementById('hud-seed') as HTMLButtonElement,
 };
+
+// シードのボタン。押すと別の地形になる（READ / RESULT のときだけ）
+hud.seed.addEventListener('click', () => {
+  if (state !== 'READ' && state !== 'RESULT') return;
+  newGreen(Math.floor(Math.random() * 100000));
+});
 
 function updateHud(): void {
   hud.state.textContent = state;
@@ -536,6 +597,8 @@ function updateHud(): void {
   hud.swing.textContent = lastSwing;
   hud.result.textContent = lastResult;
   hud.notice.textContent = notice;
+  hud.seed.textContent = `シード ${seed} ⟳`;
+  hud.seed.disabled = state !== 'READ' && state !== 'RESULT';
 }
 
 // --- 画面サイズ -----------------------------------------------------------
@@ -563,6 +626,7 @@ window.addEventListener('resize', resize);
 
 // --- 開始 -----------------------------------------------------------------
 
+buildTerrain();
 roller.place(G.ballStart.x, G.ballStart.z);
 ball.set(roller.x, roller.z);
 updateBallMesh();

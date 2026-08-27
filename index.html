@@ -77,6 +77,23 @@
         font-size: 15px;
         font-weight: 600;
       }
+      /* シードの差し替え。うねりは地形次第なので、いろいろ試せるようにしておく */
+      #hud-seed {
+        margin-top: 4px;
+        pointer-events: auto;
+        appearance: none;
+        border: 1px solid rgba(232, 240, 232, 0.45);
+        border-radius: 999px;
+        background: rgba(0, 0, 0, 0.35);
+        color: #e8f0e8;
+        font: inherit;
+        font-size: 12px;
+        padding: 4px 12px;
+        font-variant-numeric: tabular-nums;
+      }
+      #hud-seed:disabled {
+        opacity: 0.35;
+      }
       #hud .notice {
         margin-top: 2px;
         font-size: 12px;
@@ -138,6 +155,7 @@
       <div class="row" id="hud-swing"></div>
       <div class="result" id="hud-result"></div>
       <div class="notice" id="hud-notice"></div>
+      <button type="button" id="hud-seed">シード</button>
     </div>
 
     <div id="rotate-overlay">

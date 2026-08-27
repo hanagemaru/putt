@@ -54,39 +54,61 @@ function towardCup(ball: THREE.Vector2, cup: THREE.Vector2): THREE.Vector2 {
   return d.normalize();
 }
 
+/** 横方向の半画角の tan。縦画面は横が狭いので、収まるかどうかはこちらで決まる */
+function horizontalHalfTan(fovDeg: number, aspect: number): number {
+  return Math.tan(THREE.MathUtils.degToRad(fovDeg) / 2) * aspect;
+}
+
 /**
  * READ の定点（§3）。視点高さは現実的に。
- * どれもボールとカップを結ぶラインを基準に置く。
+ *
+ * **どの視点でもボールとカップが両方見えること。** 片方でも画面から外れると、
+ * 何を映しているのか分からず読みに使えない。そのために注視点は常に
+ * ボールとカップの中間に置き、横から見る視点は2点が収まる距離まで引く。
  */
-export function readPose(view: ReadView, ball: THREE.Vector2, cup: THREE.Vector2, green: Green): CameraPose {
+export function readPose(
+  view: ReadView,
+  ball: THREE.Vector2,
+  cup: THREE.Vector2,
+  green: Green,
+  aspect: number,
+): CameraPose {
   const R = G.read;
   const dir = towardCup(ball, cup);
   // ラインの法線（右手側）
   const nx = -dir.y;
   const nz = dir.x;
+  const mx = (ball.x + cup.x) / 2;
+  const mz = (ball.y + cup.y) / 2;
+  // 注視点はいつもラインの中点。どちらか一方を見ると、もう一方が画面から外れる
+  const mid = above(green, mx, mz, 0);
+  const span = Math.hypot(cup.x - ball.x, cup.y - ball.y);
 
   switch (view) {
     case 'BEHIND_BALL': {
       const x = ball.x - dir.x * R.behindBallDistance;
       const z = ball.y - dir.y * R.behindBallDistance;
-      return pose(above(green, x, z, R.behindBallHeight), above(green, cup.x, cup.y, 0));
+      return pose(above(green, x, z, R.behindBallHeight), mid);
     }
     case 'BEHIND_HOLE': {
-      const x = cup.x + dir.x * R.behindHoleDistance;
-      const z = cup.y + dir.y * R.behindHoleDistance;
-      return pose(above(green, x, z, R.behindHoleHeight), above(green, ball.x, ball.y, 0));
+      // 真後ろだと旗竿と旗がボールに重なるので、横へずらして立つ。
+      // 旗は竿の +X 側に垂れるので、ボールが旗の反対側に見える向き（ラインの左手側）へずらす
+      const x = cup.x + dir.x * R.behindHoleDistance - nx * R.behindHoleSideOffset;
+      const z = cup.y + dir.y * R.behindHoleDistance - nz * R.behindHoleSideOffset;
+      return pose(above(green, x, z, R.behindHoleHeight), mid);
     }
     case 'LOW_LINE': {
       const x = ball.x - dir.x * R.lowLineDistance;
       const z = ball.y - dir.y * R.lowLineDistance;
-      return pose(above(green, x, z, R.lowLineHeight), above(green, cup.x, cup.y, 0));
+      return pose(above(green, x, z, R.lowLineHeight), mid);
     }
     case 'SIDE_MID': {
-      const mx = (ball.x + cup.x) / 2;
-      const mz = (ball.y + cup.y) / 2;
-      const x = mx + nx * R.sideMidOffset;
-      const z = mz + nz * R.sideMidOffset;
-      return pose(above(green, x, z, R.sideMidHeight), above(green, mx, mz, 0));
+      // ラインは画面の横方向に寝るので、横の画角に 2点が収まる距離まで引く
+      const need = ((span / 2) * R.sideMidFitMargin) / horizontalHalfTan(CONFIG.camera.fov, aspect);
+      const offset = Math.max(R.sideMidOffset, need);
+      const x = mx + nx * offset;
+      const z = mz + nz * offset;
+      return pose(above(green, x, z, R.sideMidHeight), mid);
     }
   }
 }

@@ -308,6 +308,23 @@ export function createHole(green: Green): THREE.Group {
   const radius = h.diameter / 2;
   const dark = new THREE.MeshBasicMaterial({ color: h.cupColor });
 
+  // 芝の面に開いた穴。表示メッシュ（20m を 128 分割 ＝ 1マス 15.6cm）に直径 10.8cm の穴は
+  // 開けられないので、芝の上に濃い円を1枚置いて穴に見せる。
+  // これがないとカップの内側は芝に隠れて、どこにカップがあるのか分からない
+  const mouth = new THREE.Mesh(new THREE.CircleGeometry(radius, 24), dark);
+  mouth.rotation.x = -Math.PI / 2;
+  mouth.position.set(h.position.x, surfaceY + h.mouthLift, h.position.z);
+  group.add(mouth);
+
+  // カップの縁。切り口が白く見えるので、遠くからでもカップだと分かる
+  const rim = new THREE.Mesh(
+    new THREE.RingGeometry(radius, radius + h.rimWidth, 24),
+    new THREE.MeshBasicMaterial({ color: h.rimColor }),
+  );
+  rim.rotation.x = -Math.PI / 2;
+  rim.position.set(h.position.x, surfaceY + h.mouthLift, h.position.z);
+  group.add(rim);
+
   // 内壁。上端をグリーン面に合わせる
   const wall = new THREE.Mesh(
     new THREE.CylinderGeometry(radius, radius, h.depth, 24, 1, true),
