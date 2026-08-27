@@ -51,6 +51,37 @@ app.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(CONFIG.renderer.background);
 
+/**
+ * レトロなドット感（試作）。低い解像度のレンダーターゲットに描いて、
+ * NearestFilter のまま全画面へ引き伸ばす。粒の大きさは pixelScale（何分の1で描くか）。
+ * 1 のときは素通しで、これまで通り直接描く
+ */
+let pixelScale = 1;
+const lowRes = new THREE.WebGLRenderTarget(1, 1, {
+  minFilter: THREE.NearestFilter,
+  magFilter: THREE.NearestFilter,
+  depthBuffer: true,
+});
+const screenScene = new THREE.Scene();
+const screenCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const screenQuad = new THREE.Mesh(
+  new THREE.PlaneGeometry(2, 2),
+  new THREE.MeshBasicMaterial({ map: lowRes.texture }),
+);
+screenScene.add(screenQuad);
+
+function renderFrame(): void {
+  if (pixelScale <= 1) {
+    renderer.setRenderTarget(null);
+    renderer.render(scene, camera);
+    return;
+  }
+  renderer.setRenderTarget(lowRes);
+  renderer.render(scene, camera);
+  renderer.setRenderTarget(null);
+  renderer.render(screenScene, screenCamera);
+}
+
 const camera = new THREE.PerspectiveCamera(
   CONFIG.camera.fov,
   1,
@@ -76,6 +107,7 @@ scene.add(props);
  */
 const terrain = new THREE.Group();
 scene.add(terrain);
+let greenMesh: GreenMesh;
 
 /** URL の ?seed=... 。同じグリーンをもう一度出したいときのため */
 function seedFromUrl(): number | null {
@@ -102,7 +134,8 @@ function disposeGroup(group: THREE.Group): void {
 function buildTerrain(): void {
   disposeGroup(terrain);
   disposeGroup(props);
-  terrain.add(new GreenMesh(green, shade).mesh);
+  greenMesh = new GreenMesh(green, shade);
+  terrain.add(greenMesh.mesh);
   terrain.add(createHole(green));
   props.add(createSurround(green));
   props.add(createTrees(green, seed));
@@ -563,7 +596,7 @@ renderer.setAnimationLoop((now) => {
   }
 
   updateHud();
-  renderer.render(scene, camera);
+  renderFrame();
 });
 
 // --- デバッグ表示（§5 の一部。全項目と lil-gui は T4） ---------------------
@@ -578,7 +611,30 @@ const hud = {
   result: document.getElementById('hud-result')!,
   notice: document.getElementById('hud-notice')!,
   seed: document.getElementById('hud-seed') as HTMLButtonElement,
+  pixel: document.getElementById('hud-pixel') as HTMLButtonElement,
 };
+
+/**
+ * ドット感の切り替え（試作）。実機で見比べられるように3段階を回す。
+ * 0: そのまま / 1: 低解像度に描いて引き伸ばす / 2: それに加えて濃淡を段に丸める
+ */
+const PIXEL_MODES = ['ドット OFF', 'ドット', 'ドット＋色を段に'];
+let pixelMode = 0;
+
+function applyPixelMode(): void {
+  pixelScale = pixelMode === 0 ? 1 : CONFIG.pixel.scale;
+  const levels = pixelMode === 2 ? CONFIG.pixel.levels : CONFIG.green.shade.levels;
+  if (shade.levels !== levels) {
+    shade.levels = levels;
+    greenMesh.setShade(shade);
+  }
+  resizeLowRes();
+}
+
+hud.pixel.addEventListener('click', () => {
+  pixelMode = (pixelMode + 1) % PIXEL_MODES.length;
+  applyPixelMode();
+});
 
 // シードのボタン。押すと別の地形になる（READ / RESULT のときだけ）
 hud.seed.addEventListener('click', () => {
@@ -598,10 +654,19 @@ function updateHud(): void {
   hud.result.textContent = lastResult;
   hud.notice.textContent = notice;
   hud.seed.textContent = `シード ${seed} ⟳`;
+  hud.pixel.textContent = PIXEL_MODES[pixelMode];
   hud.seed.disabled = state !== 'READ' && state !== 'RESULT';
 }
 
 // --- 画面サイズ -----------------------------------------------------------
+
+/** 低解像度ターゲットを画面サイズに合わせる。粒の大きさは pixelScale で決まる */
+function resizeLowRes(): void {
+  const dpr = renderer.getPixelRatio();
+  const w = Math.max(1, Math.round((app.clientWidth * dpr) / Math.max(pixelScale, 1)));
+  const h = Math.max(1, Math.round((app.clientHeight * dpr) / Math.max(pixelScale, 1)));
+  lowRes.setSize(w, h);
+}
 
 function resize(): void {
   const w = app.clientWidth;
@@ -609,6 +674,7 @@ function resize(): void {
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
+  resizeLowRes();
   strokeView.resize();
   // インパクトラインをボールの見かけの大きさに合わせる（§4.2）。
   // 真下から見たボールまでの距離は、視点高さから半径を引いたぶん

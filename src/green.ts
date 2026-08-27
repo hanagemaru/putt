@@ -205,6 +205,12 @@ export interface ShadeParams {
   heightStrength: number;
   /** 高さの濃淡がフルレンジで表す高低差 [m] */
   heightRange: number;
+  /**
+   * 明るさの係数を丸める段数（レトロ表現の試作）。0 で丸めない。
+   * 段にすると濃淡が等高線のような帯になる。1段ぶんの明暗差＝一定の勾配差なので、
+   * 「絶対スケール」の約束とも噛み合う（段の数がそのまま勾配の目盛りになる）
+   */
+  levels: number;
 }
 
 export function defaultShadeParams(): ShadeParams {
@@ -283,7 +289,9 @@ export class GreenMesh {
         1 +
         shade.gradientStrength * (2 * gradient - 1) +
         shade.heightStrength * (2 * height - 1);
-      color.setXYZ(i, this.base.r * k, this.base.g * k, this.base.b * k);
+      // 段に丸める（レトロ表現）。0 なら連続のまま
+      const q = shade.levels > 0 ? Math.round(k * shade.levels) / shade.levels : k;
+      color.setXYZ(i, this.base.r * q, this.base.g * q, this.base.b * q);
     }
     position.needsUpdate = true;
     color.needsUpdate = true;
