@@ -615,11 +615,11 @@ const hud = {
 };
 
 /**
- * ドット感の切り替え（試作）。実機で見比べられるように3段階を回す。
+ * ドット感の切り替え。既定は 2（採用した見た目）。比較用に OFF も残す。
  * 0: そのまま / 1: 低解像度に描いて引き伸ばす / 2: それに加えて濃淡を段に丸める
  */
 const PIXEL_MODES = ['ドット OFF', 'ドット', 'ドット＋色を段に'];
-let pixelMode = 0;
+let pixelMode = 2;
 
 function applyPixelMode(): void {
   pixelScale = pixelMode === 0 ? 1 : CONFIG.pixel.scale;
@@ -693,6 +693,7 @@ window.addEventListener('resize', resize);
 // --- 開始 -----------------------------------------------------------------
 
 buildTerrain();
+applyPixelMode();
 roller.place(G.ballStart.x, G.ballStart.z);
 ball.set(roller.x, roller.z);
 updateBallMesh();
