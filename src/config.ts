@@ -88,14 +88,11 @@ export const CONFIG = {
     position: { x: 0.6, z: -5.5 },
     /** 旗竿の高さ [m]。必ず鉛直に立てる（傾き表現の基準） */
     flagstickHeight: 1.5,
-    flagstickRadius: 0.008,
+    flagstickRadius: 0.016,
     flagWidth: 0.32,
     flagHeight: 0.22,
     flagColor: 0xd94f3d,
     cupColor: 0x121a12,
-    /** カップの縁の色と幅 [m]。芝を切った断面。遠くからカップを見つける手がかりになる */
-    rimColor: 0xdfe7d8,
-    rimWidth: 0.012,
     /** 穴に見せる円を芝から浮かせる量 [m]。Z ファイティング防止 */
     mouthLift: 0.004,
   },
@@ -189,10 +186,19 @@ export const CONFIG = {
    * HUD とストロークのオーバーレイは DOM / 2D キャンバスなので、これまで通りの解像度のまま
    */
   pixel: {
-    /** 何分の1の解像度で描くか。1 で等倍（＝ドット感なし） */
-    scale: 4,
-    /** ドット感を出すときに使う色の段数（shade.levels に入れる値） */
+    /**
+     * 何分の1の解像度で描くか。1 で等倍（＝ドット感なし）。
+     * 粗くするほどレトロだが、旗竿やカップのような細いものが texel を割って消える
+     */
+    scale: 3,
+    /** グリーンの濃淡の段数（shade.levels に入れる値）。勾配の目盛りになる */
     levels: 8,
+    /**
+     * 引き伸ばすときに最終画像を丸める色の段数（1チャンネルあたり）。
+     * 頂点カラーだけ段にしてもライトの陰影が連続なので、境目がぼやけて見える。
+     * ここで空・木・ボールまで含めて色数を絞ると、はっきりドット絵になる
+     */
+    colorLevels: 12,
   },
 
   renderer: {
@@ -249,7 +255,7 @@ export const CONFIG = {
        * 縦画面は横の画角が狭い（fov 70度・アスペクト 0.46 で片側 18度）ので、
        * 固定の距離だとラインが画面からはみ出して、ボールもカップも見えない絵になる
        */
-      sideMidFitMargin: 1.25,
+      sideMidFitMargin: 1.1,
       sideMidHeight: 1.6,
       /** 視点を切り替えるときの補間時間 [s] */
       transition: 0.35,
@@ -436,7 +442,7 @@ export const CONFIG = {
     /** ボールを模した円の半径 [px] */
     ballRadius: 28,
     /** インパクト判定に必要な最小バックスイング幅 [px]。指を置いた点から右へこれだけ引くまで打てない */
-    minBackswingPx: 40,
+    minBackswingPx: 20,
     /** パターヘッドのフェース長 [px]（§4.4）。この半分を超えて外すと空振り */
     putterLength: 64,
     /** パターヘッドの厚み [px]。描画のみで判定には使わない */

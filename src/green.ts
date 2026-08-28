@@ -324,15 +324,6 @@ export function createHole(green: Green): THREE.Group {
   mouth.position.set(h.position.x, surfaceY + h.mouthLift, h.position.z);
   group.add(mouth);
 
-  // カップの縁。切り口が白く見えるので、遠くからでもカップだと分かる
-  const rim = new THREE.Mesh(
-    new THREE.RingGeometry(radius, radius + h.rimWidth, 24),
-    new THREE.MeshBasicMaterial({ color: h.rimColor }),
-  );
-  rim.rotation.x = -Math.PI / 2;
-  rim.position.set(h.position.x, surfaceY + h.mouthLift, h.position.z);
-  group.add(rim);
-
   // 内壁。上端をグリーン面に合わせる
   const wall = new THREE.Mesh(
     new THREE.CylinderGeometry(radius, radius, h.depth, 24, 1, true),

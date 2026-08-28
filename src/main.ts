@@ -64,10 +64,33 @@ const lowRes = new THREE.WebGLRenderTarget(1, 1, {
 });
 const screenScene = new THREE.Scene();
 const screenCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-const screenQuad = new THREE.Mesh(
-  new THREE.PlaneGeometry(2, 2),
-  new THREE.MeshBasicMaterial({ map: lowRes.texture }),
-);
+// 引き伸ばすときに色の段数も絞る。頂点カラーだけ段にしてもライトの陰影が連続なので、
+// それだけでは段の境目がぼやける。空・木・ボールまで含めて丸めるとドット絵らしくなる。
+// 丸めは sRGB の側で行う（リニアのまま丸めると暗い側だけ段が細かくなる）
+const screenMaterial = new THREE.ShaderMaterial({
+  uniforms: { map: { value: lowRes.texture }, levels: { value: 0 } },
+  vertexShader: `
+    varying vec2 vUv;
+    void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }
+  `,
+  fragmentShader: `
+    uniform sampler2D map;
+    uniform float levels;
+    varying vec2 vUv;
+    void main() {
+      vec3 lin = texture2D(map, vUv).rgb;
+      if (levels > 0.0) {
+        vec3 srgb = pow(clamp(lin, 0.0, 1.0), vec3(1.0 / 2.2));
+        srgb = floor(srgb * levels + 0.5) / levels;
+        lin = pow(srgb, vec3(2.2));
+      }
+      gl_FragColor = vec4(lin, 1.0);
+      #include <colorspace_fragment>
+    }
+  `,
+});
+const screenQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), screenMaterial);
+screenQuad.frustumCulled = false;
 screenScene.add(screenQuad);
 
 function renderFrame(): void {
@@ -623,6 +646,7 @@ let pixelMode = 2;
 
 function applyPixelMode(): void {
   pixelScale = pixelMode === 0 ? 1 : CONFIG.pixel.scale;
+  screenMaterial.uniforms.levels.value = pixelMode === 2 ? CONFIG.pixel.colorLevels : 0;
   const levels = pixelMode === 2 ? CONFIG.pixel.levels : CONFIG.green.shade.levels;
   if (shade.levels !== levels) {
     shade.levels = levels;
