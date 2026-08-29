@@ -34,7 +34,7 @@ interface Putter {
   y: number;
   /** 実際に描く角度。目標角へ時定数で寄せる */
   angle: number;
-  /** 目標角。最小二乗フィットの結果をそのまま入れる */
+  /** 目標角。計測角をゲーム本体用の感度で鈍らせた値 */
   targetAngle: number;
   mode: 'rest' | 'follow';
   /** この一振りでインパクト済みか */
@@ -192,7 +192,11 @@ export class StrokeView {
       // 指に追従する。インパクト後も空振りのあとも追従したまま振り抜かせる（§4.4）
       if (this.putter.mode === 'follow') {
         const v = this.measure.liveVelocity();
-        if (v) this.putter.targetAngle = faceAngleFrom(v.vx, v.vy, this.putter.targetAngle);
+        if (v && Math.hypot(v.vx, v.vy) >= C.faceMinSpeedPx) {
+          const measured = faceAngleFrom(v.vx, v.vy, this.putter.targetAngle);
+          const offset = wrapPi(measured - Math.PI);
+          this.putter.targetAngle = Math.PI + offset * S.faceAngleSensitivity;
+        }
         this.putter.x = this.followX(s.x);
         this.putter.y = this.measure.putterY(this.ballY, s);
       }
