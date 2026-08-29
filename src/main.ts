@@ -208,7 +208,7 @@ trail.visible = false;
 scene.add(trail);
 
 /**
- * 方向調整画面だけに出す短い打ち出し方向線。
+ * ADDRESS の方向調整と STROKE のカップ確認に出す短い打ち出し方向線。
  * XZ の向きは aim だけで決め、物理の傾斜・曲がりは一切予測しない。
  */
 const aimGuidePositions = new Float32Array(6);
@@ -260,12 +260,16 @@ let lastSwing = '';
 /** FOLLOW のヨー・ピッチ。カメラは平行移動しない（§3） */
 let followYaw = 0;
 let followPitch = -Math.PI / 2;
+/** CUPへ切り替える直前のFOLLOW固定位置。CUPから戻るときに復元する */
+const followReturnPosition = new THREE.Vector3();
 /**
  * 打った直後、ボールが STROKE の画面端へ近づくまでは視点を動かさない区間。
  * 画面外まで待つとボールが見えない時間ができるので、端の手前で FOLLOW へ切り替える。
  */
 let holding = false;
 let holdElapsed = 0;
+/** この一打ですでにCUP定点を見せたか。FOLLOWへ戻ったあと再度CUPへ入るのを防ぐ */
+let cupViewUsed = false;
 /** RESULT に入ってから俯瞰へ動き出すまでの待ち [s] */
 let settleElapsed = 0;
 let resultReady = false;
@@ -314,7 +318,9 @@ function updateAimGuide(): void {
   aimGuidePositions[4] = green.sampleHeight(ex, ez) + G.aim.guideLift;
   aimGuidePositions[5] = ez;
   (aimGuideGeometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
-  aimGuide.visible = state === 'ADDRESS' && aimView === 'AIM';
+  const addressAim = state === 'ADDRESS' && aimView === 'AIM';
+  const strokeCupAim = state === 'STROKE' && strokeCameraView === 'CUP';
+  aimGuide.visible = addressAim || strokeCupAim;
 }
 
 // --- 状態遷移 -------------------------------------------------------------
@@ -327,6 +333,7 @@ function enterAddress(cut = false, resetAim = true): void {
   state = 'ADDRESS';
   aimView = 'AIM';
   strokeCameraView = 'DOWN';
+  cupViewUsed = false;
   notice = '左右スワイプで狙い、タップでストローク';
   props.visible = true;
   ballMesh.visible = roller.status !== 'holed';
@@ -364,6 +371,7 @@ function enterStroke(): void {
   state = 'STROKE';
   strokeCameraView = 'DOWN';
   cupCheckTilted = false;
+  cupViewUsed = false;
   notice = '';
   strokeArmed = false;
   aimGuide.visible = false;
@@ -375,16 +383,23 @@ function enterStroke(): void {
   rig.transition(strokePose(ball, green), G.stroke.transition, strokeUp(aim, tmpUp));
 }
 
-/** STROKE 真下姿勢の位置を保ったまま、視線だけカップへ向ける。 */
+/** STROKE 真下姿勢の位置を保ったまま、現在の狙い方向を見る。 */
 function showCupCheck(): void {
   if (state !== 'STROKE' || strokeCameraView !== 'DOWN' || rig.transitioning) return;
   strokeCameraView = 'CUP';
   strokeArmed = false;
   strokeView.exit();
   props.visible = true;
-  notice = 'カップ確認 ・ 傾きの有無を比較できます';
+  notice = 'カップ確認 ・ 左右スワイプで狙いを調整できます';
+  updateAimGuide();
   rig.transition(
-    strokeCupPose(ball, cup, green, cupCheckTilted ? G.stroke.cupCheckRollDeg : 0),
+    strokeCupPose(
+      ball,
+      aim,
+      green,
+      distanceToCup(),
+      cupCheckTilted ? G.stroke.cupCheckRollDeg : 0,
+    ),
     G.stroke.cupCheckTransition,
   );
 }
@@ -395,7 +410,13 @@ function setCupCheckTilt(tilted: boolean): void {
   if (cupCheckTilted === tilted) return;
   cupCheckTilted = tilted;
   rig.transition(
-    strokeCupPose(ball, cup, green, cupCheckTilted ? G.stroke.cupCheckRollDeg : 0),
+    strokeCupPose(
+      ball,
+      aim,
+      green,
+      distanceToCup(),
+      cupCheckTilted ? G.stroke.cupCheckRollDeg : 0,
+    ),
     G.stroke.cupCheckTransition,
   );
 }
@@ -406,6 +427,7 @@ function returnToStrokeView(): void {
   strokeCameraView = 'DOWN';
   strokeArmed = false;
   notice = '';
+  updateAimGuide();
   rig.transition(strokePose(ball, green), G.stroke.cupCheckTransition, strokeUp(aim, tmpUp));
 }
 
@@ -420,6 +442,7 @@ function launch(speedMs: number, launchAngle: number): void {
   // 画面の左＝狙い方向。スワイプが画面下へ流れた分だけ狙いの左へ出る
   const direction = aim - launchAngle;
   shotStart.copy(ball);
+  cupViewUsed = false;
   roller.launch(ball.x, ball.y, speedMs, direction);
   shots++;
   enterFollow();
@@ -466,9 +489,38 @@ function revealCourse(): void {
 }
 
 function enterCup(): void {
+  followReturnPosition.copy(camera.position);
   state = 'CUP';
+  cupViewUsed = true;
+  aimGuide.visible = false;
   // カット。カップ後方・芝の高さの定点（§3）
   rig.cut(cupPose(shotStart, cup, green));
+}
+
+/** CUP定点でボールが画面端へ近づいたら、見失う前にFOLLOWへ戻す。 */
+function cupBallNearEdge(): boolean {
+  ballWorld(tmpBall).project(camera);
+  return (
+    Math.abs(tmpBall.x) >= G.cup.returnNdc ||
+    Math.abs(tmpBall.y) >= G.cup.returnNdc ||
+    tmpBall.z > 1
+  );
+}
+
+/** CUP定点を離れ、CUPへ入る直前のFOLLOW固定位置から追従を再開する。 */
+function resumeFollowFromCup(): void {
+  if (state !== 'CUP') return;
+  state = 'FOLLOW';
+  holding = false;
+  notice = '';
+  strokeCameraView = 'DOWN';
+  aimGuide.visible = false;
+  strokeView.exit();
+  props.visible = true;
+  ballMesh.visible = roller.status !== 'holed';
+  updateBallMesh();
+  camera.position.copy(followReturnPosition);
+  snapFollowCamera();
 }
 
 /** ボールが完全に停止してから呼ぶ。ここで初めて俯瞰と軌跡を出す（§3） */
@@ -571,8 +623,8 @@ function updateBallMesh(): void {
 }
 
 // --- 入力 -----------------------------------------------------------------
-// STROKE のスワイプは stroke-view.ts が受け持つ。
-// ここは ADDRESS の方向調整と RESULT のタップだけを見る。カメラ視点はボタンで切り替える。
+// STROKE の通常スワイプは stroke-view.ts が受け持つ。
+// renderer 側では ADDRESS と STROKEカップ確認の方向調整、RESULT のタップを見る。
 
 let pointerId: number | null = null;
 let downX = 0;
@@ -603,12 +655,27 @@ surface.addEventListener('pointermove', (e) => {
   const dx = e.clientX - lastX;
   lastX = e.clientX;
   moved = Math.max(moved, Math.hypot(e.clientX - downX, e.clientY - downY));
-  // ADDRESS の「方向調整」視点だけ、指の動きに追従して狙いが変わる
-  if (state === 'ADDRESS' && aimView === 'AIM') {
+
+  const adjustingAddress = state === 'ADDRESS' && aimView === 'AIM';
+  const adjustingCupCheck =
+    state === 'STROKE' && strokeCameraView === 'CUP' && !rig.transitioning;
+  if (adjustingAddress || adjustingCupCheck) {
     const max = THREE.MathUtils.degToRad(G.aim.maxOffsetDeg);
     const offset = THREE.MathUtils.clamp(aim - aimBase + dx * G.aim.sensitivity, -max, max);
     aim = aimBase + offset;
     updateAimGuide();
+
+    if (adjustingCupCheck) {
+      rig.apply(
+        strokeCupPose(
+          ball,
+          aim,
+          green,
+          distanceToCup(),
+          cupCheckTilted ? G.stroke.cupCheckRollDeg : 0,
+        ),
+      );
+    }
   }
 });
 
@@ -701,6 +768,17 @@ renderer.setAnimationLoop((now) => {
           strokeView.enter();
         }
         strokeView.update(dt);
+      } else if (!transitioning) {
+        // カップ確認では現在の aim 方向を見続ける。左右スワイプで aim が変われば即座に追従する。
+        rig.apply(
+          strokeCupPose(
+            ball,
+            aim,
+            green,
+            distanceToCup(),
+            cupCheckTilted ? G.stroke.cupCheckRollDeg : 0,
+          ),
+        );
       }
       break;
 
@@ -713,14 +791,15 @@ renderer.setAnimationLoop((now) => {
         updateFollow(dt);
       }
       if (roller.status !== 'rolling') enterResult();
-      // カップまで約50cmを切ったらカット。FOLLOW に切り替わるまではカメラを動かさない
-      else if (!holding && distanceToCup() < G.cup.triggerDistance) enterCup();
+      // 1打につき一度だけ、カップまで約50cmを切ったらCUP定点へカットする
+      else if (!holding && !cupViewUsed && distanceToCup() < G.cup.triggerDistance) enterCup();
       break;
     }
 
     case 'CUP':
       stepPhysics(dt);
       if (roller.status !== 'rolling') enterResult();
+      else if (cupBallNearEdge()) resumeFollowFromCup();
       break;
 
     case 'RESULT':
@@ -832,7 +911,7 @@ function updateHud(): void {
   if (state === 'ADDRESS') {
     hud.view.textContent = aimView === 'AIM' ? '方向調整' : READ_VIEW_LABEL[aimView];
   } else if (state === 'STROKE' && strokeCameraView === 'CUP') {
-    hud.view.textContent = `カップ確認（${cupCheckTilted ? `${G.stroke.cupCheckRollDeg}°` : '傾きなし'}）`;
+    hud.view.textContent = `カップ確認（${cupCheckTilted ? `${Math.abs(G.stroke.cupCheckRollDeg)}°` : '傾きなし'}）`;
   } else {
     hud.view.textContent = '';
   }
