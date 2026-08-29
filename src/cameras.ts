@@ -3,9 +3,13 @@
 // カメラの作り方を main.ts に散らさない。
 import * as THREE from 'three';
 import { CONFIG } from './config';
-import type { Green } from './green';
 
 const G = CONFIG.game;
+
+/** 見た目側の高さだけを差し替えられる最小インターフェース。 */
+export interface HeightSampler {
+  sampleHeight(x: number, z: number): number;
+}
 
 /** カメラの姿勢。位置と注視点はワールド座標 [m]、roll は [rad]、fov は [度] */
 export interface CameraPose {
@@ -43,7 +47,7 @@ function pose(
 }
 
 /** グリーン面から height [m] の高さの点 */
-function above(green: Green, x: number, z: number, height: number): THREE.Vector3 {
+function above(green: HeightSampler, x: number, z: number, height: number): THREE.Vector3 {
   return new THREE.Vector3(x, green.sampleHeight(x, z) + height, z);
 }
 
@@ -70,7 +74,7 @@ export function readPose(
   view: ReadView,
   ball: THREE.Vector2,
   cup: THREE.Vector2,
-  green: Green,
+  green: HeightSampler,
   aspect: number,
 ): CameraPose {
   const R = G.read;
@@ -95,7 +99,8 @@ export function readPose(
       // 旗は竿の +X 側に垂れるので、ボールが旗の反対側に見える向き（ラインの左手側）へずらす
       const x = cup.x + dir.x * R.behindHoleDistance - nx * R.behindHoleSideOffset;
       const z = cup.y + dir.y * R.behindHoleDistance - nz * R.behindHoleSideOffset;
-      return pose(above(green, x, z, R.behindHoleHeight), mid);
+      // 遠い実寸ボールを読みやすくするため、この視点だけFOVを狭める。
+      return pose(above(green, x, z, R.behindHoleHeight), mid, 0, R.behindHoleFov);
     }
     case 'LOW_LINE': {
       const x = ball.x - dir.x * R.lowLineDistance;
@@ -124,7 +129,7 @@ export function readPose(
 export function addressPose(
   ball: THREE.Vector2,
   aim: number,
-  green: Green,
+  green: HeightSampler,
   lookDistance: number,
 ): CameraPose {
   const A = G.address;
@@ -142,7 +147,7 @@ export function addressPose(
  * STROKE（§3）。ボールの真上から真下を見下ろす。ROLL は 0（ボールを見る姿勢では視野は傾かない）。
  * 注視点はボールの真下。向きは呼び出し側が渡す up で決める（strokeUp を使う）。
  */
-export function strokePose(ball: THREE.Vector2, green: Green): CameraPose {
+export function strokePose(ball: THREE.Vector2, green: HeightSampler): CameraPose {
   const position = above(green, ball.x, ball.y, G.stroke.eyeHeight);
   const target = above(green, ball.x, ball.y, 0);
   return pose(position, target);
@@ -151,13 +156,13 @@ export function strokePose(ball: THREE.Vector2, green: Green): CameraPose {
 /**
  * STROKE 中の「カップ確認」。カメラ位置は真下視点と同じボール真上のまま、
  * 視線だけ現在の aim 方向へ向ける。カップ中心そのものへ固定しないので、この画面でも狙いを調整できる。
+ * 傾きROLLは不採用。視野は常に水平基準のまま。
  */
 export function strokeCupPose(
   ball: THREE.Vector2,
   aim: number,
-  green: Green,
+  green: HeightSampler,
   lookDistance: number,
-  rollDeg: number,
 ): CameraPose {
   const dx = Math.sin(aim);
   const dz = -Math.cos(aim);
@@ -169,14 +174,14 @@ export function strokeCupPose(
     ball.y + dz * reach,
     G.stroke.cupCheckLookAtHeight,
   );
-  return pose(position, target, THREE.MathUtils.degToRad(rollDeg));
+  return pose(position, target);
 }
 
 /**
  * CUP（§3）。カップ後方・芝の高さの定点。ここで最後の曲がりと速度が見える。
  * 「カップ後方」はボールから見て奥側。カット（補間しない）で入る。
  */
-export function cupPose(ball: THREE.Vector2, cup: THREE.Vector2, green: Green): CameraPose {
+export function cupPose(ball: THREE.Vector2, cup: THREE.Vector2, green: HeightSampler): CameraPose {
   const dir = towardCup(ball, cup);
   // ラインから少し横へずらす。真後ろだと旗竿が画面中央でボールを隠す
   const x = cup.x + dir.x * G.cup.back - dir.y * G.cup.sideOffset;
@@ -192,7 +197,7 @@ export function resultPose(
   from: THREE.Vector2,
   ball: THREE.Vector2,
   cup: THREE.Vector2,
-  green: Green,
+  green: HeightSampler,
 ): CameraPose {
   const R = G.result;
   // 打ち出し位置・停止位置・カップの3点が入るように中心と距離を取る

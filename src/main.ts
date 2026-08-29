@@ -1,11 +1,12 @@
 // ゲーム本体。ADDRESS（読み＋方向調整）→ STROKE → FOLLOW → CUP → RESULT の状態機械（spec §3）。
 //
 // 部品はすでにある。ここは配線に徹する。
-//   green.ts         グリーンのハイトマップと表示メッシュ（表示と物理の唯一の情報源）
-//   physics.ts       転がり計算（固定 1/240 秒）
-//   swipe-measure.ts スワイプ計測（/swipe-test/ で検証済み）
-//   stroke-view.ts   STROKE の 2D オーバーレイ
-//   cameras.ts       各状態のカメラ姿勢と補間
+//   green.ts               グリーンのハイトマップと表示メッシュ（表示と物理の唯一の情報源）
+//   physics.ts             転がり計算（固定 1/240 秒）
+//   swipe-measure.ts       スワイプ計測（/swipe-test/ で検証済み）
+//   stroke-view.ts         STROKE の 2D オーバーレイ
+//   cameras.ts             各状態のカメラ姿勢と補間
+//   smooth-line-overlay.ts 補助線・軌跡の高解像度比較表示
 //
 // **走行中に俯瞰へ切り替えない。** 一人称のまま最後まで見せて、分析は止まってから（§3）。
 import * as THREE from 'three';
@@ -20,6 +21,7 @@ import {
   defaultShadeParams,
 } from './green';
 import { Roller } from './physics';
+import { SmoothLineOverlay } from './smooth-line-overlay';
 import { StrokeView } from './stroke-view';
 import {
   CameraRig,
@@ -112,11 +114,40 @@ const camera = new THREE.PerspectiveCamera(
 );
 const rig = new CameraRig(camera);
 
-// グリーン。ハイトマップが表示と物理の唯一の情報源（spec §1）。
-// シードを差し替えられるように、地形にぶら下がるものはまとめて作り直す
+// グリーン。通常モードでは同じハイトマップを表示と物理に使う。
+// 「形状2×」比較だけは物理・色を変えず、描画上のY座標だけ倍率を掛ける。
 const shade = defaultShadeParams();
+const UNDULATION_MODES = [
+  { label: '地形:標準', amplitude: CONFIG.green.undulationAmplitude, visualScale: 1 },
+  { label: '地形:強調', amplitude: CONFIG.green.compareEnhancedAmplitude, visualScale: 1 },
+  {
+    label: '地形:標準/形2×',
+    amplitude: CONFIG.green.undulationAmplitude,
+    visualScale: CONFIG.green.compareVisualHeightScale,
+  },
+  {
+    label: '地形:強調/形2×',
+    amplitude: CONFIG.green.compareEnhancedAmplitude,
+    visualScale: CONFIG.green.compareVisualHeightScale,
+  },
+] as const;
+let undulationMode = 0;
+let visualHeightScale = UNDULATION_MODES[undulationMode].visualScale;
 let seed = seedFromUrl() ?? CONFIG.green.seed;
-let green = new Green({ ...defaultGreenParams(), seed });
+let green = new Green({
+  ...defaultGreenParams(),
+  seed,
+  undulationAmplitude: UNDULATION_MODES[undulationMode].amplitude,
+});
+
+function visualHeight(x: number, z: number): number {
+  return green.sampleHeight(x, z) * visualHeightScale;
+}
+
+/** カメラだけが使う見た目上の高さ。物理のgreenとは分ける。 */
+const visualGreen = {
+  sampleHeight: (x: number, z: number) => visualHeight(x, z),
+};
 
 /** STROKE の間だけ消すもの。背景の木と外周の地面（真下を向いていれば映らない） */
 const props = new THREE.Group();
@@ -156,11 +187,11 @@ function disposeGroup(group: THREE.Group): void {
 function buildTerrain(): void {
   disposeGroup(terrain);
   disposeGroup(props);
-  greenMesh = new GreenMesh(green, shade);
+  greenMesh = new GreenMesh(green, shade, visualHeightScale);
   terrain.add(greenMesh.mesh);
-  terrain.add(createHole(green));
-  props.add(createSurround(green));
-  props.add(createTrees(green, seed));
+  terrain.add(createHole(green, visualHeightScale));
+  props.add(createSurround(green, visualHeightScale));
+  props.add(createTrees(green, seed, visualHeightScale));
 }
 
 const dir = new THREE.DirectionalLight(0xffffff, CONFIG.light.directionalIntensity);
@@ -206,6 +237,7 @@ const trail = new THREE.Line(
 trail.frustumCulled = false;
 trail.visible = false;
 scene.add(trail);
+let trailPointCount = 0;
 
 /**
  * ADDRESS の方向調整と STROKE のカップ確認に出す短い打ち出し方向線。
@@ -228,6 +260,16 @@ aimGuide.renderOrder = 20;
 aimGuide.visible = false;
 scene.add(aimGuide);
 
+const smoothLines = new SmoothLineOverlay(
+  app,
+  G.aim.guideColor,
+  G.result.trailColor,
+  G.lineCompare.smoothOpacity,
+  G.lineCompare.smoothWidthPx,
+);
+type LineMode = 'DOT' | 'SMOOTH';
+let lineMode: LineMode = 'DOT';
+
 // --- 状態 -----------------------------------------------------------------
 
 type State = 'ADDRESS' | 'STROKE' | 'FOLLOW' | 'CUP' | 'RESULT';
@@ -246,8 +288,6 @@ let state: State = 'ADDRESS';
 let aimView: AimView = 'AIM';
 /** STROKE 内で真下か、カップ確認かを切り替える。 */
 let strokeCameraView: StrokeCameraView = 'DOWN';
-/** カップ確認の比較用。false=傾きなし、true=30度。 */
-let cupCheckTilted = false;
 /** 狙い [rad]。0 が -Z、+ で +X へ回る（physics と同じ約束） */
 let aim = 0;
 /** ボール→カップ方向。狙いの振れ幅はここから測る */
@@ -276,13 +316,64 @@ let resultReady = false;
 /** STROKE の遷移が終わってからオーバーレイを出す。回っている最中に振らせない */
 let strokeArmed = false;
 
+function aimGuideShouldShow(): boolean {
+  return (
+    (state === 'ADDRESS' && aimView === 'AIM') ||
+    (state === 'STROKE' && strokeCameraView === 'CUP')
+  );
+}
+
+function trailShouldShow(): boolean {
+  return state === 'RESULT' && resultReady && trailPointCount > 1;
+}
+
+function syncLineVisibility(): void {
+  const dotted = lineMode === 'DOT';
+  aimGuide.visible = dotted && aimGuideShouldShow();
+  trail.visible = dotted && trailShouldShow();
+}
+
+function updateSmoothLines(): void {
+  if (lineMode !== 'SMOOTH') {
+    smoothLines.clear();
+    return;
+  }
+  smoothLines.draw(
+    camera,
+    aimGuidePositions,
+    aimGuideShouldShow(),
+    trailPositions,
+    trailPointCount,
+    trailShouldShow(),
+  );
+}
+
+function loadPutterPowerScale(): number {
+  const P = G.putterTuning;
+  try {
+    const raw = localStorage.getItem(P.storageKey);
+    if (raw !== null) {
+      const value = Number(raw);
+      if (Number.isFinite(value)) {
+        return THREE.MathUtils.clamp(value, P.minScale, P.maxScale);
+      }
+    }
+  } catch {
+    // localStorageが使えない環境では既定値だけ使う
+  }
+  return P.defaultScale;
+}
+
+let putterPowerScale = loadPutterPowerScale();
+
 const strokeCanvas = document.getElementById('stroke') as HTMLCanvasElement;
 const strokeView = new StrokeView(strokeCanvas, {
   onImpact: (m) => {
+    const adjustedSpeedMs = m.speedMs * putterPowerScale;
     lastSwing =
-      `スワイプ ${Math.round(m.speed)} px/s ・ 初速 ${m.speedMs.toFixed(2)} m/s ・ ` +
-      `芯 ${m.offsetPx >= 0 ? '+' : ''}${Math.round(m.offsetPx)}px ×${m.gain.toFixed(2)}`;
-    launch(m.speedMs, m.launchAngle);
+      `スワイプ ${Math.round(m.speed)} px/s ・ 初速 ${adjustedSpeedMs.toFixed(2)} m/s ・ ` +
+      `反発 ${putterPowerScale.toFixed(2)}× ・ 芯 ${m.offsetPx >= 0 ? '+' : ''}${Math.round(m.offsetPx)}px ×${m.gain.toFixed(2)}`;
+    launch(adjustedSpeedMs, m.launchAngle);
   },
   onNotice: (text) => {
     notice = text;
@@ -293,7 +384,7 @@ const tmpUp = new THREE.Vector3();
 const tmpBall = new THREE.Vector3();
 
 function ballWorld(out: THREE.Vector3): THREE.Vector3 {
-  return out.set(ball.x, green.sampleHeight(ball.x, ball.y) + CONFIG.ball.radius, ball.y);
+  return out.set(ball.x, visualHeight(ball.x, ball.y) + CONFIG.ball.radius, ball.y);
 }
 
 function distanceToCup(): number {
@@ -312,15 +403,13 @@ function updateAimGuide(): void {
   const ez = sz + dz * G.aim.guideLength;
 
   aimGuidePositions[0] = sx;
-  aimGuidePositions[1] = green.sampleHeight(sx, sz) + G.aim.guideLift;
+  aimGuidePositions[1] = visualHeight(sx, sz) + G.aim.guideLift;
   aimGuidePositions[2] = sz;
   aimGuidePositions[3] = ex;
-  aimGuidePositions[4] = green.sampleHeight(ex, ez) + G.aim.guideLift;
+  aimGuidePositions[4] = visualHeight(ex, ez) + G.aim.guideLift;
   aimGuidePositions[5] = ez;
   (aimGuideGeometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
-  const addressAim = state === 'ADDRESS' && aimView === 'AIM';
-  const strokeCupAim = state === 'STROKE' && strokeCameraView === 'CUP';
-  aimGuide.visible = addressAim || strokeCupAim;
+  syncLineVisibility();
 }
 
 // --- 状態遷移 -------------------------------------------------------------
@@ -337,18 +426,19 @@ function enterAddress(cut = false, resetAim = true): void {
   notice = '左右スワイプで狙い、タップでストローク';
   props.visible = true;
   ballMesh.visible = roller.status !== 'holed';
-  trail.visible = false;
   strokeView.exit();
   strokeArmed = false;
+  resultReady = false;
   if (resetAim) {
     aimBase = Math.atan2(cup.x - ball.x, -(cup.y - ball.y));
     aim = aimBase;
   }
   updateBallMesh();
   updateAimGuide();
-  const p = addressPose(ball, aim, green, distanceToCup());
+  const p = addressPose(ball, aim, visualGreen, distanceToCup());
   if (cut) rig.cut(p);
   else rig.transition(p, G.address.transition);
+  syncLineVisibility();
 }
 
 /** ADDRESS 内の視点をボタンで切り替える。スワイプでは切り替えない。 */
@@ -359,28 +449,27 @@ function setAimView(view: AimView): void {
 
   if (view === 'AIM') {
     notice = '左右スワイプで狙い、タップでストローク';
-    rig.transition(addressPose(ball, aim, green, distanceToCup()), G.address.transition);
+    rig.transition(addressPose(ball, aim, visualGreen, distanceToCup()), G.address.transition);
     return;
   }
 
   notice = '読み視点 ・ 下のボタンで方向調整へ戻れます';
-  rig.transition(readPose(view, ball, cup, green, camera.aspect), G.read.transition);
+  rig.transition(readPose(view, ball, cup, visualGreen, camera.aspect), G.read.transition);
 }
 
 function enterStroke(): void {
   state = 'STROKE';
   strokeCameraView = 'DOWN';
-  cupCheckTilted = false;
   cupViewUsed = false;
   notice = '';
   strokeArmed = false;
-  aimGuide.visible = false;
+  syncLineVisibility();
   // 背景は見えない。ボールとカップは 3D のまま実寸で見せる（§3 / §4）。
   // 真下を向いた視野は狭いので、カップが映るのはタップインの距離だけ
   props.visible = false;
   ballMesh.visible = true;
   updateBallMesh();
-  rig.transition(strokePose(ball, green), G.stroke.transition, strokeUp(aim, tmpUp));
+  rig.transition(strokePose(ball, visualGreen), G.stroke.transition, strokeUp(aim, tmpUp));
 }
 
 /** STROKE 真下姿勢の位置を保ったまま、現在の狙い方向を見る。 */
@@ -393,30 +482,7 @@ function showCupCheck(): void {
   notice = 'カップ確認 ・ 左右スワイプで狙いを調整できます';
   updateAimGuide();
   rig.transition(
-    strokeCupPose(
-      ball,
-      aim,
-      green,
-      distanceToCup(),
-      cupCheckTilted ? G.stroke.cupCheckRollDeg : 0,
-    ),
-    G.stroke.cupCheckTransition,
-  );
-}
-
-/** カップ確認の視野を、傾きなし / 30度で比較する。 */
-function setCupCheckTilt(tilted: boolean): void {
-  if (state !== 'STROKE' || strokeCameraView !== 'CUP' || rig.transitioning) return;
-  if (cupCheckTilted === tilted) return;
-  cupCheckTilted = tilted;
-  rig.transition(
-    strokeCupPose(
-      ball,
-      aim,
-      green,
-      distanceToCup(),
-      cupCheckTilted ? G.stroke.cupCheckRollDeg : 0,
-    ),
+    strokeCupPose(ball, aim, visualGreen, distanceToCup()),
     G.stroke.cupCheckTransition,
   );
 }
@@ -428,7 +494,7 @@ function returnToStrokeView(): void {
   strokeArmed = false;
   notice = '';
   updateAimGuide();
-  rig.transition(strokePose(ball, green), G.stroke.cupCheckTransition, strokeUp(aim, tmpUp));
+  rig.transition(strokePose(ball, visualGreen), G.stroke.cupCheckTransition, strokeUp(aim, tmpUp));
 }
 
 /** STROKE から方向調整へ戻る。狙いはリセットしない。 */
@@ -452,8 +518,7 @@ function enterFollow(): void {
   state = 'FOLLOW';
   strokeCameraView = 'DOWN';
   notice = '';
-  aimGuide.visible = false;
-  trail.visible = false;
+  syncLineVisibility();
   followYaw = -aim;
   followPitch = -Math.PI / 2;
   holdElapsed = 0;
@@ -492,9 +557,9 @@ function enterCup(): void {
   followReturnPosition.copy(camera.position);
   state = 'CUP';
   cupViewUsed = true;
-  aimGuide.visible = false;
+  syncLineVisibility();
   // カット。カップ後方・芝の高さの定点（§3）
-  rig.cut(cupPose(shotStart, cup, green));
+  rig.cut(cupPose(shotStart, cup, visualGreen));
 }
 
 /** CUP定点でボールが画面端へ近づいたら、見失う前にFOLLOWへ戻す。 */
@@ -514,7 +579,7 @@ function resumeFollowFromCup(): void {
   holding = false;
   notice = '';
   strokeCameraView = 'DOWN';
-  aimGuide.visible = false;
+  syncLineVisibility();
   strokeView.exit();
   props.visible = true;
   ballMesh.visible = roller.status !== 'holed';
@@ -526,7 +591,7 @@ function resumeFollowFromCup(): void {
 /** ボールが完全に停止してから呼ぶ。ここで初めて俯瞰と軌跡を出す（§3） */
 function enterResult(): void {
   state = 'RESULT';
-  aimGuide.visible = false;
+  syncLineVisibility();
   if (holding) revealCourse();
   settleElapsed = 0;
   resultReady = false;
@@ -573,13 +638,41 @@ function nextPutt(): void {
   enterAddress();
 }
 
+function selectedUndulation() {
+  return UNDULATION_MODES[undulationMode];
+}
+
+/** 現在のシード・ボール位置を保ったまま、アンジュレーション比較モードだけ切り替える。 */
+function rebuildGreenForUndulationCompare(): void {
+  const mode = selectedUndulation();
+  visualHeightScale = mode.visualScale;
+  green = new Green({
+    ...defaultGreenParams(),
+    seed,
+    undulationAmplitude: mode.amplitude,
+  });
+  roller = new Roller(green);
+  roller.place(ball.x, ball.y);
+  buildTerrain();
+  trailPointCount = 0;
+  trailGeometry.setDrawRange(0, 0);
+  updateBallMesh();
+  enterAddress(true, false);
+}
+
 /**
  * 別のグリーンにする。うねりはシード次第なので、いろいろな地形で読みを試すために要る。
  * URL にも書いておくので、面白い地形が出たらその URL でもう一度出せる
  */
 function newGreen(next: number): void {
   seed = next >>> 0;
-  green = new Green({ ...defaultGreenParams(), seed });
+  const mode = selectedUndulation();
+  visualHeightScale = mode.visualScale;
+  green = new Green({
+    ...defaultGreenParams(),
+    seed,
+    undulationAmplitude: mode.amplitude,
+  });
   roller = new Roller(green);
   buildTerrain();
   ball.set(G.ballStart.x, G.ballStart.z);
@@ -588,7 +681,8 @@ function newGreen(next: number): void {
   shots = 0;
   lastResult = '';
   lastSwing = '';
-  trail.visible = false;
+  trailPointCount = 0;
+  trailGeometry.setDrawRange(0, 0);
   updateBallMesh();
   const url = new URL(location.href);
   url.searchParams.set('seed', String(seed));
@@ -601,11 +695,12 @@ function newGreen(next: number): void {
 function updateTrail(): void {
   const attribute = trailGeometry.attributes.position as THREE.BufferAttribute;
   const count = Math.min(roller.path.length / 2, G.result.trailMaxPoints);
+  trailPointCount = count;
   for (let i = 0; i < count; i++) {
     const x = roller.path[i * 2];
     const z = roller.path[i * 2 + 1];
     trailPositions[i * 3] = x;
-    trailPositions[i * 3 + 1] = green.sampleHeight(x, z) + G.result.trailLift;
+    trailPositions[i * 3 + 1] = visualHeight(x, z) + G.result.trailLift;
     trailPositions[i * 3 + 2] = z;
   }
   attribute.needsUpdate = true;
@@ -616,7 +711,7 @@ function updateBallMesh(): void {
   ballMesh.position.copy(ballWorld(tmpBall));
   ballShadow.position.set(
     tmpBall.x,
-    green.sampleHeight(ball.x, ball.y) + CONFIG.ball.shadowLift,
+    visualHeight(ball.x, ball.y) + CONFIG.ball.shadowLift,
     tmpBall.z,
   );
   ballShadow.visible = ballMesh.visible;
@@ -666,15 +761,7 @@ surface.addEventListener('pointermove', (e) => {
     updateAimGuide();
 
     if (adjustingCupCheck) {
-      rig.apply(
-        strokeCupPose(
-          ball,
-          aim,
-          green,
-          distanceToCup(),
-          cupCheckTilted ? G.stroke.cupCheckRollDeg : 0,
-        ),
-      );
+      rig.apply(strokeCupPose(ball, aim, visualGreen, distanceToCup()));
     }
   }
 });
@@ -755,7 +842,7 @@ renderer.setAnimationLoop((now) => {
     case 'ADDRESS':
       // 方向調整視点だけは狙いの変化に追従する。読み用の3定点は遷移後そのまま固定。
       if (!transitioning && aimView === 'AIM') {
-        rig.apply(addressPose(ball, aim, green, distanceToCup()));
+        rig.apply(addressPose(ball, aim, visualGreen, distanceToCup()));
       }
       break;
 
@@ -770,15 +857,7 @@ renderer.setAnimationLoop((now) => {
         strokeView.update(dt);
       } else if (!transitioning) {
         // カップ確認では現在の aim 方向を見続ける。左右スワイプで aim が変われば即座に追従する。
-        rig.apply(
-          strokeCupPose(
-            ball,
-            aim,
-            green,
-            distanceToCup(),
-            cupCheckTilted ? G.stroke.cupCheckRollDeg : 0,
-          ),
-        );
+        rig.apply(strokeCupPose(ball, aim, visualGreen, distanceToCup()));
       }
       break;
 
@@ -809,8 +888,8 @@ renderer.setAnimationLoop((now) => {
           resultReady = true;
           // ボールが完全に停止してから俯瞰へ。軌跡もここで初めて出す
           updateTrail();
-          trail.visible = true;
-          rig.transition(resultPose(shotStart, ball, cup, green), G.result.transition);
+          syncLineVisibility();
+          rig.transition(resultPose(shotStart, ball, cup, visualGreen), G.result.transition);
           notice = 'タップで次のパット';
         }
       }
@@ -819,6 +898,7 @@ renderer.setAnimationLoop((now) => {
 
   updateHud();
   renderFrame();
+  updateSmoothLines();
 });
 
 // --- デバッグ表示と画面操作 ------------------------------------------------
@@ -834,6 +914,9 @@ const hud = {
   notice: document.getElementById('hud-notice')!,
   seed: document.getElementById('hud-seed') as HTMLButtonElement,
   pixel: document.getElementById('hud-pixel') as HTMLButtonElement,
+  line: document.getElementById('hud-line') as HTMLButtonElement,
+  undulation: document.getElementById('hud-undulation') as HTMLButtonElement,
+  adjust: document.getElementById('hud-adjust') as HTMLButtonElement,
 };
 
 const cameraControls = document.getElementById('camera-controls')!;
@@ -844,9 +927,41 @@ const strokeControls = document.getElementById('stroke-controls')!;
 const strokeBack = document.getElementById('stroke-back') as HTMLButtonElement;
 const strokeCameraControls = document.getElementById('stroke-camera-controls')!;
 const strokeCupCheck = document.getElementById('stroke-cup-check') as HTMLButtonElement;
-const strokeCupUpright = document.getElementById('stroke-cup-upright') as HTMLButtonElement;
-const strokeCupTilted = document.getElementById('stroke-cup-tilted') as HTMLButtonElement;
 const strokeCupReturn = document.getElementById('stroke-cup-return') as HTMLButtonElement;
+
+const tuningPanel = document.getElementById('tuning-panel') as HTMLDivElement;
+const putterPower = document.getElementById('putter-power') as HTMLInputElement;
+const putterPowerValue = document.getElementById('putter-power-value')!;
+const putterPowerDetail = document.getElementById('putter-power-detail')!;
+const P = G.putterTuning;
+putterPower.min = String(P.minScale);
+putterPower.max = String(P.maxScale);
+putterPower.step = String(P.step);
+putterPower.value = String(putterPowerScale);
+
+function updatePutterTuningUi(): void {
+  putterPowerValue.textContent = `${putterPowerScale.toFixed(2)}×`;
+  putterPowerDetail.textContent =
+    `基準係数 ${CONFIG.swipeTest.speedK.toFixed(5)} → ` +
+    `${(CONFIG.swipeTest.speedK * putterPowerScale).toFixed(5)}`;
+  hud.adjust.textContent = `調整 ${putterPowerScale.toFixed(2)}×`;
+}
+
+putterPower.addEventListener('input', () => {
+  const value = Number(putterPower.value);
+  if (!Number.isFinite(value)) return;
+  putterPowerScale = THREE.MathUtils.clamp(value, P.minScale, P.maxScale);
+  try {
+    localStorage.setItem(P.storageKey, String(putterPowerScale));
+  } catch {
+    // 保存できない環境でも、そのセッション中の調整は使える
+  }
+  updatePutterTuningUi();
+});
+
+hud.adjust.addEventListener('click', () => {
+  tuningPanel.hidden = !tuningPanel.hidden;
+});
 
 for (const button of cameraButtons) {
   button.addEventListener('click', () => {
@@ -856,8 +971,6 @@ for (const button of cameraButtons) {
 }
 strokeBack.addEventListener('click', returnToAddress);
 strokeCupCheck.addEventListener('click', showCupCheck);
-strokeCupUpright.addEventListener('click', () => setCupCheckTilt(false));
-strokeCupTilted.addEventListener('click', () => setCupCheckTilt(true));
 strokeCupReturn.addEventListener('click', returnToStrokeView);
 
 /**
@@ -883,6 +996,17 @@ hud.pixel.addEventListener('click', () => {
   applyPixelMode();
 });
 
+hud.line.addEventListener('click', () => {
+  lineMode = lineMode === 'DOT' ? 'SMOOTH' : 'DOT';
+  syncLineVisibility();
+});
+
+hud.undulation.addEventListener('click', () => {
+  if (state !== 'ADDRESS') return;
+  undulationMode = (undulationMode + 1) % UNDULATION_MODES.length;
+  rebuildGreenForUndulationCompare();
+});
+
 // シードのボタン。押すと別の地形になる（ADDRESS / RESULT のときだけ）
 hud.seed.addEventListener('click', () => {
   if (state !== 'ADDRESS' && state !== 'RESULT') return;
@@ -899,11 +1023,7 @@ function updateControls(): void {
 
   const checkingCup = state === 'STROKE' && strokeCameraView === 'CUP';
   strokeCupCheck.style.display = checkingCup ? 'none' : 'block';
-  strokeCupUpright.style.display = checkingCup ? 'block' : 'none';
-  strokeCupTilted.style.display = checkingCup ? 'block' : 'none';
   strokeCupReturn.style.display = checkingCup ? 'block' : 'none';
-  strokeCupUpright.classList.toggle('active', checkingCup && !cupCheckTilted);
-  strokeCupTilted.classList.toggle('active', checkingCup && cupCheckTilted);
 }
 
 function updateHud(): void {
@@ -911,7 +1031,7 @@ function updateHud(): void {
   if (state === 'ADDRESS') {
     hud.view.textContent = aimView === 'AIM' ? '方向調整' : READ_VIEW_LABEL[aimView];
   } else if (state === 'STROKE' && strokeCameraView === 'CUP') {
-    hud.view.textContent = `カップ確認（${cupCheckTilted ? `${Math.abs(G.stroke.cupCheckRollDeg)}°` : '傾きなし'}）`;
+    hud.view.textContent = 'カップ確認';
   } else {
     hud.view.textContent = '';
   }
@@ -925,7 +1045,10 @@ function updateHud(): void {
   hud.notice.textContent = notice;
   hud.seed.textContent = `シード ${seed} ⟳`;
   hud.pixel.textContent = PIXEL_MODES[pixelMode];
+  hud.line.textContent = lineMode === 'DOT' ? 'ライン:ドット' : 'ライン:滑らか';
+  hud.undulation.textContent = selectedUndulation().label;
   hud.seed.disabled = state !== 'ADDRESS' && state !== 'RESULT';
+  hud.undulation.disabled = state !== 'ADDRESS';
   updateControls();
 }
 
@@ -946,6 +1069,7 @@ function resize(): void {
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   resizeLowRes();
+  smoothLines.resize(w, h);
   strokeView.resize();
   // インパクトラインをボールの見かけの大きさに合わせる（§4.2）。
   // 真下から見たボールまでの距離は、視点高さから半径を引いたぶん
@@ -965,6 +1089,7 @@ window.addEventListener('resize', resize);
 
 buildTerrain();
 applyPixelMode();
+updatePutterTuningUi();
 roller.place(G.ballStart.x, G.ballStart.z);
 ball.set(roller.x, roller.z);
 updateBallMesh();
