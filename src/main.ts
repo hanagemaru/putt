@@ -1,11 +1,11 @@
-// ゲーム本体。READ → ADDRESS → STROKE → FOLLOW → CUP → RESULT の状態機械（spec §3）。
+// ゲーム本体。ADDRESS（読み＋方向調整）→ STROKE → FOLLOW → CUP → RESULT の状態機械（spec §3）。
 //
 // 部品はすでにある。ここは配線に徹する。
-//   green.ts        グリーンのハイトマップと表示メッシュ（表示と物理の唯一の情報源）
-//   physics.ts      転がり計算（固定 1/240 秒）
+//   green.ts         グリーンのハイトマップと表示メッシュ（表示と物理の唯一の情報源）
+//   physics.ts       転がり計算（固定 1/240 秒）
 //   swipe-measure.ts スワイプ計測（/swipe-test/ で検証済み）
-//   stroke-view.ts  STROKE の 2D オーバーレイ
-//   cameras.ts      各状態のカメラ姿勢と補間
+//   stroke-view.ts   STROKE の 2D オーバーレイ
+//   cameras.ts       各状態のカメラ姿勢と補間
 //
 // **走行中に俯瞰へ切り替えない。** 一人称のまま最後まで見せて、分析は止まってから（§3）。
 import * as THREE from 'three';
@@ -23,7 +23,6 @@ import { Roller } from './physics';
 import { StrokeView } from './stroke-view';
 import {
   CameraRig,
-  READ_VIEWS,
   READ_VIEW_LABEL,
   addressPose,
   cupPose,
@@ -207,9 +206,31 @@ trail.frustumCulled = false;
 trail.visible = false;
 scene.add(trail);
 
+/**
+ * 方向調整画面だけに出す短い打ち出し方向線。
+ * XZ の向きは aim だけで決め、物理の傾斜・曲がりは一切予測しない。
+ */
+const aimGuidePositions = new Float32Array(6);
+const aimGuideGeometry = new THREE.BufferGeometry();
+aimGuideGeometry.setAttribute('position', new THREE.BufferAttribute(aimGuidePositions, 3));
+const aimGuide = new THREE.Line(
+  aimGuideGeometry,
+  new THREE.LineBasicMaterial({
+    color: G.aim.guideColor,
+    transparent: true,
+    opacity: 0.95,
+    depthTest: false,
+  }),
+);
+aimGuide.frustumCulled = false;
+aimGuide.renderOrder = 20;
+aimGuide.visible = false;
+scene.add(aimGuide);
+
 // --- 状態 -----------------------------------------------------------------
 
-type State = 'READ' | 'ADDRESS' | 'STROKE' | 'FOLLOW' | 'CUP' | 'RESULT';
+type State = 'ADDRESS' | 'STROKE' | 'FOLLOW' | 'CUP' | 'RESULT';
+type AimView = 'AIM' | ReadView;
 
 let roller = new Roller(green);
 const cup = new THREE.Vector2(CONFIG.hole.position.x, CONFIG.hole.position.z);
@@ -218,8 +239,9 @@ const ball = new THREE.Vector2(G.ballStart.x, G.ballStart.z);
 /** この一打を打つ前の位置。グリーンオーバーしたらここへ戻す */
 const shotStart = new THREE.Vector2(G.ballStart.x, G.ballStart.z);
 
-let state: State = 'READ';
-let readView: ReadView = READ_VIEWS[0];
+let state: State = 'ADDRESS';
+/** ADDRESS の中で、方向調整か読み用定点かを切り替える。初期は方向調整。 */
+let aimView: AimView = 'AIM';
 /** 狙い [rad]。0 が -Z、+ で +X へ回る（physics と同じ約束） */
 let aim = 0;
 /** ボール→カップ方向。狙いの振れ幅はここから測る */
@@ -268,44 +290,86 @@ function distanceToCup(): number {
   return Math.hypot(ball.x - cup.x, ball.y - cup.y);
 }
 
+/** 方向調整用の約50cmの直線を現在の aim に合わせる。 */
+function updateAimGuide(): void {
+  const dx = Math.sin(aim);
+  const dz = -Math.cos(aim);
+  // ボール中心から始めると球の中を通るので、半径ぶん少し前から描く
+  const startOffset = CONFIG.ball.radius * 1.5;
+  const sx = ball.x + dx * startOffset;
+  const sz = ball.y + dz * startOffset;
+  const ex = sx + dx * G.aim.guideLength;
+  const ez = sz + dz * G.aim.guideLength;
+
+  aimGuidePositions[0] = sx;
+  aimGuidePositions[1] = green.sampleHeight(sx, sz) + G.aim.guideLift;
+  aimGuidePositions[2] = sz;
+  aimGuidePositions[3] = ex;
+  aimGuidePositions[4] = green.sampleHeight(ex, ez) + G.aim.guideLift;
+  aimGuidePositions[5] = ez;
+  (aimGuideGeometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+  aimGuide.visible = state === 'ADDRESS' && aimView === 'AIM';
+}
+
 // --- 状態遷移 -------------------------------------------------------------
 
-function enterRead(cut = false): void {
-  state = 'READ';
-  notice = '左右スワイプで視点、タップで構える';
+/**
+ * 読みと方向調整を統合した入口。常に現行の方向調整カメラから始める。
+ * resetAim=false は STROKE から戻るとき用で、それまでの狙いを保持する。
+ */
+function enterAddress(cut = false, resetAim = true): void {
+  state = 'ADDRESS';
+  aimView = 'AIM';
+  notice = '左右スワイプで狙い、タップでストローク';
   props.visible = true;
   ballMesh.visible = roller.status !== 'holed';
   trail.visible = false;
-  aimBase = Math.atan2(cup.x - ball.x, -(cup.y - ball.y));
-  aim = aimBase;
-  readView = READ_VIEWS[0];
-  const p = readPose(readView, ball, cup, green, camera.aspect);
+  strokeView.exit();
+  strokeArmed = false;
+  if (resetAim) {
+    aimBase = Math.atan2(cup.x - ball.x, -(cup.y - ball.y));
+    aim = aimBase;
+  }
+  updateBallMesh();
+  updateAimGuide();
+  const p = addressPose(ball, aim, green, distanceToCup());
   if (cut) rig.cut(p);
-  else rig.transition(p, G.read.transition);
+  else rig.transition(p, G.address.transition);
 }
 
-function switchReadView(step: number): void {
-  const i = READ_VIEWS.indexOf(readView);
-  readView = READ_VIEWS[(i + step + READ_VIEWS.length) % READ_VIEWS.length];
-  rig.transition(readPose(readView, ball, cup, green, camera.aspect), G.read.transition);
-}
+/** ADDRESS 内の視点をボタンで切り替える。スワイプでは切り替えない。 */
+function setAimView(view: AimView): void {
+  if (state !== 'ADDRESS' || aimView === view) return;
+  aimView = view;
+  updateAimGuide();
 
-function enterAddress(): void {
-  state = 'ADDRESS';
-  notice = '左右スワイプで狙い、タップで構える';
-  rig.transition(addressPose(ball, aim, green, distanceToCup()), G.address.transition);
+  if (view === 'AIM') {
+    notice = '左右スワイプで狙い、タップでストローク';
+    rig.transition(addressPose(ball, aim, green, distanceToCup()), G.address.transition);
+    return;
+  }
+
+  notice = '読み視点 ・ 下のボタンで方向調整へ戻れます';
+  rig.transition(readPose(view, ball, cup, green, camera.aspect), G.read.transition);
 }
 
 function enterStroke(): void {
   state = 'STROKE';
   notice = '';
   strokeArmed = false;
+  aimGuide.visible = false;
   // 背景は見えない。ボールとカップは 3D のまま実寸で見せる（§3 / §4）。
   // 真下を向いた視野は狭いので、カップが映るのはタップインの距離だけ
   props.visible = false;
   ballMesh.visible = true;
   updateBallMesh();
   rig.transition(strokePose(ball, green), G.stroke.transition, strokeUp(aim, tmpUp));
+}
+
+/** STROKE から方向調整へ戻る。狙いはリセットしない。 */
+function returnToAddress(): void {
+  if (state !== 'STROKE') return;
+  enterAddress(false, false);
 }
 
 /** インパクト（§4.6）。計測結果を初速と方向に直して打ち出す */
@@ -321,6 +385,7 @@ function launch(speedMs: number, launchAngle: number): void {
 function enterFollow(): void {
   state = 'FOLLOW';
   notice = '';
+  aimGuide.visible = false;
   trail.visible = false;
   followYaw = -aim;
   followPitch = -Math.PI / 2;
@@ -365,6 +430,7 @@ function enterCup(): void {
 /** ボールが完全に停止してから呼ぶ。ここで初めて俯瞰と軌跡を出す（§3） */
 function enterResult(): void {
   state = 'RESULT';
+  aimGuide.visible = false;
   if (holding) revealCourse();
   settleElapsed = 0;
   resultReady = false;
@@ -408,7 +474,7 @@ function nextPutt(): void {
   }
   roller.place(ball.x, ball.y);
   updateBallMesh();
-  enterRead();
+  enterAddress();
 }
 
 /**
@@ -431,7 +497,7 @@ function newGreen(next: number): void {
   const url = new URL(location.href);
   url.searchParams.set('seed', String(seed));
   history.replaceState(null, '', url);
-  enterRead(true);
+  enterAddress(true);
 }
 
 // --- 軌跡 -----------------------------------------------------------------
@@ -461,8 +527,8 @@ function updateBallMesh(): void {
 }
 
 // --- 入力 -----------------------------------------------------------------
-// STROKE のスワイプは stroke-view.ts が受け持つ。ここは READ / ADDRESS / RESULT のタップと
-// 左右スワイプだけを見る。
+// STROKE のスワイプは stroke-view.ts が受け持つ。
+// ここは ADDRESS の方向調整と RESULT のタップだけを見る。カメラ視点はボタンで切り替える。
 
 let pointerId: number | null = null;
 let downX = 0;
@@ -493,28 +559,24 @@ surface.addEventListener('pointermove', (e) => {
   const dx = e.clientX - lastX;
   lastX = e.clientX;
   moved = Math.max(moved, Math.hypot(e.clientX - downX, e.clientY - downY));
-  // ADDRESS だけは指の動きに追従して狙いが変わる。補助線は一切出さない（§3）
-  if (state === 'ADDRESS') {
+  // ADDRESS の「方向調整」視点だけ、指の動きに追従して狙いが変わる
+  if (state === 'ADDRESS' && aimView === 'AIM') {
     const max = THREE.MathUtils.degToRad(G.aim.maxOffsetDeg);
     const offset = THREE.MathUtils.clamp(aim - aimBase + dx * G.aim.sensitivity, -max, max);
     aim = aimBase + offset;
+    updateAimGuide();
   }
 });
 
 function pointerEnd(e: PointerEvent): void {
   if (e.pointerId !== pointerId) return;
   pointerId = null;
-  const dx = e.clientX - downX;
   const held = e.timeStamp - downT;
   const isTap = moved <= G.tap.moveMaxPx && held <= G.tap.holdMaxMs;
 
-  if (state === 'READ') {
-    if (Math.abs(dx) >= G.tap.swipeMinPx) switchReadView(dx < 0 ? 1 : -1);
-    else if (isTap) enterAddress();
-    return;
-  }
   if (state === 'ADDRESS') {
-    if (isTap) enterStroke();
+    // 読み用定点ではタップしてもストロークへ進まない。まず「方向調整」へ戻す。
+    if (aimView === 'AIM' && isTap) enterStroke();
     return;
   }
   if (state === 'RESULT') {
@@ -580,8 +642,10 @@ renderer.setAnimationLoop((now) => {
 
   switch (state) {
     case 'ADDRESS':
-      // 遷移が終わったら、狙いの変化に追従させる
-      if (!transitioning) rig.apply(addressPose(ball, aim, green, distanceToCup()));
+      // 方向調整視点だけは狙いの変化に追従する。読み用の3定点は遷移後そのまま固定。
+      if (!transitioning && aimView === 'AIM') {
+        rig.apply(addressPose(ball, aim, green, distanceToCup()));
+      }
       break;
 
     case 'STROKE':
@@ -630,7 +694,7 @@ renderer.setAnimationLoop((now) => {
   renderFrame();
 });
 
-// --- デバッグ表示（§5 の一部。全項目と lil-gui は T4） ---------------------
+// --- デバッグ表示と画面操作 ------------------------------------------------
 
 const hud = {
   state: document.getElementById('hud-state')!,
@@ -644,6 +708,21 @@ const hud = {
   seed: document.getElementById('hud-seed') as HTMLButtonElement,
   pixel: document.getElementById('hud-pixel') as HTMLButtonElement,
 };
+
+const cameraControls = document.getElementById('camera-controls')!;
+const cameraButtons = Array.from(
+  cameraControls.querySelectorAll<HTMLButtonElement>('[data-aim-view]'),
+);
+const strokeControls = document.getElementById('stroke-controls')!;
+const strokeBack = document.getElementById('stroke-back') as HTMLButtonElement;
+
+for (const button of cameraButtons) {
+  button.addEventListener('click', () => {
+    const view = button.dataset.aimView as AimView | undefined;
+    if (view) setAimView(view);
+  });
+}
+strokeBack.addEventListener('click', returnToAddress);
 
 /**
  * ドット感の切り替え。既定は 2（採用した見た目）。比較用に OFF も残す。
@@ -668,15 +747,24 @@ hud.pixel.addEventListener('click', () => {
   applyPixelMode();
 });
 
-// シードのボタン。押すと別の地形になる（READ / RESULT のときだけ）
+// シードのボタン。押すと別の地形になる（ADDRESS / RESULT のときだけ）
 hud.seed.addEventListener('click', () => {
-  if (state !== 'READ' && state !== 'RESULT') return;
+  if (state !== 'ADDRESS' && state !== 'RESULT') return;
   newGreen(Math.floor(Math.random() * 100000));
 });
 
+function updateControls(): void {
+  cameraControls.style.display = state === 'ADDRESS' ? 'flex' : 'none';
+  strokeControls.style.display = state === 'STROKE' ? 'flex' : 'none';
+  for (const button of cameraButtons) {
+    button.classList.toggle('active', button.dataset.aimView === aimView);
+  }
+}
+
 function updateHud(): void {
   hud.state.textContent = state;
-  hud.view.textContent = state === 'READ' ? READ_VIEW_LABEL[readView] : '';
+  hud.view.textContent =
+    state === 'ADDRESS' ? (aimView === 'AIM' ? '方向調整' : READ_VIEW_LABEL[aimView]) : '';
   // 狙いはボール→カップ方向からのズレで出す。+ が右
   const offsetDeg = THREE.MathUtils.radToDeg(aim - aimBase);
   hud.aim.textContent = `狙い ${offsetDeg >= 0 ? '+' : ''}${offsetDeg.toFixed(1)}°`;
@@ -687,7 +775,8 @@ function updateHud(): void {
   hud.notice.textContent = notice;
   hud.seed.textContent = `シード ${seed} ⟳`;
   hud.pixel.textContent = PIXEL_MODES[pixelMode];
-  hud.seed.disabled = state !== 'READ' && state !== 'RESULT';
+  hud.seed.disabled = state !== 'ADDRESS' && state !== 'RESULT';
+  updateControls();
 }
 
 // --- 画面サイズ -----------------------------------------------------------
@@ -729,4 +818,4 @@ applyPixelMode();
 roller.place(G.ballStart.x, G.ballStart.z);
 ball.set(roller.x, roller.z);
 updateBallMesh();
-enterRead(true);
+enterAddress(true);
