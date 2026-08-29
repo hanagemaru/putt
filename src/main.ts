@@ -6,7 +6,7 @@
 //   swipe-measure.ts       スワイプ計測（/swipe-test/ で検証済み）
 //   stroke-view.ts         STROKE の 2D オーバーレイ
 //   cameras.ts             各状態のカメラ姿勢と補間
-//   smooth-line-overlay.ts 補助線・軌跡の高解像度比較表示
+//   smooth-line-overlay.ts 補助線・軌跡の高解像度表示
 //
 // **走行中に俯瞰へ切り替えない。** 一人称のまま最後まで見せて、分析は止まってから（§3）。
 import * as THREE from 'three';
@@ -30,6 +30,7 @@ import {
   cupPose,
   followFov,
   lerpAngle,
+  lowLineAimPose,
   readPose,
   resultPose,
   projectedRadiusPx,
@@ -114,24 +115,24 @@ const camera = new THREE.PerspectiveCamera(
 );
 const rig = new CameraRig(camera);
 
-// グリーン。通常モードでは同じハイトマップを表示と物理に使う。
-// 「形状2×」比較だけは物理・色を変えず、描画上のY座標だけ倍率を掛ける。
+// アンジュレーションは現在「強調」＋形状見た目1.5倍で固定して実機確認する。
+// 物理と高さ色は強調版0.20m、3D形状のYだけ1.5倍。比較コードは再調整用に残す。
 const shade = defaultShadeParams();
 const UNDULATION_MODES = [
   { label: '地形:標準', amplitude: CONFIG.green.undulationAmplitude, visualScale: 1 },
   { label: '地形:強調', amplitude: CONFIG.green.compareEnhancedAmplitude, visualScale: 1 },
   {
-    label: '地形:標準/形2×',
+    label: '地形:標準/形1.5×',
     amplitude: CONFIG.green.undulationAmplitude,
     visualScale: CONFIG.green.compareVisualHeightScale,
   },
   {
-    label: '地形:強調/形2×',
+    label: '地形:強調/形1.5×',
     amplitude: CONFIG.green.compareEnhancedAmplitude,
     visualScale: CONFIG.green.compareVisualHeightScale,
   },
 ] as const;
-let undulationMode = 0;
+let undulationMode = 3;
 let visualHeightScale = UNDULATION_MODES[undulationMode].visualScale;
 let seed = seedFromUrl() ?? CONFIG.green.seed;
 let green = new Green({
@@ -194,6 +195,32 @@ function buildTerrain(): void {
   props.add(createTrees(green, seed, visualHeightScale));
 }
 
+/**
+ * 読み用のカップ後方視点だけ、旗竿と旗を薄くして線上の遠いボールを透かして見る。
+ * カップや芝は変更せず、他の状態へ移ると完全に元へ戻す。
+ */
+function setReadingFlagFade(active: boolean): void {
+  const opacity = active ? G.read.behindHoleFlagOpacity : 1;
+  terrain.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    for (const material of materials) {
+      if (
+        !(material instanceof THREE.MeshBasicMaterial) &&
+        !(material instanceof THREE.MeshLambertMaterial)
+      ) {
+        continue;
+      }
+      const color = material.color.getHex();
+      if (color !== 0xf0f0f0 && color !== CONFIG.hole.flagColor) continue;
+      material.opacity = opacity;
+      material.transparent = active;
+      material.depthWrite = !active;
+      material.needsUpdate = true;
+    }
+  });
+}
+
 const dir = new THREE.DirectionalLight(0xffffff, CONFIG.light.directionalIntensity);
 dir.position.set(
   CONFIG.light.directionalDirection.x,
@@ -240,7 +267,7 @@ scene.add(trail);
 let trailPointCount = 0;
 
 /**
- * ADDRESS の方向調整と STROKE のカップ確認に出す短い打ち出し方向線。
+ * ADDRESS の方向調整・低い視点と STROKE のカップ確認に出す短い打ち出し方向線。
  * XZ の向きは aim だけで決め、物理の傾斜・曲がりは一切予測しない。
  */
 const aimGuidePositions = new Float32Array(6);
@@ -268,7 +295,8 @@ const smoothLines = new SmoothLineOverlay(
   G.lineCompare.smoothWidthPx,
 );
 type LineMode = 'DOT' | 'SMOOTH';
-let lineMode: LineMode = 'DOT';
+// 滑らかな半透明ラインを正式採用。比較UIは隠すが、戻せるよう内部モードだけ残す。
+let lineMode: LineMode = 'SMOOTH';
 
 // --- 状態 -----------------------------------------------------------------
 
@@ -318,7 +346,7 @@ let strokeArmed = false;
 
 function aimGuideShouldShow(): boolean {
   return (
-    (state === 'ADDRESS' && aimView === 'AIM') ||
+    (state === 'ADDRESS' && (aimView === 'AIM' || aimView === 'LOW_LINE')) ||
     (state === 'STROKE' && strokeCameraView === 'CUP')
   );
 }
@@ -429,6 +457,7 @@ function enterAddress(cut = false, resetAim = true): void {
   strokeView.exit();
   strokeArmed = false;
   resultReady = false;
+  setReadingFlagFade(false);
   if (resetAim) {
     aimBase = Math.atan2(cup.x - ball.x, -(cup.y - ball.y));
     aim = aimBase;
@@ -445,11 +474,21 @@ function enterAddress(cut = false, resetAim = true): void {
 function setAimView(view: AimView): void {
   if (state !== 'ADDRESS' || aimView === view) return;
   aimView = view;
+  setReadingFlagFade(view === 'BEHIND_HOLE');
   updateAimGuide();
 
   if (view === 'AIM') {
     notice = '左右スワイプで狙い、タップでストローク';
     rig.transition(addressPose(ball, aim, visualGreen, distanceToCup()), G.address.transition);
+    return;
+  }
+
+  if (view === 'LOW_LINE') {
+    notice = '低い視点 ・ 左右スワイプで狙いを調整できます';
+    rig.transition(
+      lowLineAimPose(ball, cup, aim, visualGreen, distanceToCup()),
+      G.read.transition,
+    );
     return;
   }
 
@@ -463,6 +502,7 @@ function enterStroke(): void {
   cupViewUsed = false;
   notice = '';
   strokeArmed = false;
+  setReadingFlagFade(false);
   syncLineVisibility();
   // 背景は見えない。ボールとカップは 3D のまま実寸で見せる（§3 / §4）。
   // 真下を向いた視野は狭いので、カップが映るのはタップインの距離だけ
@@ -642,7 +682,7 @@ function selectedUndulation() {
   return UNDULATION_MODES[undulationMode];
 }
 
-/** 現在のシード・ボール位置を保ったまま、アンジュレーション比較モードだけ切り替える。 */
+/** 現在のシード・ボール位置を保ったまま、アンジュレーション比較モードだけ切り替える。再調整用。 */
 function rebuildGreenForUndulationCompare(): void {
   const mode = selectedUndulation();
   visualHeightScale = mode.visualScale;
@@ -751,7 +791,8 @@ surface.addEventListener('pointermove', (e) => {
   lastX = e.clientX;
   moved = Math.max(moved, Math.hypot(e.clientX - downX, e.clientY - downY));
 
-  const adjustingAddress = state === 'ADDRESS' && aimView === 'AIM';
+  const adjustingAddress =
+    state === 'ADDRESS' && (aimView === 'AIM' || aimView === 'LOW_LINE');
   const adjustingCupCheck =
     state === 'STROKE' && strokeCameraView === 'CUP' && !rig.transitioning;
   if (adjustingAddress || adjustingCupCheck) {
@@ -760,6 +801,9 @@ surface.addEventListener('pointermove', (e) => {
     aim = aimBase + offset;
     updateAimGuide();
 
+    if (adjustingAddress && aimView === 'LOW_LINE' && !rig.transitioning) {
+      rig.apply(lowLineAimPose(ball, cup, aim, visualGreen, distanceToCup()));
+    }
     if (adjustingCupCheck) {
       rig.apply(strokeCupPose(ball, aim, visualGreen, distanceToCup()));
     }
@@ -773,7 +817,7 @@ function pointerEnd(e: PointerEvent): void {
   const isTap = moved <= G.tap.moveMaxPx && held <= G.tap.holdMaxMs;
 
   if (state === 'ADDRESS') {
-    // 読み用定点ではタップしてもストロークへ進まない。まず「方向調整」へ戻す。
+    // 読み用定点ではタップしてもストロークへ進まない。AIMだけタップでSTROKEへ進む。
     if (aimView === 'AIM' && isTap) enterStroke();
     return;
   }
@@ -840,9 +884,13 @@ renderer.setAnimationLoop((now) => {
 
   switch (state) {
     case 'ADDRESS':
-      // 方向調整視点だけは狙いの変化に追従する。読み用の3定点は遷移後そのまま固定。
-      if (!transitioning && aimView === 'AIM') {
-        rig.apply(addressPose(ball, aim, visualGreen, distanceToCup()));
+      if (!transitioning) {
+        if (aimView === 'AIM') {
+          rig.apply(addressPose(ball, aim, visualGreen, distanceToCup()));
+        } else if (aimView === 'LOW_LINE') {
+          // 位置は固定し、aimに合わせて視線だけ更新する。
+          rig.apply(lowLineAimPose(ball, cup, aim, visualGreen, distanceToCup()));
+        }
       }
       break;
 
@@ -996,6 +1044,7 @@ hud.pixel.addEventListener('click', () => {
   applyPixelMode();
 });
 
+// 比較を戻したい場合のため内部ロジックは残すが、現在UIからは操作しない。
 hud.line.addEventListener('click', () => {
   lineMode = lineMode === 'DOT' ? 'SMOOTH' : 'DOT';
   syncLineVisibility();
@@ -1015,8 +1064,12 @@ hud.seed.addEventListener('click', () => {
 
 function updateControls(): void {
   cameraControls.style.display = state === 'ADDRESS' ? 'flex' : 'none';
-  strokeControls.style.display = state === 'STROKE' ? 'flex' : 'none';
-  strokeCameraControls.style.display = state === 'STROKE' ? 'flex' : 'none';
+  const inStroke = state === 'STROKE';
+  strokeControls.style.display = inStroke ? 'flex' : 'none';
+  strokeCameraControls.style.display = inStroke ? 'flex' : 'none';
+  hud.adjust.style.display = inStroke ? 'inline-block' : 'none';
+  if (!inStroke) tuningPanel.hidden = true;
+
   for (const button of cameraButtons) {
     button.classList.toggle('active', button.dataset.aimView === aimView);
   }
