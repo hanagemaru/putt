@@ -195,20 +195,19 @@ export class Green {
 
 /** 濃淡の設定（§1）。lil-gui から変えられる */
 export interface ShadeParams {
-  /** 勾配の濃淡の振れ幅（±）。0 で単色 */
+  /** 勾配ベース表示の振れ幅（±）。ゲーム本体は 0、green-test の比較用に残す */
   gradientStrength: number;
-  /** 濃淡がフルレンジで表す勾配（無次元、0.08 で 8%）。読みの単位 */
+  /** 勾配ベース表示を使う場合のフルレンジ（無次元、0.03 で 3%） */
   gradientRange: number;
-  /** 光の方位 [度]。固定方向 */
+  /** 光の方位 [度]。勾配ベース表示を使うときだけ効く */
   lightAzimuthDeg: number;
-  /** 高さの濃淡の振れ幅（±） */
+  /** 高さベース表示の濃淡の振れ幅（±） */
   heightStrength: number;
-  /** 高さの濃淡がフルレンジで表す高低差 [m] */
+  /** 高さベース表示がフルレンジで表す高低差 [m] */
   heightRange: number;
   /**
-   * 明るさの係数を丸める段数（レトロ表現の試作）。0 で丸めない。
-   * 段にすると濃淡が等高線のような帯になる。1段ぶんの明暗差＝一定の高低差なので、
-   * 「絶対スケール」の約束とも噛み合う（段の数がそのまま高低差の目盛りになる）
+   * 明るさの係数を丸める段数（レトロ表現）。0 で丸めない。
+   * 段にすると濃淡が等高線のような帯になり、1段ぶんの明暗差＝一定の高低差になる。
    */
   levels: number;
 }
@@ -228,16 +227,16 @@ function softRamp(value: number, fullRange: number): number {
 /**
  * グリーンの表示メッシュ。PlaneGeometry の頂点をハイトマップで変位させ、頂点カラーで濃淡をつける。
  *
- * **濃淡が表すのは「高さ」ではなく「斜面の向きと強さ」**（§1）。固定方位の光ベクトルと勾配 ∇h の
- * 内積で明暗を決める。一人称の視野に入るのは半径数メートルで、そこの高低差は数センチしかないので、
- * 高さベースでは明度差が出ない（実測：4.5m のライン上で 1.6cm ＝ 明度差 3%）。
- * 読みに要るのは勾配なので、勾配を直接出す。
+ * 現行のゲーム本体は **高さベース**（§1）。`heightStrength` と `heightRange` で、
+ * **明るい＝高い / 暗い＝低い** を絶対スケールで表す。グリーンごとの最小最大では正規化しないので、
+ * 同じ明るさはシードが変わっても同じ高さの意味を持つ。
  *
- * **絶対スケール。** フルレンジは gradientRange で、グリーンごとの最小最大では正規化しない。
- * 同じ明暗差はどのシードでも同じ勾配 % を意味する。ここを正規化に戻すと読みゲームとして成立しない。
+ * 勾配ベース表示も比較用として式を残しているが、ゲーム本体では `gradientStrength = 0`。
+ * 実機比較で、勾配ベースはわずかな傾斜を強調できる一方、明るさが高さを意味しなくなり
+ * 曲がる向きを読み違えやすかったため、正式方針から外した。
  *
- * 明暗は基準の明るさ（係数 1）を中心に上下へ振る。片側だけ暗くしていた頃は、
- * 濃くするほど平均が下がって（実測 45/255）暗い場所では全体が沈み、読めなくなっていた。
+ * 明暗は基準の明るさ（係数 1）を中心に上下へ振る。片側だけ暗くすると平均輝度が沈み、
+ * 暗い環境で情報が潰れやすいため採用しない。
  */
 export class GreenMesh {
   readonly mesh: THREE.Mesh;
@@ -266,7 +265,7 @@ export class GreenMesh {
     this.green = green;
     const position = this.geometry.attributes.position as THREE.BufferAttribute;
     const color = this.geometry.attributes.color as THREE.BufferAttribute;
-    // 光の方位。プレイヤーが回っても地形の見え方が変わらないよう固定方向にする
+    // 勾配ベース表示を比較するときの固定方位。ゲーム本体は gradientStrength=0 なので色には寄与しない
     const azimuth = (shade.lightAzimuthDeg * Math.PI) / 180;
     const lx = Math.cos(azimuth);
     const lz = Math.sin(azimuth);
@@ -277,14 +276,13 @@ export class GreenMesh {
       const h = green.sampleHeight(x, z);
       position.setY(i, h);
 
-      // 光の方向へ下っている面は暗く、光の方へ登っている面は明るい
+      // 勾配ベース比較用の値と、正式採用している高さベースの値を同じ式で合成できるよう保持する
       green.sampleGradient(x, z, this.grad);
       const towardLight = this.grad.x * lx + this.grad.z * lz;
       const gradient = softRamp(towardLight, shade.gradientRange);
       const height = softRamp(h, shade.heightRange);
 
-      // 1 を中心に両方向へ振る。高いところは明るく、低いところは暗く。
-      // 片側だけ暗くする式だと、濃くするほど画面全体が沈んで暗いところで真っ先に潰れる
+      // 1 を中心に両方向へ振る。現行は gradientStrength=0 なので、明るいほど高く・暗いほど低い。
       const k =
         1 +
         shade.gradientStrength * (2 * gradient - 1) +
