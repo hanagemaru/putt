@@ -1,9 +1,11 @@
 // STROKE の 2D オーバーレイ（spec §4）。真下を見下ろす 3D の上に重ねて、
-// パターヘッド・つま先・ゲート線・指の軌跡を px 空間で描く。
+// パターヘッド・つま先・ゲート線・スイング軌跡を px 空間で描く。
 // ボールとカップは 3D のまま（実寸）。ここで px の円を描くと転がる画面と大きさが食い違う。
 //
 // 計測そのものは /swipe-test/ で検証済みの SwipeMeasure をそのまま使う。
 // px → m の換算を新しく作らないので、ゲーム本体でも検証ページと同じ手応えになる。
+// ゲーム本体では pointerdown の絶対座標ではなく、待機中パターを原点にした指の移動量を
+// SwipeMeasure へ渡す。平行移動だけなので速度・角度・バックスイング幅の計測値は変わらない。
 // （計測の定数は CONFIG.swipeTest。ページ専用の演出値ではなく所作の定数なので、ここでも使う。
 //   ボールの転がりの演出 ballPxPerMeter / ballDecelMs2 だけは §4.7 の検証ページ限定で、持ち込まない）
 import { CONFIG } from './config';
@@ -70,6 +72,13 @@ export class StrokeView {
    * ボール中心で判定すると、当たる前にパターがボールへめり込んで見える。
    */
   private impactX = 0;
+
+  /** pointerdown の絶対座標。以後はここからの変位だけをパターへ反映する */
+  private touchStartX = 0;
+  private touchStartY = 0;
+  /** pointerdown 時点のパター位置。通常はボール直後の待機位置 */
+  private putterStartX = 0;
+  private putterStartY = 0;
 
   private live: Sample | null = null;
 
@@ -161,8 +170,16 @@ export class StrokeView {
     this.putter.struck = false;
   }
 
+  /**
+   * 生の指座標を、pointerdown 時点の待機パターを原点にした仮想パター座標へ移す。
+   * X/Yとも pointerdown だけでは変化せず、その後の指の移動量だけが反映される。
+   */
   private toSample(e: PointerEvent): Sample {
-    return { x: e.clientX, y: e.clientY, t: e.timeStamp };
+    return {
+      x: this.putterStartX + (e.clientX - this.touchStartX),
+      y: this.putterStartY + (e.clientY - this.touchStartY),
+      t: e.timeStamp,
+    };
   }
 
   /** 取りこぼしを防ぐため coalesced 込みで全サンプルを取り出す（§4.3） */
@@ -176,11 +193,17 @@ export class StrokeView {
     if (!this.active || this.pointerId !== null) return;
     this.pointerId = e.pointerId;
     capture(this.canvas, e.pointerId);
-    this.measure.begin(this.impactX, this.toSample(e));
-    this.live = this.toSample(e);
+
+    // pointerdown ではパターを動かさない。ここからの ΔX / ΔY だけを以後の座標に使う。
+    this.touchStartX = e.clientX;
+    this.touchStartY = e.clientY;
+    this.putterStartX = this.putter.x;
+    this.putterStartY = this.putter.y;
+    const first = this.toSample(e);
+
+    this.measure.begin(this.impactX, first);
+    this.live = first;
     this.putter.mode = 'follow';
-    this.putter.x = e.clientX;
-    this.putter.y = this.ballY;
     this.putter.struck = false;
     this.callbacks.onNotice('右へ引いてください');
   };
@@ -193,7 +216,7 @@ export class StrokeView {
       const r = this.measure.add(s);
       if (!wasArmed && this.measure.armed()) this.callbacks.onNotice('振り抜いてください');
 
-      // 指に追従する。インパクト後も空振りのあとも追従したまま振り抜かせる（§4.4）
+      // 待機位置を原点に指の移動量へ追従する。インパクト後も空振りのあとも同じ（§4.4）。
       if (this.putter.mode === 'follow') {
         const v = this.measure.liveVelocity();
         if (v && Math.hypot(v.vx, v.vy) >= C.faceMinSpeedPx) {
@@ -235,12 +258,12 @@ export class StrokeView {
   };
 
   /**
-   * 指の X をパターの X に直す（§4.4）。
+   * 仮想パター X を描画位置へ直す（§4.4）。
    * インパクト後は、フェースがボールの右端より左へ行かないよう頭打ちにする。
    */
-  private followX(fingerX: number): number {
-    if (!this.putter.struck) return fingerX;
-    return Math.max(fingerX, this.impactX);
+  private followX(putterX: number): number {
+    if (!this.putter.struck) return putterX;
+    return Math.max(putterX, this.impactX);
   }
 
   // --- 描画 ---------------------------------------------------------------
@@ -283,8 +306,8 @@ export class StrokeView {
   }
 
   /**
-   * 指の軌跡（直近 trailMs）。/swipe-test/ と同じ描き方。
-   * サンプル点も打つので、密度＝サンプリングレートが目で見える
+   * パター軌跡（直近 trailMs）。指の絶対位置ではなく、指の移動量と同期したパター座標を描く。
+   * サンプル点も打つので、密度＝サンプリングレートが目で見える。
    */
   private drawTrail(): void {
     const all = this.measure.samples();
