@@ -29,10 +29,10 @@ export const CONFIG = {
     tiltPercent: 1,
     /** うねりの振幅 [m]。合成したガウシアンをこの振幅（±）へ正規化する */
     undulationAmplitude: 0.15,
-    /** 比較用の「強調」アンジュレーション振幅 [m]。表示と物理の両方に使う */
+    /** 現在採用中の「強調」アンジュレーション振幅 [m]。表示色と物理の両方に使う */
     compareEnhancedAmplitude: 0.2,
-    /** 比較用に3D形状だけを誇張するときの高さ倍率。物理と色は変えない */
-    compareVisualHeightScale: 2,
+    /** 現在の見た目強調倍率。物理と高さ色は0.20mのまま、3D形状だけ1.5倍 */
+    compareVisualHeightScale: 1.5,
     /** 合成するガウシアンの数 */
     gaussianCount: 7,
     /**
@@ -239,11 +239,11 @@ export const CONFIG = {
       guideColor: 0xfff0a0,
     },
 
-    /** 比較用の補助線・軌跡表示 */
+    /** 高解像度の補助線・軌跡表示 */
     lineCompare: {
       /** 高解像度Canvas版の不透明度 */
       smoothOpacity: 0.55,
-      /** 高解像度Canvas版の線幅 [px] */
+      /** 高解像度Canvas版の基準線幅 [px] */
       smoothWidthPx: 2,
     },
 
@@ -271,16 +271,15 @@ export const CONFIG = {
       /** 旧READのボール後方視点。現行ゲームの初期画面では使わない */
       behindBallDistance: 1.5,
       behindBallHeight: 1.6,
-      /** カップ後方。ボール方向を向く */
+      /** カップ後方。ボールとカップを結ぶ線上から低い位置で読む */
       behindHoleDistance: 1.5,
-      behindHoleHeight: 1.6,
+      behindHoleHeight: 0.45,
       /** カップ後方だけボールを見やすくするFOV [度] */
       behindHoleFov: 50,
-      /**
-       * カップ後方だけラインから横へずらす [m]。
-       * 真後ろに立つと旗竿とカップがちょうどボールに重なって、ボールが見えない
-       */
-      behindHoleSideOffset: 0.5,
+      /** 読み時はライン上に立つので横ずらしなし [m] */
+      behindHoleSideOffset: 0,
+      /** カップ後方読み視点だけ、旗竿と旗をこの不透明度まで薄くする */
+      behindHoleFlagOpacity: 0.18,
       /** しゃがんでラインを低く見る */
       lowLineDistance: 1,
       lowLineHeight: 0.4,
