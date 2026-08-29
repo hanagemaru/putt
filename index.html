@@ -111,7 +111,7 @@
         min-height: 15px;
       }
 
-      /* 練習用のパター反発調整。現在は比較・調整のため全画面から開ける */
+      /* 練習用のパター反発調整。入口はSTROKE中だけ表示する */
       #tuning-panel {
         position: fixed;
         top: max(76px, calc(env(safe-area-inset-top) + 76px));
@@ -266,9 +266,9 @@
       <div class="notice" id="hud-notice"></div>
       <button type="button" id="hud-seed">シード</button>
       <button type="button" id="hud-pixel">ドット OFF</button>
-      <button type="button" id="hud-line">ライン</button>
-      <button type="button" id="hud-undulation">地形</button>
-      <button type="button" id="hud-adjust">調整</button>
+      <button type="button" id="hud-line" hidden>ライン</button>
+      <button type="button" id="hud-undulation" hidden>地形</button>
+      <button type="button" id="hud-adjust" style="display: none">調整</button>
     </div>
 
     <div id="tuning-panel" hidden>
