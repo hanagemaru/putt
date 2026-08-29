@@ -206,27 +206,15 @@ export interface ShadeParams {
   /** 高さの濃淡がフルレンジで表す高低差 [m] */
   heightRange: number;
   /**
-   * 0 より大きいと、高さの濃淡をこの周期 [m] で繰り返す（のこぎり波）。
-   * 使える色数は最終画像の量子化で頭打ちになるので、その色数をレンジ全体に配るか、
-   * 数 cm ごとに配り直すかの違い。繰り返すと 1段が細かくなり、飽和もしない。
-   * 代わりに「明るい＝高い」は 1周期の中でだけ成り立ち、周期をまたぐと段を数えることになる
-   */
-  heightPeriod: number;
-  /**
    * 明るさの係数を丸める段数（レトロ表現の試作）。0 で丸めない。
-   * 段にすると濃淡が等高線のような帯になる。1段ぶんの明暗差＝一定の勾配差なので、
-   * 「絶対スケール」の約束とも噛み合う（段の数がそのまま勾配の目盛りになる）
+   * 段にすると濃淡が等高線のような帯になる。1段ぶんの明暗差＝一定の高低差なので、
+   * 「絶対スケール」の約束とも噛み合う（段の数がそのまま高低差の目盛りになる）
    */
   levels: number;
 }
 
 export function defaultShadeParams(): ShadeParams {
   return { ...C.shade };
-}
-
-/** 濃淡を高さで出す案（比較用）。明るい ＝ 高い */
-export function heightShadeParams(): ShadeParams {
-  return { ...C.shadeHeight };
 }
 
 /** 中央付近は傾き 1 の直線、端だけ緩やかに飽和させる。黒つぶれ・白飛びを防ぐ */
@@ -293,12 +281,9 @@ export class GreenMesh {
       green.sampleGradient(x, z, this.grad);
       const towardLight = this.grad.x * lx + this.grad.z * lz;
       const gradient = softRamp(towardLight, shade.gradientRange);
-      const height =
-        shade.heightPeriod > 0
-          ? h / shade.heightPeriod - Math.floor(h / shade.heightPeriod)
-          : softRamp(h, shade.heightRange);
+      const height = softRamp(h, shade.heightRange);
 
-      // 1 を中心に両方向へ振る。上りは明るく、下りは暗く。
+      // 1 を中心に両方向へ振る。高いところは明るく、低いところは暗く。
       // 片側だけ暗くする式だと、濃くするほど画面全体が沈んで暗いところで真っ先に潰れる
       const k =
         1 +

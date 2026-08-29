@@ -18,7 +18,6 @@ import {
   createTrees,
   defaultGreenParams,
   defaultShadeParams,
-  heightShadeParams,
 } from './green';
 import { Roller } from './physics';
 import { StrokeView } from './stroke-view';
@@ -116,7 +115,7 @@ const rig = new CameraRig(camera);
 
 // グリーン。ハイトマップが表示と物理の唯一の情報源（spec §1）。
 // シードを差し替えられるように、地形にぶら下がるものはまとめて作り直す
-let shade = defaultShadeParams();
+const shade = defaultShadeParams();
 let seed = seedFromUrl() ?? CONFIG.green.seed;
 let green = new Green({ ...defaultGreenParams(), seed });
 
@@ -636,30 +635,7 @@ const hud = {
   notice: document.getElementById('hud-notice')!,
   seed: document.getElementById('hud-seed') as HTMLButtonElement,
   pixel: document.getElementById('hud-pixel') as HTMLButtonElement,
-  shade: document.getElementById('hud-shade') as HTMLButtonElement,
 };
-
-/**
- * 濃淡の出し方の切り替え（比較用）。
- * 0: 勾配（斜面の向きと強さ）/ 1: 高さ（明るい ＝ 高い）。どちらも絶対スケール
- */
-const SHADE_MODES = ['濃淡 勾配', '濃淡 高さ', '濃淡 高さ繰返'];
-let shadeMode = 0;
-
-function applyShadeMode(): void {
-  if (shadeMode === 0) shade = defaultShadeParams();
-  else {
-    shade = heightShadeParams();
-    if (shadeMode === 2) shade.heightPeriod = CONFIG.green.shadeHeight.repeatPeriod;
-  }
-  applyPixelMode();
-  greenMesh.setShade(shade);
-}
-
-hud.shade.addEventListener('click', () => {
-  shadeMode = (shadeMode + 1) % SHADE_MODES.length;
-  applyShadeMode();
-});
 
 /**
  * ドット感の切り替え。既定は 2（採用した見た目）。比較用に OFF も残す。
@@ -671,8 +647,7 @@ let pixelMode = 2;
 function applyPixelMode(): void {
   pixelScale = pixelMode === 0 ? 1 : CONFIG.pixel.scale;
   screenMaterial.uniforms.levels.value = pixelMode === 2 ? CONFIG.pixel.colorLevels : 0;
-  const dotLevels = shadeMode === 0 ? CONFIG.pixel.levels : CONFIG.pixel.heightLevels;
-  const levels = pixelMode === 2 ? dotLevels : 0;
+  const levels = pixelMode === 2 ? CONFIG.pixel.levels : 0;
   if (shade.levels !== levels) {
     shade.levels = levels;
     greenMesh.setShade(shade);
@@ -704,7 +679,6 @@ function updateHud(): void {
   hud.notice.textContent = notice;
   hud.seed.textContent = `シード ${seed} ⟳`;
   hud.pixel.textContent = PIXEL_MODES[pixelMode];
-  hud.shade.textContent = SHADE_MODES[shadeMode];
   hud.seed.disabled = state !== 'READ' && state !== 'RESULT';
 }
 
