@@ -643,11 +643,15 @@ const hud = {
  * 濃淡の出し方の切り替え（比較用）。
  * 0: 勾配（斜面の向きと強さ）/ 1: 高さ（明るい ＝ 高い）。どちらも絶対スケール
  */
-const SHADE_MODES = ['濃淡 勾配', '濃淡 高さ'];
+const SHADE_MODES = ['濃淡 勾配', '濃淡 高さ', '濃淡 高さ繰返'];
 let shadeMode = 0;
 
 function applyShadeMode(): void {
-  shade = shadeMode === 0 ? defaultShadeParams() : heightShadeParams();
+  if (shadeMode === 0) shade = defaultShadeParams();
+  else {
+    shade = heightShadeParams();
+    if (shadeMode === 2) shade.heightPeriod = CONFIG.green.shadeHeight.repeatPeriod;
+  }
   applyPixelMode();
   greenMesh.setShade(shade);
 }
