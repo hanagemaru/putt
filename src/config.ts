@@ -270,8 +270,8 @@ export const CONFIG = {
        */
       sideMidFitMargin: 1.1,
       sideMidHeight: 1.6,
-      /** 読み視点を切り替えるときの補間時間 [s] */
-      transition: 0.35,
+      /** 読み視点を切り替えるときの補間時間 [s]。全体比較のため従来0.35秒から2倍 */
+      transition: 0.7,
     },
 
     /**
@@ -293,16 +293,22 @@ export const CONFIG = {
        * カップが近いときにこれ以上は下げないための下限
        */
       lookDistanceMin: 2,
-      /** 他の読み視点や STROKE から方向調整へ戻るときの遷移時間 [s] */
-      transition: 0.4,
+      /** 他の読み視点や STROKE から方向調整へ戻るときの遷移時間 [s]。従来0.4秒から2倍 */
+      transition: 0.8,
     },
 
     /** STROKE（§3 / §4）。真下を見下ろす */
     stroke: {
-      /** ADDRESS ⇄ STROKE の遷移時間 [s]。0.25 秒以内。ロール回転を長く見せない */
-      transition: 0.22,
+      /** ADDRESS ⇄ STROKE の遷移時間 [s]。全体比較のため従来0.22秒から2倍 */
+      transition: 0.44,
       /** ボール真上の視点高さ [m] */
       eyeHeight: 1.5,
+      /** STROKE真下 ⇄ カップ確認の遷移時間 [s] */
+      cupCheckTransition: 0.7,
+      /** カップ確認の比較用ROLL [度]。旧ADDRESSで試した30度を再利用 */
+      cupCheckRollDeg: 30,
+      /** カップ確認時にカップ面より上を見る量 [m] */
+      cupCheckLookAtHeight: 0.03,
       /**
        * 描画するフェース角の感度。1 で計測した軌跡角をそのまま、0.6 なら傾きを 60% に抑える。
        * ボールの打ち出し方向には使わず、ゲーム本体のパター表示だけを落ち着かせる。
@@ -354,8 +360,8 @@ export const CONFIG = {
 
     /** CUP（§3）。決着。カット（補間しない） */
     cup: {
-      /** ボールがカップまでこの距離を切ったら切り替える [m] */
-      triggerDistance: 1.5,
+      /** ボールがカップまでこの距離を切ったら切り替える [m]。従来1.5mから近づける */
+      triggerDistance: 0.5,
       /** カップ後方へ引く距離 [m] */
       back: 1.3,
       /** ラインから横へずらす距離 [m]。旗竿が画面中央でボールを隠すのを避ける */
@@ -370,8 +376,8 @@ export const CONFIG = {
     result: {
       /** 停止を確認してから遷移を始めるまでの待ち [s] */
       settleDelay: 0.35,
-      /** 俯瞰への遷移時間 [s] */
-      transition: 0.9,
+      /** 俯瞰への遷移時間 [s]。全体比較のため従来0.9秒から2倍 */
+      transition: 1.8,
       /**
        * 見下ろし角 [度]。見た目は真上。
        * 90度ちょうどは lookAt の上方向と視線が平行になり得るため、0.1度だけ逃がして安定させる。

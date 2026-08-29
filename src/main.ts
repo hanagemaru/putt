@@ -31,6 +31,7 @@ import {
   readPose,
   resultPose,
   projectedRadiusPx,
+  strokeCupPose,
   strokePose,
   strokeUp,
   type ReadView,
@@ -231,6 +232,7 @@ scene.add(aimGuide);
 
 type State = 'ADDRESS' | 'STROKE' | 'FOLLOW' | 'CUP' | 'RESULT';
 type AimView = 'AIM' | ReadView;
+type StrokeCameraView = 'DOWN' | 'CUP';
 
 let roller = new Roller(green);
 const cup = new THREE.Vector2(CONFIG.hole.position.x, CONFIG.hole.position.z);
@@ -242,6 +244,10 @@ const shotStart = new THREE.Vector2(G.ballStart.x, G.ballStart.z);
 let state: State = 'ADDRESS';
 /** ADDRESS の中で、方向調整か読み用定点かを切り替える。初期は方向調整。 */
 let aimView: AimView = 'AIM';
+/** STROKE 内で真下か、カップ確認かを切り替える。 */
+let strokeCameraView: StrokeCameraView = 'DOWN';
+/** カップ確認の比較用。false=傾きなし、true=30度。 */
+let cupCheckTilted = false;
 /** 狙い [rad]。0 が -Z、+ で +X へ回る（physics と同じ約束） */
 let aim = 0;
 /** ボール→カップ方向。狙いの振れ幅はここから測る */
@@ -320,6 +326,7 @@ function updateAimGuide(): void {
 function enterAddress(cut = false, resetAim = true): void {
   state = 'ADDRESS';
   aimView = 'AIM';
+  strokeCameraView = 'DOWN';
   notice = '左右スワイプで狙い、タップでストローク';
   props.visible = true;
   ballMesh.visible = roller.status !== 'holed';
@@ -355,6 +362,8 @@ function setAimView(view: AimView): void {
 
 function enterStroke(): void {
   state = 'STROKE';
+  strokeCameraView = 'DOWN';
+  cupCheckTilted = false;
   notice = '';
   strokeArmed = false;
   aimGuide.visible = false;
@@ -364,6 +373,40 @@ function enterStroke(): void {
   ballMesh.visible = true;
   updateBallMesh();
   rig.transition(strokePose(ball, green), G.stroke.transition, strokeUp(aim, tmpUp));
+}
+
+/** STROKE 真下姿勢の位置を保ったまま、視線だけカップへ向ける。 */
+function showCupCheck(): void {
+  if (state !== 'STROKE' || strokeCameraView !== 'DOWN' || rig.transitioning) return;
+  strokeCameraView = 'CUP';
+  strokeArmed = false;
+  strokeView.exit();
+  props.visible = true;
+  notice = 'カップ確認 ・ 傾きの有無を比較できます';
+  rig.transition(
+    strokeCupPose(ball, cup, green, cupCheckTilted ? G.stroke.cupCheckRollDeg : 0),
+    G.stroke.cupCheckTransition,
+  );
+}
+
+/** カップ確認の視野を、傾きなし / 30度で比較する。 */
+function setCupCheckTilt(tilted: boolean): void {
+  if (state !== 'STROKE' || strokeCameraView !== 'CUP' || rig.transitioning) return;
+  if (cupCheckTilted === tilted) return;
+  cupCheckTilted = tilted;
+  rig.transition(
+    strokeCupPose(ball, cup, green, cupCheckTilted ? G.stroke.cupCheckRollDeg : 0),
+    G.stroke.cupCheckTransition,
+  );
+}
+
+/** カップ確認から、同じ位置の真下STROKE視点へ戻る。戻り切るまでスワイプ入力は受けない。 */
+function returnToStrokeView(): void {
+  if (state !== 'STROKE' || strokeCameraView !== 'CUP' || rig.transitioning) return;
+  strokeCameraView = 'DOWN';
+  strokeArmed = false;
+  notice = '';
+  rig.transition(strokePose(ball, green), G.stroke.cupCheckTransition, strokeUp(aim, tmpUp));
 }
 
 /** STROKE から方向調整へ戻る。狙いはリセットしない。 */
@@ -384,6 +427,7 @@ function launch(speedMs: number, launchAngle: number): void {
 
 function enterFollow(): void {
   state = 'FOLLOW';
+  strokeCameraView = 'DOWN';
   notice = '';
   aimGuide.visible = false;
   trail.visible = false;
@@ -649,11 +693,15 @@ renderer.setAnimationLoop((now) => {
       break;
 
     case 'STROKE':
-      if (!transitioning && !strokeArmed) {
-        strokeArmed = true;
-        strokeView.enter();
+      if (strokeCameraView === 'DOWN') {
+        if (!transitioning && !strokeArmed) {
+          // カップ確認から戻る遷移中は背景を残し、真下へ戻り切ってから通常STROKE表示へ戻す。
+          props.visible = false;
+          strokeArmed = true;
+          strokeView.enter();
+        }
+        strokeView.update(dt);
       }
-      strokeView.update(dt);
       break;
 
     case 'FOLLOW': {
@@ -665,7 +713,7 @@ renderer.setAnimationLoop((now) => {
         updateFollow(dt);
       }
       if (roller.status !== 'rolling') enterResult();
-      // カップまで 1.5m を切ったらカット（§3）。FOLLOW に切り替わるまではカメラを動かさない
+      // カップまで約50cmを切ったらカット。FOLLOW に切り替わるまではカメラを動かさない
       else if (!holding && distanceToCup() < G.cup.triggerDistance) enterCup();
       break;
     }
@@ -715,6 +763,11 @@ const cameraButtons = Array.from(
 );
 const strokeControls = document.getElementById('stroke-controls')!;
 const strokeBack = document.getElementById('stroke-back') as HTMLButtonElement;
+const strokeCameraControls = document.getElementById('stroke-camera-controls')!;
+const strokeCupCheck = document.getElementById('stroke-cup-check') as HTMLButtonElement;
+const strokeCupUpright = document.getElementById('stroke-cup-upright') as HTMLButtonElement;
+const strokeCupTilted = document.getElementById('stroke-cup-tilted') as HTMLButtonElement;
+const strokeCupReturn = document.getElementById('stroke-cup-return') as HTMLButtonElement;
 
 for (const button of cameraButtons) {
   button.addEventListener('click', () => {
@@ -723,6 +776,10 @@ for (const button of cameraButtons) {
   });
 }
 strokeBack.addEventListener('click', returnToAddress);
+strokeCupCheck.addEventListener('click', showCupCheck);
+strokeCupUpright.addEventListener('click', () => setCupCheckTilt(false));
+strokeCupTilted.addEventListener('click', () => setCupCheckTilt(true));
+strokeCupReturn.addEventListener('click', returnToStrokeView);
 
 /**
  * ドット感の切り替え。既定は 2（採用した見た目）。比較用に OFF も残す。
@@ -756,15 +813,29 @@ hud.seed.addEventListener('click', () => {
 function updateControls(): void {
   cameraControls.style.display = state === 'ADDRESS' ? 'flex' : 'none';
   strokeControls.style.display = state === 'STROKE' ? 'flex' : 'none';
+  strokeCameraControls.style.display = state === 'STROKE' ? 'flex' : 'none';
   for (const button of cameraButtons) {
     button.classList.toggle('active', button.dataset.aimView === aimView);
   }
+
+  const checkingCup = state === 'STROKE' && strokeCameraView === 'CUP';
+  strokeCupCheck.style.display = checkingCup ? 'none' : 'block';
+  strokeCupUpright.style.display = checkingCup ? 'block' : 'none';
+  strokeCupTilted.style.display = checkingCup ? 'block' : 'none';
+  strokeCupReturn.style.display = checkingCup ? 'block' : 'none';
+  strokeCupUpright.classList.toggle('active', checkingCup && !cupCheckTilted);
+  strokeCupTilted.classList.toggle('active', checkingCup && cupCheckTilted);
 }
 
 function updateHud(): void {
   hud.state.textContent = state;
-  hud.view.textContent =
-    state === 'ADDRESS' ? (aimView === 'AIM' ? '方向調整' : READ_VIEW_LABEL[aimView]) : '';
+  if (state === 'ADDRESS') {
+    hud.view.textContent = aimView === 'AIM' ? '方向調整' : READ_VIEW_LABEL[aimView];
+  } else if (state === 'STROKE' && strokeCameraView === 'CUP') {
+    hud.view.textContent = `カップ確認（${cupCheckTilted ? `${G.stroke.cupCheckRollDeg}°` : '傾きなし'}）`;
+  } else {
+    hud.view.textContent = '';
+  }
   // 狙いはボール→カップ方向からのズレで出す。+ が右
   const offsetDeg = THREE.MathUtils.radToDeg(aim - aimBase);
   hud.aim.textContent = `狙い ${offsetDeg >= 0 ? '+' : ''}${offsetDeg.toFixed(1)}°`;

@@ -11,7 +11,7 @@ const G = CONFIG.game;
 export interface CameraPose {
   position: THREE.Vector3;
   target: THREE.Vector3;
-  /** 視野の傾き [rad]。ADDRESS でだけ 0 以外になる */
+  /** 視線まわりの傾き [rad] */
   roll: number;
   fov: number;
 }
@@ -149,6 +149,21 @@ export function strokePose(ball: THREE.Vector2, green: Green): CameraPose {
 }
 
 /**
+ * STROKE 中の「カップ確認」。カメラ位置は真下視点と同じボール真上のまま、視線だけカップへ向ける。
+ * rollDeg=0 と、以前の ADDRESS で試した 30 度を実機比較できるようにする。
+ */
+export function strokeCupPose(
+  ball: THREE.Vector2,
+  cup: THREE.Vector2,
+  green: Green,
+  rollDeg: number,
+): CameraPose {
+  const position = above(green, ball.x, ball.y, G.stroke.eyeHeight);
+  const target = above(green, cup.x, cup.y, G.stroke.cupCheckLookAtHeight);
+  return pose(position, target, THREE.MathUtils.degToRad(rollDeg));
+}
+
+/**
  * CUP（§3）。カップ後方・芝の高さの定点。ここで最後の曲がりと速度が見える。
  * 「カップ後方」はボールから見て奥側。カット（補間しない）で入る。
  */
@@ -161,8 +176,8 @@ export function cupPose(ball: THREE.Vector2, cup: THREE.Vector2, green: Green): 
 }
 
 /**
- * RESULT（§3）。斜め45度の俯瞰。**ボールが完全に停止してからしか使わない。**
- * ボールとカップの中間を見下ろし、両方が入る距離まで引く。
+ * RESULT（§3）。ほぼ真上の俯瞰。**ボールが完全に停止してからしか使わない。**
+ * 打ち出し位置・停止位置・カップが入る距離まで引く。
  */
 export function resultPose(
   from: THREE.Vector2,
@@ -182,7 +197,6 @@ export function resultPose(
   const distance = Math.max(span * R.distanceScale, R.distanceMin);
   const pitch = THREE.MathUtils.degToRad(R.pitchDeg);
 
-  // 打ち出し方向の真後ろから yawDeg だけ回り込む。真後ろだと曲がりが線に潰れて読めない
   const line = towardCup(from, cup);
   const yaw = THREE.MathUtils.degToRad(R.yawDeg);
   const cos = Math.cos(yaw);

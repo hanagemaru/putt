@@ -122,8 +122,22 @@
         max-width: calc(100vw - 16px);
         font-family: system-ui, -apple-system, sans-serif;
       }
+      /* STROKE の姿勢を変えずにカップ方向を見る比較用UI。左側に縦置きする */
+      #stroke-camera-controls {
+        position: fixed;
+        left: max(8px, env(safe-area-inset-left));
+        top: 50%;
+        transform: translateY(-50%);
+        z-index: 30;
+        display: none;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+        font-family: system-ui, -apple-system, sans-serif;
+      }
       .camera-button,
-      #stroke-back {
+      #stroke-back,
+      .stroke-camera-button {
         appearance: none;
         border: 1px solid rgba(232, 240, 232, 0.55);
         border-radius: 999px;
@@ -137,7 +151,8 @@
         white-space: nowrap;
         touch-action: manipulation;
       }
-      .camera-button.active {
+      .camera-button.active,
+      .stroke-camera-button.active {
         background: rgba(232, 240, 232, 0.92);
         border-color: rgba(255, 255, 255, 0.95);
         color: #162018;
@@ -216,6 +231,13 @@
 
     <div id="stroke-controls">
       <button type="button" id="stroke-back">方向調整に戻る</button>
+    </div>
+
+    <div id="stroke-camera-controls" aria-label="ストローク中のカップ確認">
+      <button type="button" class="stroke-camera-button" id="stroke-cup-check">カップ確認</button>
+      <button type="button" class="stroke-camera-button" id="stroke-cup-upright">傾きなし</button>
+      <button type="button" class="stroke-camera-button" id="stroke-cup-tilted">傾き30°</button>
+      <button type="button" class="stroke-camera-button" id="stroke-cup-return">ストロークに戻る</button>
     </div>
 
     <div id="rotate-overlay">
