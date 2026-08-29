@@ -260,6 +260,8 @@ let lastSwing = '';
 /** FOLLOW のヨー・ピッチ。カメラは平行移動しない（§3） */
 let followYaw = 0;
 let followPitch = -Math.PI / 2;
+/** CUPへ切り替える直前のFOLLOW固定位置。CUPから戻るときに復元する */
+const followReturnPosition = new THREE.Vector3();
 /**
  * 打った直後、ボールが STROKE の画面端へ近づくまでは視点を動かさない区間。
  * 画面外まで待つとボールが見えない時間ができるので、端の手前で FOLLOW へ切り替える。
@@ -487,6 +489,7 @@ function revealCourse(): void {
 }
 
 function enterCup(): void {
+  followReturnPosition.copy(camera.position);
   state = 'CUP';
   cupViewUsed = true;
   aimGuide.visible = false;
@@ -504,7 +507,7 @@ function cupBallNearEdge(): boolean {
   );
 }
 
-/** CUP定点を離れ、現在位置からFOLLOWの追従へ戻る。 */
+/** CUP定点を離れ、CUPへ入る直前のFOLLOW固定位置から追従を再開する。 */
 function resumeFollowFromCup(): void {
   if (state !== 'CUP') return;
   state = 'FOLLOW';
@@ -516,6 +519,7 @@ function resumeFollowFromCup(): void {
   props.visible = true;
   ballMesh.visible = roller.status !== 'holed';
   updateBallMesh();
+  camera.position.copy(followReturnPosition);
   snapFollowCamera();
 }
 
