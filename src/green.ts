@@ -1,5 +1,6 @@
 // グリーンのハイトマップ生成・サンプリング・メッシュ構築（spec §1）。
-// ハイトマップは表示テクスチャと物理の両方の唯一の情報源。見た目と挙動を別々に持たない。
+// 正式表示ではハイトマップが表示と物理の両方の唯一の情報源。
+// 比較用の「形状2×」だけは、物理と色を変えず3D形状の高さだけを一時的に誇張する。
 import * as THREE from 'three';
 import { CONFIG } from './config';
 
@@ -235,19 +236,22 @@ function softRamp(value: number, fullRange: number): number {
  * 実機比較で、勾配ベースはわずかな傾斜を強調できる一方、明るさが高さを意味しなくなり
  * 曲がる向きを読み違えやすかったため、正式方針から外した。
  *
- * 明暗は基準の明るさ（係数 1）を中心に上下へ振る。片側だけ暗くすると平均輝度が沈み、
- * 暗い環境で情報が潰れやすいため採用しない。
+ * `heightScale` は形状視認性の比較専用。色の計算と物理には元の h を使うため、
+ * 2倍表示でも色が意味する高さと実際の物理は変えない。
  */
 export class GreenMesh {
   readonly mesh: THREE.Mesh;
   private readonly geometry: THREE.PlaneGeometry;
   private readonly base = new THREE.Color(C.color);
   private readonly grad = { x: 0, z: 0 };
+  private heightScale = 1;
 
   constructor(
     private green: Green,
     shade: ShadeParams,
+    heightScale = 1,
   ) {
+    this.heightScale = heightScale;
     this.geometry = new THREE.PlaneGeometry(green.size, green.size, C.segments, C.segments);
     // XZ 平面へ倒しておく。以降は頂点の x/z がそのままワールド座標になる
     this.geometry.rotateX(-Math.PI / 2);
@@ -257,12 +261,13 @@ export class GreenMesh {
       this.geometry,
       new THREE.MeshLambertMaterial({ vertexColors: true }),
     );
-    this.update(green, shade);
+    this.update(green, shade, heightScale);
   }
 
   /** ハイトマップか濃淡の設定が変わったら呼ぶ。頂点の高さと色を貼り直す */
-  update(green: Green, shade: ShadeParams): void {
+  update(green: Green, shade: ShadeParams, heightScale = this.heightScale): void {
     this.green = green;
+    this.heightScale = heightScale;
     const position = this.geometry.attributes.position as THREE.BufferAttribute;
     const color = this.geometry.attributes.color as THREE.BufferAttribute;
     // 勾配ベース表示を比較するときの固定方位。ゲーム本体は gradientStrength=0 なので色には寄与しない
@@ -274,7 +279,7 @@ export class GreenMesh {
       const x = position.getX(i);
       const z = position.getZ(i);
       const h = green.sampleHeight(x, z);
-      position.setY(i, h);
+      position.setY(i, h * this.heightScale);
 
       // 勾配ベース比較用の値と、正式採用している高さベースの値を同じ式で合成できるよう保持する
       green.sampleGradient(x, z, this.grad);
@@ -297,9 +302,9 @@ export class GreenMesh {
     this.geometry.computeBoundingSphere();
   }
 
-  /** 濃淡の設定だけを変える（高さは変わらないので色だけ貼り直す） */
+  /** 濃淡の設定だけを変える。現在の形状倍率は保つ */
   setShade(shade: ShadeParams): void {
-    this.update(this.green, shade);
+    this.update(this.green, shade, this.heightScale);
   }
 }
 
@@ -307,10 +312,10 @@ export class GreenMesh {
  * カップ（§1）。直径 108mm、深さ 100mm の円筒。見た目は暗い円で十分。
  * 旗竿は必ず鉛直に立てる。傾き表現の基準になる。
  */
-export function createHole(green: Green): THREE.Group {
+export function createHole(green: Green, heightScale = 1): THREE.Group {
   const h = CONFIG.hole;
   const group = new THREE.Group();
-  const surfaceY = green.sampleHeight(h.position.x, h.position.z);
+  const surfaceY = green.sampleHeight(h.position.x, h.position.z) * heightScale;
   const radius = h.diameter / 2;
   const dark = new THREE.MeshBasicMaterial({ color: h.cupColor });
 
@@ -387,23 +392,23 @@ export function createHole(green: Green): THREE.Group {
 }
 
 /** グリーンの外に敷く地面。グリーンが宙に浮いて見えないようにするだけ */
-export function createSurround(green: Green): THREE.Mesh {
+export function createSurround(green: Green, heightScale = 1): THREE.Mesh {
   const s = CONFIG.surround;
   const mesh = new THREE.Mesh(
     new THREE.PlaneGeometry(s.size, s.size),
     new THREE.MeshLambertMaterial({ color: s.color }),
   );
   mesh.rotation.x = -Math.PI / 2;
-  mesh.position.y = green.minHeight - s.drop;
+  mesh.position.y = green.minHeight * heightScale - s.drop;
   return mesh;
 }
 
 /** 背景の木を数本。これも傾きの基準になるので必ず鉛直に立てる */
-export function createTrees(green: Green, seed: number): THREE.Group {
+export function createTrees(green: Green, seed: number, heightScale = 1): THREE.Group {
   const t = CONFIG.trees;
   const rng = makeRng(seed);
   const group = new THREE.Group();
-  const baseY = green.minHeight - CONFIG.surround.drop;
+  const baseY = green.minHeight * heightScale - CONFIG.surround.drop;
   const trunkMat = new THREE.MeshLambertMaterial({ color: t.trunkColor });
   const leafMat = new THREE.MeshLambertMaterial({ color: t.leafColor });
 
