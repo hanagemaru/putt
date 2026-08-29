@@ -77,9 +77,11 @@
         font-size: 15px;
         font-weight: 600;
       }
-      /* シードの差し替え。うねりは地形次第なので、いろいろ試せるようにしておく */
       #hud-seed,
-      #hud-pixel {
+      #hud-pixel,
+      #hud-line,
+      #hud-undulation,
+      #hud-adjust {
         margin-top: 4px;
         pointer-events: auto;
         appearance: none;
@@ -89,13 +91,17 @@
         color: #e8f0e8;
         font: inherit;
         font-size: 12px;
-        padding: 4px 12px;
+        padding: 4px 10px;
         font-variant-numeric: tabular-nums;
       }
-      #hud-pixel {
-        margin-left: 6px;
+      #hud-pixel,
+      #hud-line,
+      #hud-undulation,
+      #hud-adjust {
+        margin-left: 4px;
       }
-      #hud-seed:disabled {
+      #hud-seed:disabled,
+      #hud-undulation:disabled {
         opacity: 0.35;
       }
       #hud .notice {
@@ -103,6 +109,47 @@
         font-size: 12px;
         color: #ffd08a;
         min-height: 15px;
+      }
+
+      /* 練習用のパター反発調整。現在は比較・調整のため全画面から開ける */
+      #tuning-panel {
+        position: fixed;
+        top: max(76px, calc(env(safe-area-inset-top) + 76px));
+        right: max(10px, env(safe-area-inset-right));
+        z-index: 40;
+        width: min(280px, calc(100vw - 20px));
+        padding: 12px 14px;
+        border: 1px solid rgba(232, 240, 232, 0.55);
+        border-radius: 14px;
+        background: rgba(12, 20, 14, 0.9);
+        color: #e8f0e8;
+        font-family: system-ui, -apple-system, sans-serif;
+        font-size: 12px;
+        line-height: 1.45;
+        pointer-events: auto;
+      }
+      #tuning-panel[hidden] {
+        display: none;
+      }
+      #tuning-panel .tuning-title {
+        font-size: 13px;
+        font-weight: 700;
+        margin-bottom: 8px;
+      }
+      #tuning-panel .tuning-value {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 4px;
+      }
+      #putter-power {
+        width: 100%;
+        touch-action: manipulation;
+      }
+      #putter-power-detail {
+        margin-top: 4px;
+        color: #bcd0c0;
+        font-variant-numeric: tabular-nums;
       }
 
       /* 読みと方向調整を同じ段階に置く。視点切替はスワイプではなく明示的なボタンで行う */
@@ -122,7 +169,7 @@
         max-width: calc(100vw - 16px);
         font-family: system-ui, -apple-system, sans-serif;
       }
-      /* STROKE の姿勢を変えずにカップ方向を見る比較用UI。左側に縦置きする */
+      /* STROKE の姿勢を変えずに狙い方向を確認するUI。左側に縦置きする */
       #stroke-camera-controls {
         position: fixed;
         left: max(8px, env(safe-area-inset-left));
@@ -151,8 +198,7 @@
         white-space: nowrap;
         touch-action: manipulation;
       }
-      .camera-button.active,
-      .stroke-camera-button.active {
+      .camera-button.active {
         background: rgba(232, 240, 232, 0.92);
         border-color: rgba(255, 255, 255, 0.95);
         color: #162018;
@@ -220,6 +266,19 @@
       <div class="notice" id="hud-notice"></div>
       <button type="button" id="hud-seed">シード</button>
       <button type="button" id="hud-pixel">ドット OFF</button>
+      <button type="button" id="hud-line">ライン</button>
+      <button type="button" id="hud-undulation">地形</button>
+      <button type="button" id="hud-adjust">調整</button>
+    </div>
+
+    <div id="tuning-panel" hidden>
+      <div class="tuning-title">ストローク調整</div>
+      <div class="tuning-value">
+        <span>パター反発</span>
+        <strong id="putter-power-value">1.00×</strong>
+      </div>
+      <input type="range" id="putter-power" />
+      <div id="putter-power-detail"></div>
     </div>
 
     <div id="camera-controls" aria-label="カメラ視点">
@@ -235,8 +294,6 @@
 
     <div id="stroke-camera-controls" aria-label="ストローク中のカップ確認">
       <button type="button" class="stroke-camera-button" id="stroke-cup-check">カップ確認</button>
-      <button type="button" class="stroke-camera-button" id="stroke-cup-upright">傾きなし</button>
-      <button type="button" class="stroke-camera-button" id="stroke-cup-tilted">傾き30°</button>
       <button type="button" class="stroke-camera-button" id="stroke-cup-return">ストロークに戻る</button>
     </div>
 
