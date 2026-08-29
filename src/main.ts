@@ -27,7 +27,6 @@ import {
   READ_VIEW_LABEL,
   addressPose,
   cupPose,
-  ease,
   followFov,
   lerpAngle,
   readPose,
@@ -233,10 +232,9 @@ let lastSwing = '';
 /** FOLLOW のヨー・ピッチ。カメラは平行移動しない（§3） */
 let followYaw = 0;
 let followPitch = -Math.PI / 2;
-let riseElapsed = 0;
 /**
- * 打った直後、ボールが STROKE の視界から出るまでは視点を動かさない区間（§3 FOLLOW）。
- * すぐに顔や目線を動かさないのが安定したストロークの所作
+ * 打った直後、ボールが STROKE の画面端へ近づくまでは視点を動かさない区間。
+ * 画面外まで待つとボールが見えない時間ができるので、端の手前で FOLLOW へ切り替える。
  */
 let holding = false;
 let holdElapsed = 0;
@@ -326,20 +324,36 @@ function enterFollow(): void {
   trail.visible = false;
   followYaw = -aim;
   followPitch = -Math.PI / 2;
-  riseElapsed = 0;
   holdElapsed = 0;
-  // 打った直後は視点を動かさない。ボールが STROKE の視界から出るまで真下を見下ろしたまま
-  holding = G.follow.holdUntilOffscreen;
+  // 打った直後は真下視点を保ち、ボールが画面端へ近づいたら FOLLOW に切り替える
+  holding = G.follow.holdUntilNearEdge;
   if (!holding) revealCourse();
 }
 
-/** 顔を上げる。ここで初めてホールが視界に入る（§3） */
+/**
+ * FOLLOW のカメラを現在のボールへ即座に向ける。
+ * STROKE 画面から切り替える瞬間にこれを行うので、ボールが画面外に消える区間を作らない。
+ */
+function snapFollowCamera(): void {
+  ballWorld(tmpBall);
+  const dx = tmpBall.x - camera.position.x;
+  const dy = tmpBall.y - camera.position.y;
+  const dz = tmpBall.z - camera.position.z;
+  const len = Math.hypot(dx, dy, dz) || 1;
+  followYaw = Math.atan2(-dx, -dz);
+  followPitch =
+    Math.asin(THREE.MathUtils.clamp(dy / len, -1, 1)) + THREE.MathUtils.degToRad(G.follow.leadDeg);
+  rig.applyYawPitch(followYaw, followPitch, followFov(len));
+}
+
+/** 顔を上げて FOLLOW に切り替える。ボールがまだ STROKE 画面内にいるうちに呼ぶ */
 function revealCourse(): void {
   holding = false;
   strokeView.exit();
   props.visible = true;
   ballMesh.visible = roller.status !== 'holed';
   updateBallMesh();
+  snapFollowCamera();
 }
 
 function enterCup(): void {
@@ -521,17 +535,19 @@ function stepPhysics(dt: number): void {
 
 /**
  * 打った直後（視点を動かさない区間）。カメラは真下を向いたまま、
- * 3D のボールが実際に転がって画面から出ていくのを見せる。出たら true
+ * 3D のボールが実際に転がる。画面端へ近づいたら、見切れる前に true を返す。
  */
 function updateHold(dt: number): boolean {
   holdElapsed += dt;
   ballWorld(tmpBall).project(camera);
   strokeView.update(dt);
 
-  const m = 1 + G.follow.offscreenMargin;
-  const offscreen = Math.abs(tmpBall.x) > m || Math.abs(tmpBall.y) > m || tmpBall.z > 1;
-  // ボールが画面内で止まってしまった場合と、保険の上限時間でも顔を上げる
-  return offscreen || roller.status !== 'rolling' || holdElapsed >= G.follow.holdMax;
+  const nearEdge =
+    Math.abs(tmpBall.x) >= G.follow.switchNdc ||
+    Math.abs(tmpBall.y) >= G.follow.switchNdc ||
+    tmpBall.z > 1;
+  // ボールが画面内で止まってしまった場合と、保険の上限時間でも FOLLOW へ切り替える
+  return nearEdge || roller.status !== 'rolling' || holdElapsed >= G.follow.holdMax;
 }
 
 /** FOLLOW（§3）。カメラ位置は固定。ヨーとピッチだけでボールを追い、遠ざかるほど FOV を絞る */
@@ -546,19 +562,11 @@ function updateFollow(dt: number): void {
   const targetPitch =
     Math.asin(THREE.MathUtils.clamp(dy / len, -1, 1)) + THREE.MathUtils.degToRad(G.follow.leadDeg);
 
-  riseElapsed = Math.min(riseElapsed + dt, G.follow.riseTime);
-  if (riseElapsed < G.follow.riseTime) {
-    // ボールが視界から出たあと、0.15 秒かけて視点が上がる
-    const t = ease(riseElapsed / G.follow.riseTime);
-    followYaw = lerpAngle(-aim, targetYaw, t);
-    followPitch = -Math.PI / 2 + (targetPitch + Math.PI / 2) * t;
-  } else {
-    // 顔が上がったあとは時定数で遅れて追う。
-    // 毎フレーム画面中心へ貼りつけると相対運動がゼロになって実質静止画に見える
-    const k = 1 - Math.exp(-dt / G.follow.trackingTau);
-    followYaw = lerpAngle(followYaw, targetYaw, k);
-    followPitch += (targetPitch - followPitch) * k;
-  }
+  // 切り替え時点で一度ボールへ向けているので、その後は時定数で遅れて追う。
+  // 毎フレーム画面中心へ貼りつけると相対運動がゼロになって実質静止画に見える
+  const k = 1 - Math.exp(-dt / G.follow.trackingTau);
+  followYaw = lerpAngle(followYaw, targetYaw, k);
+  followPitch += (targetPitch - followPitch) * k;
   rig.applyYawPitch(followYaw, followPitch, followFov(len));
 }
 
@@ -587,13 +595,13 @@ renderer.setAnimationLoop((now) => {
     case 'FOLLOW': {
       stepPhysics(dt);
       if (holding) {
-        // 打った直後は視点を動かさない。ボールが視界から出たら顔を上げる
+        // ボールが STROKE 画面の端へ近づいたら、見切れる前に FOLLOW へ切り替える
         if (updateHold(dt)) revealCourse();
       } else {
         updateFollow(dt);
       }
       if (roller.status !== 'rolling') enterResult();
-      // カップまで 1.5m を切ったらカット（§3）。顔を上げるまではカメラを動かさない
+      // カップまで 1.5m を切ったらカット（§3）。FOLLOW に切り替わるまではカメラを動かさない
       else if (!holding && distanceToCup() < G.cup.triggerDistance) enterCup();
       break;
     }
