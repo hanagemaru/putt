@@ -217,6 +217,11 @@ export function defaultShadeParams(): ShadeParams {
   return { ...C.shade };
 }
 
+/** 濃淡を高さで出す案（比較用）。明るい ＝ 高い */
+export function heightShadeParams(): ShadeParams {
+  return { ...C.shadeHeight };
+}
+
 /** 中央付近は傾き 1 の直線、端だけ緩やかに飽和させる。黒つぶれ・白飛びを防ぐ */
 function softRamp(value: number, fullRange: number): number {
   const half = fullRange / 2;
