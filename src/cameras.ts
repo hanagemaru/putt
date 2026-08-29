@@ -149,17 +149,26 @@ export function strokePose(ball: THREE.Vector2, green: Green): CameraPose {
 }
 
 /**
- * STROKE 中の「カップ確認」。カメラ位置は真下視点と同じボール真上のまま、視線だけカップへ向ける。
- * rollDeg=0 と、以前の ADDRESS で試した 30 度を実機比較できるようにする。
+ * STROKE 中の「カップ確認」。カメラ位置は真下視点と同じボール真上のまま、
+ * 視線だけ現在の aim 方向へ向ける。カップ中心そのものへ固定しないので、この画面でも狙いを調整できる。
  */
 export function strokeCupPose(
   ball: THREE.Vector2,
-  cup: THREE.Vector2,
+  aim: number,
   green: Green,
+  lookDistance: number,
   rollDeg: number,
 ): CameraPose {
+  const dx = Math.sin(aim);
+  const dz = -Math.cos(aim);
+  const reach = Math.max(lookDistance, G.address.lookDistanceMin);
   const position = above(green, ball.x, ball.y, G.stroke.eyeHeight);
-  const target = above(green, cup.x, cup.y, G.stroke.cupCheckLookAtHeight);
+  const target = above(
+    green,
+    ball.x + dx * reach,
+    ball.y + dz * reach,
+    G.stroke.cupCheckLookAtHeight,
+  );
   return pose(position, target, THREE.MathUtils.degToRad(rollDeg));
 }
 
