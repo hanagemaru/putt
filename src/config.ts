@@ -82,7 +82,12 @@ export const CONFIG = {
     position: { x: 0.6, z: -5.5 },
     /** 旗竿の高さ [m]。必ず鉛直に立てる（傾き表現の基準） */
     flagstickHeight: 1.5,
-    flagstickRadius: 0.016,
+    /** 近距離で使う旗竿の自然な半径 [m] */
+    flagstickRadius: 0.012,
+    /** 遠距離でドットにつぶれないために許す見た目上の半径上限 [m] */
+    flagstickMaxRadius: 0.016,
+    /** 低解像度レンダーターゲット上で確保したい旗竿の最低幅 [px] */
+    flagstickMinPixelWidth: 1.3,
     flagWidth: 0.32,
     flagHeight: 0.22,
     flagColor: 0xd94f3d,
@@ -465,7 +470,7 @@ export const CONFIG = {
     faceMinSpeedPx: 60,
     /** 芯とみなす範囲 [px]。ここまでは減衰なし（§4.5） */
     sweetSpotPx: 12,
-    /** フェース端での減衰係数。芯からフェース端までこの値へ線形に落ちる */
+    /** フェース端での減衰係数。芯からフェース端までこの値へ線形に落とす */
     mishitMinGain: 0.55,
     /**
      * スワイプ速度の X 成分 [px/s] → ボール初速 [m/s] の換算係数（§4.6）。

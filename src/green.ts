@@ -338,12 +338,40 @@ export function createHole(green: Green): THREE.Group {
   bottom.position.set(h.position.x, surfaceY - h.depth, h.position.z);
   group.add(bottom);
 
-  // 旗竿。鉛直
+  // 旗竿。近くでは自然な細さにし、遠くでは低解像度レンダー上の最低幅だけを確保する。
+  // 高さは変えず XZ 方向だけ拡大するので、鉛直の基準としての役割は保たれる。
   const stick = new THREE.Mesh(
     new THREE.CylinderGeometry(h.flagstickRadius, h.flagstickRadius, h.flagstickHeight, 8),
     new THREE.MeshLambertMaterial({ color: 0xf0f0f0 }),
   );
   stick.position.set(h.position.x, surfaceY - h.depth + h.flagstickHeight / 2, h.position.z);
+
+  const renderSize = new THREE.Vector2();
+  const stickWorld = new THREE.Vector3();
+  const cameraWorld = new THREE.Vector3();
+  stick.onBeforeRender = (renderer, _scene, camera) => {
+    if (!(camera instanceof THREE.PerspectiveCamera)) return;
+
+    const target = renderer.getRenderTarget();
+    const viewportHeightPx = target ? target.height : renderer.getDrawingBufferSize(renderSize).y;
+    stick.getWorldPosition(stickWorld);
+    camera.getWorldPosition(cameraWorld);
+    const distance = Math.max(cameraWorld.distanceTo(stickWorld), 0.001);
+    const tanHalfFov = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
+
+    // 円柱の直径がレンダーターゲット上で何 px に見えるか。
+    // diameterPx = (2r / (2 d tan(fov/2))) * viewportHeight
+    const diameterPx =
+      (h.flagstickRadius * viewportHeightPx) / Math.max(distance * tanHalfFov, 0.0001);
+    const neededScale = h.flagstickMinPixelWidth / Math.max(diameterPx, 0.0001);
+    const maxScale = h.flagstickMaxRadius / h.flagstickRadius;
+    const scaleXZ = THREE.MathUtils.clamp(neededScale, 1, maxScale);
+
+    if (Math.abs(stick.scale.x - scaleXZ) > 0.0001) {
+      stick.scale.set(scaleXZ, 1, scaleXZ);
+      stick.updateMatrixWorld(true);
+    }
+  };
   group.add(stick);
 
   const flag = new THREE.Mesh(
