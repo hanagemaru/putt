@@ -29,6 +29,10 @@ export const CONFIG = {
     tiltPercent: 1,
     /** うねりの振幅 [m]。合成したガウシアンをこの振幅（±）へ正規化する */
     undulationAmplitude: 0.15,
+    /** 比較用の「強調」アンジュレーション振幅 [m]。表示と物理の両方に使う */
+    compareEnhancedAmplitude: 0.2,
+    /** 比較用に3D形状だけを誇張するときの高さ倍率。物理と色は変えない */
+    compareVisualHeightScale: 2,
     /** 合成するガウシアンの数 */
     gaussianCount: 7,
     /**
@@ -235,6 +239,23 @@ export const CONFIG = {
       guideColor: 0xfff0a0,
     },
 
+    /** 比較用の補助線・軌跡表示 */
+    lineCompare: {
+      /** 高解像度Canvas版の不透明度 */
+      smoothOpacity: 0.55,
+      /** 高解像度Canvas版の線幅 [px] */
+      smoothWidthPx: 2,
+    },
+
+    /** 練習用のパター反発調整。基準speedKへ倍率を掛ける */
+    putterTuning: {
+      defaultScale: 1,
+      minScale: 0.5,
+      maxScale: 1.5,
+      step: 0.05,
+      storageKey: 'putt-putter-power-scale',
+    },
+
     /** ADDRESS / RESULT などでタップ判定に使う。旧スワイプ視点切替の値も互換用に残す */
     tap: {
       /** これ以下の移動ならタップ [px] */
@@ -253,6 +274,8 @@ export const CONFIG = {
       /** カップ後方。ボール方向を向く */
       behindHoleDistance: 1.5,
       behindHoleHeight: 1.6,
+      /** カップ後方だけボールを見やすくするFOV [度] */
+      behindHoleFov: 50,
       /**
        * カップ後方だけラインから横へずらす [m]。
        * 真後ろに立つと旗竿とカップがちょうどボールに重なって、ボールが見えない
@@ -305,11 +328,6 @@ export const CONFIG = {
       eyeHeight: 1.5,
       /** STROKE真下 ⇄ カップ確認の遷移時間 [s] */
       cupCheckTransition: 0.7,
-      /**
-       * カップ確認の比較用ROLL [度]。
-       * 画面上で鉛直な旗竿の上端が左へ倒れて見える向きを負としている。
-       */
-      cupCheckRollDeg: -30,
       /** カップ確認時に狙い方向の芝面より少し上を見る量 [m] */
       cupCheckLookAtHeight: 0.03,
       /**
