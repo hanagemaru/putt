@@ -149,7 +149,11 @@ export class StrokeView {
   }
 
   private restPutter(): void {
-    this.putter.x = this.ballX + C.putterRestOffsetPx;
+    // /swipe-test/ の待機位置36pxは、ボール半径28px＋パター半幅5px＋隙間3px。
+    // ゲーム本体は3Dボールの見かけ半径が端末/FOVで変わるため、中心から36pxではなく
+    // 同じ「ボール表面からの隙間」を使い、フェースをボールのすぐ後ろへ置く。
+    const restGapPx = Math.max(C.putterRestOffsetPx - C.ballRadius - C.putterWidth / 2, 0);
+    this.putter.x = this.impactX + restGapPx;
     this.putter.y = this.ballY;
     this.putter.angle = Math.PI;
     this.putter.targetAngle = Math.PI;
