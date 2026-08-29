@@ -95,8 +95,8 @@ export function readPose(
       return pose(above(green, x, z, R.behindBallHeight), mid);
     }
     case 'BEHIND_HOLE': {
-      // 真後ろだと旗竿と旗がボールに重なるので、横へずらして立つ。
-      // 旗は竿の +X 側に垂れるので、ボールが旗の反対側に見える向き（ラインの左手側）へずらす
+      // 読みやすさを優先し、ボールとカップを結ぶ線上に立つ。
+      // 旗竿・旗の透過は main.ts 側でこの視点の間だけ行う。
       const x = cup.x + dir.x * R.behindHoleDistance - nx * R.behindHoleSideOffset;
       const z = cup.y + dir.y * R.behindHoleDistance - nz * R.behindHoleSideOffset;
       // 遠い実寸ボールを読みやすくするため、この視点だけFOVを狭める。
@@ -116,6 +116,32 @@ export function readPose(
       return pose(above(green, x, z, R.sideMidHeight), mid);
     }
   }
+}
+
+/**
+ * LOW_LINE での方向調整。
+ * 視点位置はボール→カップの基準線上で固定し、aim が変わっても位置は動かさない。
+ * 視線だけ現在の aim 方向へ向けることで、低い位置からアンジュレーションを見ながら狙える。
+ */
+export function lowLineAimPose(
+  ball: THREE.Vector2,
+  cup: THREE.Vector2,
+  aim: number,
+  green: HeightSampler,
+  lookDistance: number,
+): CameraPose {
+  const R = G.read;
+  const base = towardCup(ball, cup);
+  const position = above(
+    green,
+    ball.x - base.x * R.lowLineDistance,
+    ball.y - base.y * R.lowLineDistance,
+    R.lowLineHeight,
+  );
+  const dx = Math.sin(aim);
+  const dz = -Math.cos(aim);
+  const reach = Math.max(lookDistance, G.address.lookDistanceMin);
+  return pose(position, above(green, ball.x + dx * reach, ball.y + dz * reach, 0));
 }
 
 /**
