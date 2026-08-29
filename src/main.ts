@@ -484,7 +484,7 @@ function setAimView(view: AimView): void {
   }
 
   if (view === 'LOW_LINE') {
-    notice = '低い視点 ・ 左右スワイプで狙いを調整できます';
+    notice = '低い視点 ・ 左右スワイプで狙い、タップでストローク';
     rig.transition(
       lowLineAimPose(ball, cup, aim, visualGreen, distanceToCup()),
       G.read.transition,
@@ -817,8 +817,8 @@ function pointerEnd(e: PointerEvent): void {
   const isTap = moved <= G.tap.moveMaxPx && held <= G.tap.holdMaxMs;
 
   if (state === 'ADDRESS') {
-    // 読み用定点ではタップしてもストロークへ進まない。AIMだけタップでSTROKEへ進む。
-    if (aimView === 'AIM' && isTap) enterStroke();
+    // AIMとLOW_LINEは方向決定画面として、そのままタップでSTROKEへ進める。
+    if ((aimView === 'AIM' || aimView === 'LOW_LINE') && isTap) enterStroke();
     return;
   }
   if (state === 'RESULT') {
@@ -888,7 +888,7 @@ renderer.setAnimationLoop((now) => {
         if (aimView === 'AIM') {
           rig.apply(addressPose(ball, aim, visualGreen, distanceToCup()));
         } else if (aimView === 'LOW_LINE') {
-          // 位置は固定し、aimに合わせて視線だけ更新する。
+          // 通常の方向調整と同じく、ボールを中心に現在のaimへカメラ位置も回す。
           rig.apply(lowLineAimPose(ball, cup, aim, visualGreen, distanceToCup()));
         }
       }

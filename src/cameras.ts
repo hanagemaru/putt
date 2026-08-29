@@ -120,26 +120,25 @@ export function readPose(
 
 /**
  * LOW_LINE での方向調整。
- * 視点位置はボール→カップの基準線上で固定し、aim が変わっても位置は動かさない。
- * 視線だけ現在の aim 方向へ向けることで、低い位置からアンジュレーションを見ながら狙える。
+ * 通常の方向調整と同じく、ボールを旋回中心として現在の aim の真後ろへカメラを回す。
+ * 高さとボールからの距離だけ LOW_LINE 専用値を使い、低い位置から地形を見ながら狙える。
  */
 export function lowLineAimPose(
   ball: THREE.Vector2,
-  cup: THREE.Vector2,
+  _cup: THREE.Vector2,
   aim: number,
   green: HeightSampler,
   lookDistance: number,
 ): CameraPose {
   const R = G.read;
-  const base = towardCup(ball, cup);
-  const position = above(
-    green,
-    ball.x - base.x * R.lowLineDistance,
-    ball.y - base.y * R.lowLineDistance,
-    R.lowLineHeight,
-  );
   const dx = Math.sin(aim);
   const dz = -Math.cos(aim);
+  const position = above(
+    green,
+    ball.x - dx * R.lowLineDistance,
+    ball.y - dz * R.lowLineDistance,
+    R.lowLineHeight,
+  );
   const reach = Math.max(lookDistance, G.address.lookDistanceMin);
   return pose(position, above(green, ball.x + dx * reach, ball.y + dz * reach, 0));
 }
