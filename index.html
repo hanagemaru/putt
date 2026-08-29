@@ -105,6 +105,50 @@
         min-height: 15px;
       }
 
+      /* 読みと方向調整を同じ段階に置く。視点切替はスワイプではなく明示的なボタンで行う */
+      #camera-controls,
+      #stroke-controls {
+        position: fixed;
+        left: 50%;
+        bottom: max(14px, env(safe-area-inset-bottom));
+        transform: translateX(-50%);
+        z-index: 30;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 6px;
+        width: max-content;
+        max-width: calc(100vw - 16px);
+        font-family: system-ui, -apple-system, sans-serif;
+      }
+      .camera-button,
+      #stroke-back {
+        appearance: none;
+        border: 1px solid rgba(232, 240, 232, 0.55);
+        border-radius: 999px;
+        background: rgba(12, 20, 14, 0.72);
+        color: #e8f0e8;
+        min-height: 36px;
+        padding: 7px 11px;
+        font: inherit;
+        font-size: 11px;
+        line-height: 1;
+        white-space: nowrap;
+        touch-action: manipulation;
+      }
+      .camera-button.active {
+        background: rgba(232, 240, 232, 0.92);
+        border-color: rgba(255, 255, 255, 0.95);
+        color: #162018;
+        font-weight: 700;
+      }
+      #stroke-back {
+        min-height: 40px;
+        padding-inline: 16px;
+        font-size: 12px;
+      }
+
       /* 横画面のときだけ出す「縦にしてください」オーバーレイ。縦画面専用（spec §0） */
       #rotate-overlay {
         position: fixed;
@@ -150,7 +194,7 @@
 
     <div id="hud">
       <div class="row">
-        <span class="state" id="hud-state">READ</span>
+        <span class="state" id="hud-state">ADDRESS</span>
         <span id="hud-view"></span>
         <span id="hud-aim"></span>
         <span id="hud-dist"></span>
@@ -161,6 +205,17 @@
       <div class="notice" id="hud-notice"></div>
       <button type="button" id="hud-seed">シード</button>
       <button type="button" id="hud-pixel">ドット OFF</button>
+    </div>
+
+    <div id="camera-controls" aria-label="カメラ視点">
+      <button type="button" class="camera-button" data-aim-view="AIM">方向調整</button>
+      <button type="button" class="camera-button" data-aim-view="BEHIND_HOLE">カップ後方</button>
+      <button type="button" class="camera-button" data-aim-view="LOW_LINE">低い視点</button>
+      <button type="button" class="camera-button" data-aim-view="SIDE_MID">横から</button>
+    </div>
+
+    <div id="stroke-controls">
+      <button type="button" id="stroke-back">方向調整に戻る</button>
     </div>
 
     <div id="rotate-overlay">
