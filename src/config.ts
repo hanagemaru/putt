@@ -398,11 +398,6 @@ export const CONFIG = {
        * 見るため従来どおり生の角度を使い、ゲーム本体だけ平滑化する。
        */
       faceSmoothingTau: 0.1,
-      /** つま先の描画 [px]。画面下端からの位置と大きさ */
-      toeWidthPx: 74,
-      toeHeightPx: 30,
-      toeGapPx: 26,
-      toeBottomPx: 18,
     },
 
     /** FOLLOW（§3）。顔を上げて追う。カメラは平行移動しない */
