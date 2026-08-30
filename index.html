@@ -52,7 +52,8 @@
         left: 0;
         right: 0;
         z-index: 20;
-        padding: 8px 12px calc(8px + 6px);
+        /* 右側はSTROKE中のボタン列が入るので空けておく */
+        padding: 8px 116px calc(8px + 6px) 12px;
         pointer-events: none;
         font-family: system-ui, -apple-system, sans-serif;
         color: #e8f0e8;
@@ -114,7 +115,7 @@
       /* 練習用のパター反発調整。入口はSTROKE中だけ表示する */
       #tuning-panel {
         position: fixed;
-        top: max(76px, calc(env(safe-area-inset-top) + 76px));
+        top: max(104px, calc(env(safe-area-inset-top) + 104px));
         right: max(10px, env(safe-area-inset-right));
         z-index: 40;
         width: min(280px, calc(100vw - 20px));
@@ -153,8 +154,7 @@
       }
 
       /* 読みと方向調整を同じ段階に置く。視点切替はスワイプではなく明示的なボタンで行う */
-      #camera-controls,
-      #stroke-controls {
+      #camera-controls {
         position: fixed;
         left: 50%;
         bottom: max(14px, env(safe-area-inset-bottom));
@@ -169,18 +169,30 @@
         max-width: calc(100vw - 16px);
         font-family: system-ui, -apple-system, sans-serif;
       }
-      /* STROKE の姿勢を変えずに狙い方向を確認するUI。左側に縦置きする */
+      /*
+       * STROKE中のボタンは画面上部の右へ縦に積む。
+       * 真下視点では画面のどこが空いているかが決まっている:
+       *  - 下中央 … つま先の描画（画面下端から18px、高さ30px、幅108〜282px）
+       *  - 中央の横帯 … ボール・パター・指のドラッグ経路
+       *  - 中央から左 … 残り0.5m未満のときカップが出る（画面左方向＝狙った方向、§4.1）
+       * 空いているのは上部だけなので、そこへまとめる
+       */
+      #stroke-controls,
       #stroke-camera-controls {
         position: fixed;
-        left: max(8px, env(safe-area-inset-left));
-        top: 50%;
-        transform: translateY(-50%);
+        right: max(8px, env(safe-area-inset-right));
         z-index: 30;
         display: none;
         flex-direction: column;
-        align-items: flex-start;
+        align-items: flex-end;
         gap: 6px;
         font-family: system-ui, -apple-system, sans-serif;
+      }
+      #stroke-controls {
+        top: max(10px, calc(env(safe-area-inset-top) + 10px));
+      }
+      #stroke-camera-controls {
+        top: max(56px, calc(env(safe-area-inset-top) + 56px));
       }
       .camera-button,
       #stroke-back,
