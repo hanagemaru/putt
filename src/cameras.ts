@@ -273,11 +273,13 @@ export function cupCheckGuideOffset(
   lookDistance: number,
   guideLift: number,
   minOffset: number,
+  screenFraction: number = G.stroke.cupCheckGuideScreenFraction,
 ): number {
   const p = strokeCupPose(ball, aim, green, lookDistance);
   const pitch = depression(p.position, p.target.x, p.target.y, p.target.z);
-  const frac = G.stroke.cupCheckGuideScreenFraction;
-  // 手前端を置きたい伏角。視線から下へ、画面の割合ぶんだけ倒したところ
+  const frac = screenFraction;
+  // 置きたい点の伏角。視線から下へ、画面の割合ぶんだけ倒したところ。
+  // frac が 1 を超えると画面下端より下、つまり画面の外になる
   const target = pitch + Math.atan((frac * 2 - 1) * Math.tan(THREE.MathUtils.degToRad(CONFIG.camera.fov) / 2));
   const drop = p.position.y - (green.sampleHeight(ball.x, ball.y) + guideLift);
   const offset = drop / Math.tan(target);
