@@ -58,6 +58,34 @@ for (const course of courses) {
   }
 }
 
+// シードを切り替えると外形ごと変わるので、どのシードでも遊べる形になることを確かめる。
+// 帯の幅の揺らぎは100%未満なのでルート上の芝は構造的に途切れないが、
+// 池や枠との組み合わせまで含めて実際に走査しておく
+const SWEEP_COUNT = 200;
+const SWEEP_CELL_SIZE = 0.15;
+
+for (const base of courses) {
+  console.log(`\n=== ${base.name}: シード掃引（${SWEEP_COUNT}通り・格子${SWEEP_CELL_SIZE}m）===`);
+  const ratios: number[] = [];
+  const bad: string[] = [];
+  for (let i = 0; i < SWEEP_COUNT; i++) {
+    // 掃引そのものも再現可能にする。実行ごとに変わる乱数は使わない
+    const seed = (base.seed + i * 7919) >>> 0;
+    const result = validateCourse({ ...base, seed }, { cellSize: SWEEP_CELL_SIZE });
+    ratios.push(result.areaRatio.ob);
+    if (!result.ok) bad.push(`シード ${seed}: ${result.issues.join(' / ')}`);
+  }
+  ratios.sort((a, b) => a - b);
+  const mean = ratios.reduce((a, b) => a + b, 0) / ratios.length;
+  console.log(`OB面積比: 最小 ${percent(ratios[0])} / 平均 ${percent(mean)} / 最大 ${percent(ratios[ratios.length - 1])}`);
+  if (bad.length === 0) {
+    console.log('すべてのシードで、ティー/カップが通常芝・ティーからカップまで芝が連結: OK');
+  } else {
+    failed = true;
+    for (const line of bad) console.log(`  ! ${line}`);
+  }
+}
+
 if (failed) {
   console.error('\n検証に失敗しました。');
   process.exit(1);
