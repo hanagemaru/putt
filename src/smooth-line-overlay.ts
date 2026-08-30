@@ -1,5 +1,12 @@
 import * as THREE from 'three';
 
+/** 画面上でガイドを隠すボールの円。中心と半径は CSS px */
+export interface BallOccluder {
+  x: number;
+  y: number;
+  radius: number;
+}
+
 /**
  * 3Dシーンのドット化とは別に、補助線とRESULT軌跡だけを高解像度Canvasで重ねる表示。
  * 軌跡点そのものは変えず、Canvasのアンチエイリアスで滑らかに見せる。
@@ -51,6 +58,7 @@ export class SmoothLineOverlay {
     this.ctx.clearRect(0, 0, this.cssWidth, this.cssHeight);
   }
 
+  /** ガイドを隠す円（＝画面上のボール）。中心と半径は px */
   draw(
     camera: THREE.PerspectiveCamera,
     aimPositions: Float32Array,
@@ -58,9 +66,10 @@ export class SmoothLineOverlay {
     trailPositions: Float32Array,
     trailCount: number,
     trailVisible: boolean,
+    guideOccluder: BallOccluder | null = null,
   ): void {
     this.clear();
-    if (aimVisible) this.drawTaperedGuide(camera, aimPositions);
+    if (aimVisible) this.drawTaperedGuide(camera, aimPositions, guideOccluder);
     if (trailVisible && trailCount > 1) {
       this.drawPath(camera, trailPositions, trailCount, this.trailColor);
     }
@@ -69,8 +78,16 @@ export class SmoothLineOverlay {
   /**
    * 50cmガイドは近端→遠端の順で入っている。
    * 画面上で台形にして、先端へ向かって幅と透明度を落とすことで遠近感を出す。
+   *
+   * ガイドはボールの向こう側にあるので、ボールに隠れなければならない。
+   * この Canvas は WebGL の上に重ねていて深度を持てないため、
+   * 画面上のボールの円をクリップから抜いて「ボールより下のレイヤー」を作る。
    */
-  private drawTaperedGuide(camera: THREE.PerspectiveCamera, positions: Float32Array): void {
+  private drawTaperedGuide(
+    camera: THREE.PerspectiveCamera,
+    positions: Float32Array,
+    occluder: BallOccluder | null,
+  ): void {
     const a = this.projectPoint(camera, positions, 0);
     const b = this.projectPoint(camera, positions, 1);
     if (!a || !b) return;
@@ -91,6 +108,13 @@ export class SmoothLineOverlay {
     gradient.addColorStop(1, this.rgba(this.aimColor, Math.max(0.04, this.opacity * 0.12)));
 
     ctx.save();
+    if (occluder && occluder.radius > 0) {
+      // 画面全体からボールの円をくり抜いた領域だけに描く（even-odd）
+      ctx.beginPath();
+      ctx.rect(0, 0, this.cssWidth, this.cssHeight);
+      ctx.arc(occluder.x, occluder.y, occluder.radius, 0, Math.PI * 2);
+      ctx.clip('evenodd');
+    }
     ctx.fillStyle = gradient;
     ctx.beginPath();
     ctx.moveTo(a.x + nx * startHalf, a.y + ny * startHalf);

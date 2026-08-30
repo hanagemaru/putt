@@ -23,7 +23,7 @@ import {
 import { Roller } from './physics';
 import { surfaceAt } from './course/course-map';
 import { PROTOTYPE_COURSE } from './course/prototype-course';
-import { SmoothLineOverlay } from './smooth-line-overlay';
+import { SmoothLineOverlay, type BallOccluder } from './smooth-line-overlay';
 import { StrokeView } from './stroke-view';
 import {
   CameraRig,
@@ -285,11 +285,11 @@ const aimGuide = new THREE.Line(
     color: G.aim.guideColor,
     transparent: true,
     opacity: 0.95,
-    depthTest: false,
+    // ボールの向こう側にある線なので、ボールに隠れる。最前面に出さない
+    depthTest: true,
   }),
 );
 aimGuide.frustumCulled = false;
-aimGuide.renderOrder = 20;
 aimGuide.visible = false;
 scene.add(aimGuide);
 
@@ -425,18 +425,40 @@ function syncLineVisibility(): void {
   trail.visible = dotted && trailShouldShow();
 }
 
+/**
+ * 画面上のボールの円。ガイドはこの円に隠れる（＝ボールより下のレイヤー）。
+ * 半径はストロークのインパクトラインと同じ式で、実寸のボールから求める。
+ */
+function guideBallOccluder(): BallOccluder | null {
+  ballWorld(tmpBall);
+  const distance = camera.position.distanceTo(tmpBall);
+  if (distance <= CONFIG.ball.radius) return null;
+  tmpBall.project(camera);
+  if (tmpBall.z < -1 || tmpBall.z > 1) return null;
+  const height = app.clientHeight;
+  const radius =
+    projectedRadiusPx(CONFIG.ball.radius, distance, camera.fov, height) * G.aim.guideBallMaskScale;
+  return {
+    x: (tmpBall.x * 0.5 + 0.5) * app.clientWidth,
+    y: (-tmpBall.y * 0.5 + 0.5) * height,
+    radius,
+  };
+}
+
 function updateSmoothLines(): void {
   if (lineMode !== 'SMOOTH') {
     smoothLines.clear();
     return;
   }
+  const showAim = aimGuideShouldShow();
   smoothLines.draw(
     camera,
     aimGuidePositions,
-    aimGuideShouldShow(),
+    showAim,
     trailPositions,
     trailPointCount,
     trailShouldShow(),
+    showAim ? guideBallOccluder() : null,
   );
 }
 

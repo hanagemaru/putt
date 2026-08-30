@@ -145,12 +145,65 @@ export function lowLineAimPose(
 }
 
 /**
+ * 視点の高さと水平距離から、その点が水平線より何ラジアン下に見えるかを返す。
+ */
+function depression(position: THREE.Vector3, x: number, y: number, z: number): number {
+  return Math.atan2(position.y - y, Math.hypot(x - position.x, z - position.z));
+}
+
+/**
+ * 注視点を「ボールが画面内に残る」ところまで下げ直す。
+ *
+ * ピッチを注視点だけで決めると、ホールが長いほど視線が水平に近づき、
+ * 足元のボールが画面下端から外れる。ADDRESS の立ち位置（後方 1.5m・目線 1.5m）では
+ * ボールは視点から約45度下にあり、縦の半画角35度より大きいので、
+ * 遠いカップを見るほど必ず外れる。
+ *
+ * 注視点の距離に上限を置く手もあるが、その上限は画角・立ち位置・目線の高さが
+ * 変わるたびに合わなくなる。ここでは「ボールの接地点が画面高さの
+ * `ballScreenMaxFraction` より下へは行かない」という要求そのものを幾何で解き、
+ * **足りない分だけ**視線を下げる。近いホールでは何も変わらず、
+ * 狙った先（＝ピン）は画角の中に残る。
+ */
+function keepBallOnScreen(
+  position: THREE.Vector3,
+  target: THREE.Vector3,
+  ball: THREE.Vector2,
+  green: HeightSampler,
+  fovDeg: number,
+): THREE.Vector3 {
+  const ballY = green.sampleHeight(ball.x, ball.y);
+  // 視線に対してボールが何ラジアン下に見えてよいか。
+  // 画面高さの割合 f は ndc へ直すと 2f - 1。three.js の fov は縦なのでアスペクトは要らない
+  const ndc = G.address.ballScreenMaxFraction * 2 - 1;
+  const allowBelowAxis = Math.atan(ndc * Math.tan(THREE.MathUtils.degToRad(fovDeg) / 2));
+  const ballDepression = depression(position, ball.x, ballY, ball.y);
+  const requiredPitch = ballDepression - allowBelowAxis;
+  const naturalPitch = depression(position, target.x, target.y, target.z);
+  if (naturalPitch >= requiredPitch) return target;
+
+  // 向きだけ下へ倒す。注視点の水平方向と距離は変えない（＝狙っている方向はそのまま）
+  const length = position.distanceTo(target);
+  const hx = target.x - position.x;
+  const hz = target.z - position.z;
+  const horizontal = Math.hypot(hx, hz) || 1;
+  const cos = Math.cos(requiredPitch);
+  return new THREE.Vector3(
+    position.x + (hx / horizontal) * cos * length,
+    position.y - Math.sin(requiredPitch) * length,
+    position.z + (hz / horizontal) * cos * length,
+  );
+}
+
+/**
  * ADDRESS（§3）。ボールの後方に立ち、狙った方向をまっすぐ見る。
  *
  * 傾けた視野（ROLL）で狙いを合わせても遊びとして意味がなかったので持たない。
  * 見下ろし角も角度では決めない。注視点をボールから狙い方向へ lookDistance 進んだ芝の上に置くと、
  * ピッチは幾何から決まり、距離が変わっても狙った先が画面に入る。
  * lookDistance はふだんカップまでの距離を渡す（＝狙った先にピンが見える）。
+ * ただし長いホールでは視線が寝すぎて足元のボールが画面から外れるので、
+ * そのときだけ `keepBallOnScreen` が視線を下げ直す。
  */
 export function addressPose(
   ball: THREE.Vector2,
@@ -166,7 +219,8 @@ export function addressPose(
   const reach = Math.max(lookDistance, A.lookDistanceMin);
   const tx = ball.x + dx * reach;
   const tz = ball.y + dz * reach;
-  return pose(position, above(green, tx, tz, 0));
+  const target = above(green, tx, tz, 0);
+  return pose(position, keepBallOnScreen(position, target, ball, green, CONFIG.camera.fov));
 }
 
 /**
