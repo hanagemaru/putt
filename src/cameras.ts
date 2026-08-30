@@ -258,6 +258,32 @@ export function strokeCupPose(
 }
 
 /**
+ * STROKEカップ確認で、0.5mガイドをボールから狙い方向へ進める距離 [m]。
+ *
+ * この視点はボール真上から前を見るので、ボール直後のガイドは視線のはるか下にあって入らない。
+ * 視線を下げるとカップと旗竿が画面から出てしまうため、代わりにガイドを前へ滑らせる。
+ * 手前端が画面高さの `cupCheckGuideScreenFraction` に来る距離を見下ろし角から解くので、
+ * ホールの長さが変わっても画面上のガイドの位置は動かない。
+ */
+export function cupCheckGuideOffset(
+  ball: THREE.Vector2,
+  aim: number,
+  green: HeightSampler,
+  lookDistance: number,
+  guideLift: number,
+  minOffset: number,
+): number {
+  const p = strokeCupPose(ball, aim, green, lookDistance);
+  const pitch = depression(p.position, p.target.x, p.target.y, p.target.z);
+  const frac = G.stroke.cupCheckGuideScreenFraction;
+  // 手前端を置きたい伏角。視線から下へ、画面の割合ぶんだけ倒したところ
+  const target = pitch + Math.atan((frac * 2 - 1) * Math.tan(THREE.MathUtils.degToRad(CONFIG.camera.fov) / 2));
+  const drop = p.position.y - (green.sampleHeight(ball.x, ball.y) + guideLift);
+  const offset = drop / Math.tan(target);
+  return Number.isFinite(offset) ? Math.max(minOffset, offset) : minOffset;
+}
+
+/**
  * CUP（§3）。カップ後方・芝の高さの定点。ここで最後の曲がりと速度が見える。
  * 「カップ後方」はボールから見て奥側。カット（補間しない）で入る。
  */
