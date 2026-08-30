@@ -562,6 +562,24 @@ function enterAddress(cut = false, resetAim = true): void {
   syncLineVisibility();
 }
 
+/** マップを開く前に見ていた読み視点。閉じるとここへ戻す */
+let viewBeforeMap: AimView = 'AIM';
+
+/** マップを開く／閉じる。読み視点の切り替えとは別の操作として扱う */
+function toggleMap(): void {
+  if (state !== 'ADDRESS') return;
+  if (aimView === 'MAP') closeMap();
+  else {
+    viewBeforeMap = aimView;
+    setAimView('MAP');
+  }
+}
+
+/** マップを閉じて直前の読み視点へ戻す */
+function closeMap(): void {
+  setAimView(viewBeforeMap === 'MAP' ? 'AIM' : viewBeforeMap);
+}
+
 /** ADDRESS 内の視点をボタンで切り替える。スワイプでは切り替えない。 */
 function setAimView(view: AimView): void {
   if (state !== 'ADDRESS' || aimView === view) return;
@@ -578,7 +596,7 @@ function setAimView(view: AimView): void {
 
   if (view === 'MAP') {
     // コース全体の枠取り。ボールが止まっている ADDRESS でしか入れない
-    notice = 'コースマップ ・ 下のボタンで方向調整へ戻れます';
+    notice = 'コースマップ ・ タップで戻る';
     rig.transition(
       courseMapPose(course.bounds, visualGreen, camera.aspect),
       G.courseMap.transition,
@@ -595,7 +613,7 @@ function setAimView(view: AimView): void {
     return;
   }
 
-  notice = '読み視点 ・ 下のボタンで方向調整へ戻れます';
+  notice = '読み視点 ・ タップでストローク';
   rig.transition(readPose(view, ball, cup, visualGreen, camera.aspect), G.read.transition);
 }
 
@@ -942,8 +960,11 @@ function pointerEnd(e: PointerEvent): void {
   const isTap = moved <= G.tap.moveMaxPx && held <= G.tap.holdMaxMs;
 
   if (state === 'ADDRESS') {
-    // AIMとLOW_LINEは方向決定画面として、そのままタップでSTROKEへ進める。
-    if ((aimView === 'AIM' || aimView === 'LOW_LINE') && isTap) enterStroke();
+    if (!isTap) return;
+    // 「進む＝タップ」で統一する。読み用の4視点はどれからでもそのままSTROKEへ入れる。
+    // マップだけは読み視点ではなく一時的な参照画面なので、タップで閉じて直前の視点へ戻す。
+    if (aimView === 'MAP') closeMap();
+    else enterStroke();
     return;
   }
   if (state === 'RESULT') {
@@ -1095,6 +1116,12 @@ const hud = {
 };
 
 const cameraControls = document.getElementById('camera-controls')!;
+const mapControl = document.getElementById('map-control')!;
+const mapToggle = document.getElementById('map-toggle') as HTMLButtonElement;
+const debugControls = document.getElementById('debug-controls')!;
+/** 開発用の表示切替は本番のプレイ画面から外し、?debug=1 のときだけ出す */
+const debugEnabled = new URLSearchParams(location.search).get('debug') === '1';
+debugControls.hidden = !debugEnabled;
 const cameraButtons = Array.from(
   cameraControls.querySelectorAll<HTMLButtonElement>('[data-aim-view]'),
 );
@@ -1144,6 +1171,7 @@ for (const button of cameraButtons) {
     if (view) setAimView(view);
   });
 }
+mapToggle.addEventListener('click', toggleMap);
 strokeBack.addEventListener('click', returnToAddress);
 strokeCupCheck.addEventListener('click', showCupCheck);
 strokeCupReturn.addEventListener('click', returnToStrokeView);
@@ -1190,7 +1218,10 @@ hud.seed.addEventListener('click', () => {
 });
 
 function updateControls(): void {
-  cameraControls.style.display = state === 'ADDRESS' ? 'flex' : 'none';
+  const inAddress = state === 'ADDRESS';
+  cameraControls.style.display = inAddress ? 'flex' : 'none';
+  mapControl.style.display = inAddress ? 'block' : 'none';
+  mapToggle.classList.toggle('active', inAddress && aimView === 'MAP');
   const inStroke = state === 'STROKE';
   strokeControls.style.display = inStroke ? 'flex' : 'none';
   strokeCameraControls.style.display = inStroke ? 'flex' : 'none';
