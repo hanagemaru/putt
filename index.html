@@ -210,6 +210,40 @@
         font-size: 12px;
       }
 
+      /* マップは視点バーに並べない。右下へ単独で置き、視点の切り替えと区別する */
+      #map-control {
+        position: fixed;
+        right: max(10px, env(safe-area-inset-right));
+        bottom: max(58px, calc(env(safe-area-inset-bottom) + 58px));
+        z-index: 30;
+        display: none;
+        font-family: system-ui, -apple-system, sans-serif;
+      }
+      #map-toggle {
+        appearance: none;
+        border: 1px solid rgba(232, 240, 232, 0.55);
+        border-radius: 999px;
+        background: rgba(12, 20, 14, 0.72);
+        color: #e8f0e8;
+        min-height: 36px;
+        padding: 7px 13px;
+        font: inherit;
+        font-size: 11px;
+        line-height: 1;
+        white-space: nowrap;
+        touch-action: manipulation;
+      }
+      #map-toggle.active {
+        background: rgba(232, 240, 232, 0.92);
+        border-color: rgba(255, 255, 255, 0.95);
+        color: #162018;
+        font-weight: 700;
+      }
+
+      #debug-controls[hidden] {
+        display: none;
+      }
+
       /* 横画面のときだけ出す「縦にしてください」オーバーレイ。縦画面専用（spec §0） */
       #rotate-overlay {
         position: fixed;
@@ -264,10 +298,13 @@
       <div class="row" id="hud-swing"></div>
       <div class="result" id="hud-result"></div>
       <div class="notice" id="hud-notice"></div>
-      <button type="button" id="hud-seed">シード</button>
-      <button type="button" id="hud-pixel">ドット OFF</button>
-      <button type="button" id="hud-line" hidden>ライン</button>
-      <button type="button" id="hud-undulation" hidden>地形</button>
+      <!-- 開発用。?debug=1 のときだけ表示する -->
+      <div id="debug-controls" hidden>
+        <button type="button" id="hud-seed">シード</button>
+        <button type="button" id="hud-pixel">ドット OFF</button>
+        <button type="button" id="hud-line" hidden>ライン</button>
+        <button type="button" id="hud-undulation" hidden>地形</button>
+      </div>
       <button type="button" id="hud-adjust" style="display: none">調整</button>
     </div>
 
@@ -286,7 +323,11 @@
       <button type="button" class="camera-button" data-aim-view="LOW_LINE">低い視点</button>
       <button type="button" class="camera-button" data-aim-view="BEHIND_HOLE">カップ後方</button>
       <button type="button" class="camera-button" data-aim-view="SIDE_MID">横から</button>
-      <button type="button" class="camera-button" data-aim-view="MAP">マップ</button>
+    </div>
+
+    <!-- マップは読み視点ではなく一時的な参照画面なので、視点バーとは別に置く -->
+    <div id="map-control">
+      <button type="button" id="map-toggle">マップ</button>
     </div>
 
     <div id="stroke-controls">
