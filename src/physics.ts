@@ -2,7 +2,7 @@
 // 固定タイムステップ 1/240 秒。決定論的に保つ（後でリプレイに使う）。
 import { CONFIG, FEET_TO_METERS } from './config';
 import type { Green } from './green';
-import type { CoursePoint } from './course/course-types';
+import type { CoursePoint, SurfaceType } from './course/course-types';
 
 const P = CONFIG.physics;
 
@@ -47,6 +47,13 @@ export function directionToVelocity(
   direction: number,
 ): { vx: number; vz: number } {
   return { vx: speed * Math.sin(direction), vz: -speed * Math.cos(direction) };
+}
+
+/** 地面種別ごとの摩擦倍率。芝以外は転がらないので 1 のままでよい */
+function frictionMultiplier(surface: SurfaceType): number {
+  if (surface === 'rough') return P.roughFrictionMultiplier;
+  if (surface === 'deepRough') return P.deepRoughFrictionMultiplier;
+  return 1;
 }
 
 export class Roller {
@@ -128,8 +135,7 @@ export class Roller {
 
   private step(dt: number): void {
     const surface = this.green.surfaceAt(this.x, this.z);
-    const mu =
-      this.friction * (surface === 'rough' ? P.roughFrictionMultiplier : 1);
+    const mu = this.friction * frictionMultiplier(surface);
     this.green.sampleGradient(this.x, this.z, this.grad);
 
     // 勾配による加速度。転がる球なので 5/7

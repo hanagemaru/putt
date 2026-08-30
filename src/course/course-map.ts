@@ -21,10 +21,19 @@ function distanceToRoute(course: CourseDefinition, x: number, z: number): number
   return distance;
 }
 
-function isInsideWater(course: CourseDefinition, x: number, z: number): boolean {
+/**
+ * 池の楕円を外へ margin だけ広げた内側か。
+ * margin = 0 なら池そのもの、正の値なら岸を含む範囲になる。
+ */
+function isInsideWater(
+  course: CourseDefinition,
+  x: number,
+  z: number,
+  margin = 0,
+): boolean {
   return course.hazards.some((hazard) => {
-    const dx = (x - hazard.center.x) / hazard.radiusX;
-    const dz = (z - hazard.center.z) / hazard.radiusZ;
+    const dx = (x - hazard.center.x) / (hazard.radiusX + margin);
+    const dz = (z - hazard.center.z) / (hazard.radiusZ + margin);
     return dx * dx + dz * dz <= 1;
   });
 }
@@ -35,9 +44,15 @@ export function surfaceAt(course: CourseDefinition, x: number, z: number): Surfa
   const halfLength = course.bounds.length / 2;
   if (x < -halfWidth || x > halfWidth || z < -halfLength || z > halfLength) return 'ob';
   if (isInsideWater(course, x, z)) return 'water';
+  // 岸は芝の途中でもラフにする。池際から直接打つ状況を作らない
+  if (isInsideWater(course, x, z, course.waterFringe)) return 'rough';
 
   const distance = distanceToRoute(course, x, z);
-  if (distance <= course.greenWidth / 2) return 'green';
-  if (distance <= course.greenWidth / 2 + course.roughFringe) return 'rough';
+  const greenEdge = course.greenWidth / 2;
+  const roughEdge = greenEdge + course.roughFringe;
+  const deepRoughEdge = roughEdge + course.deepRoughFringe;
+  if (distance <= greenEdge) return 'green';
+  if (distance <= roughEdge) return 'rough';
+  if (distance <= deepRoughEdge) return 'deepRough';
   return 'ob';
 }

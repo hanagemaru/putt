@@ -3,6 +3,7 @@ import type { CourseDefinition } from './course-types';
 /**
  * コース基盤を実機検証するための手作りパー3。
  * ティーからカップへの直線は池とOBを横切り、左奥の曲がり角へ刻む安全ルートを持つ。
+ * 芝を外してもすぐOBにならないよう、ラフとセカンドカットで合計3.6mの余地を取る。
  */
 export const PROTOTYPE_COURSE: CourseDefinition = {
   id: 'prototype-dogleg-01',
@@ -18,7 +19,9 @@ export const PROTOTYPE_COURSE: CourseDefinition = {
     { x: 4, z: -3 },
   ],
   greenWidth: 4,
-  roughFringe: 0.8,
+  roughFringe: 1.2,
+  deepRoughFringe: 2.4,
+  waterFringe: 1,
   hazards: [
     {
       type: 'water',

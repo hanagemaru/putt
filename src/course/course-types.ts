@@ -1,4 +1,8 @@
-export type SurfaceType = 'green' | 'rough' | 'water' | 'ob';
+/**
+ * 地面種別。芝は通常芝 → ラフ → セカンドカットの順に重くなり、
+ * その外側だけをOBにする。
+ */
+export type SurfaceType = 'green' | 'rough' | 'deepRough' | 'water' | 'ob';
 
 export interface CoursePoint {
   x: number;
@@ -22,6 +26,8 @@ export interface EllipseHazard {
 /**
  * 生成器・検証器・ゲーム本体が共有するコース定義。
  * route はプレイ可能な芝の中心線で、各線分の周囲を greenWidth の芝にする。
+ * その外へ roughFringe（ラフ）、deepRoughFringe（セカンドカット）の順に帯を足し、
+ * さらに外側とコース枠の外だけをOBにする。
  */
 export interface CourseDefinition {
   id: string;
@@ -33,6 +39,11 @@ export interface CourseDefinition {
   cup: CoursePoint;
   route: readonly CoursePoint[];
   greenWidth: number;
+  /** 芝の縁から外へ伸ばすラフの幅 [m] */
   roughFringe: number;
+  /** ラフの外へさらに伸ばすセカンドカットの幅 [m]。ここまではOBにしない */
+  deepRoughFringe: number;
+  /** 池の縁の外側をラフにする幅 [m]。芝の中の池でも岸はラフになる */
+  waterFringe: number;
   hazards: readonly EllipseHazard[];
 }
