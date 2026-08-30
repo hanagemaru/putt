@@ -299,7 +299,6 @@ export class StrokeView {
     }
 
     this.drawTrail();
-    this.drawToes(w, h);
     // ボールは 3D のメッシュをそのまま見せる。ここで px の円を描くと、
     // 転がる画面のボールと大きさが食い違う（§4.1）
     this.drawPutter(armed);
@@ -333,19 +332,6 @@ export class StrokeView {
     for (const s of all) {
       if (tEnd - s.t > C.trailMs) continue;
       ctx.fillRect(s.x - 1, s.y - 1, 2, 2);
-    }
-  }
-
-  /** つま先。STROKE で見えるのはボール・パターヘッド・つま先だけ（§3） */
-  private drawToes(w: number, h: number): void {
-    const ctx = this.ctx;
-    const y = h - S.toeBottomPx - S.toeHeightPx;
-    ctx.fillStyle = 'rgba(28,34,30,0.85)';
-    for (const sign of [-1, 1]) {
-      const cx = w / 2 + sign * (S.toeGapPx / 2 + S.toeWidthPx / 2);
-      ctx.beginPath();
-      ctx.ellipse(cx, y, S.toeWidthPx / 2, S.toeHeightPx / 2, 0, 0, Math.PI * 2);
-      ctx.fill();
     }
   }
 

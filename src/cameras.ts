@@ -32,7 +32,8 @@ export const READ_VIEWS: readonly ReadView[] = [
 ];
 
 export const READ_VIEW_LABEL: Record<ReadView, string> = {
-  BEHIND_BALL: 'ボール後方',
+  // 旧READの初期画面。ゲームフローでは使わないのでこのラベルは画面に出ない（§3）
+  BEHIND_BALL: '旧ボール後方',
   BEHIND_HOLE: 'カップ後方',
   LOW_LINE: '低い視点',
   SIDE_MID: '横から',

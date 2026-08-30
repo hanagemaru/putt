@@ -359,7 +359,7 @@ type State = 'ADDRESS' | 'STROKE' | 'FOLLOW' | 'CUP' | 'RESULT';
 type AimView = 'AIM' | 'MAP' | ReadView;
 
 const AIM_VIEW_LABEL: Record<AimView, string> = {
-  AIM: '方向調整',
+  AIM: 'ボール後方',
   MAP: 'コースマップ',
   ...READ_VIEW_LABEL,
 };
@@ -542,7 +542,7 @@ function enterAddress(cut = false, resetAim = true): void {
   aimView = 'AIM';
   strokeCameraView = 'DOWN';
   cupViewUsed = false;
-  notice = '左右スワイプで狙い、タップでストローク';
+  notice = '左右スワイプで狙い、タップで構える';
   props.visible = true;
   ballMesh.visible = roller.status !== 'holed';
   strokeView.exit();
@@ -589,7 +589,7 @@ function setAimView(view: AimView): void {
   syncMapMarkers();
 
   if (view === 'AIM') {
-    notice = '左右スワイプで狙い、タップでストローク';
+    notice = '左右スワイプで狙い、タップで構える';
     rig.transition(addressPose(ball, aim, visualGreen, distanceToCup()), G.address.transition);
     return;
   }
@@ -605,7 +605,7 @@ function setAimView(view: AimView): void {
   }
 
   if (view === 'LOW_LINE') {
-    notice = '低い視点 ・ 左右スワイプで狙い、タップでストローク';
+    notice = '低い視点 ・ 左右スワイプで狙い、タップで構える';
     rig.transition(
       lowLineAimPose(ball, cup, aim, visualGreen, distanceToCup()),
       G.read.transition,
@@ -613,7 +613,7 @@ function setAimView(view: AimView): void {
     return;
   }
 
-  notice = '読み視点 ・ タップでストローク';
+  notice = '読み視点 ・ タップで構える';
   rig.transition(readPose(view, ball, cup, visualGreen, camera.aspect), G.read.transition);
 }
 
@@ -641,7 +641,7 @@ function showCupCheck(): void {
   strokeArmed = false;
   strokeView.exit();
   props.visible = true;
-  notice = 'カップ確認 ・ 左右スワイプで狙いを調整できます';
+  notice = '狙いを見る ・ 左右スワイプで狙いを調整できます';
   updateAimGuide();
   rig.transition(
     strokeCupPose(ball, aim, visualGreen, distanceToCup()),
@@ -1086,7 +1086,7 @@ renderer.setAnimationLoop((now) => {
           updateTrail();
           syncLineVisibility();
           rig.transition(resultPose(shotStart, ball, cup, visualGreen), G.result.transition);
-          notice = 'タップで次のパット';
+          notice = 'タップで次の一打';
         }
       }
       break;
@@ -1146,7 +1146,7 @@ function updatePutterTuningUi(): void {
   putterPowerDetail.textContent =
     `基準係数 ${CONFIG.swipeTest.speedK.toFixed(5)} → ` +
     `${(CONFIG.swipeTest.speedK * putterPowerScale).toFixed(5)}`;
-  hud.adjust.textContent = `調整 ${putterPowerScale.toFixed(2)}×`;
+  hud.adjust.textContent = `強さ ${putterPowerScale.toFixed(2)}×`;
 }
 
 putterPower.addEventListener('input', () => {
@@ -1238,11 +1238,12 @@ function updateControls(): void {
 }
 
 function updateHud(): void {
-  hud.state.textContent = state;
+  // 状態名は英語の内部名なので、通常のプレイ画面には出さない
+  hud.state.textContent = debugEnabled ? state : '';
   if (state === 'ADDRESS') {
     hud.view.textContent = AIM_VIEW_LABEL[aimView];
   } else if (state === 'STROKE' && strokeCameraView === 'CUP') {
-    hud.view.textContent = 'カップ確認';
+    hud.view.textContent = '狙いを見る';
   } else {
     hud.view.textContent = '';
   }
