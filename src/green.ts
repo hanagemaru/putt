@@ -3,12 +3,17 @@
 // 比較用の「形状2×」だけは、物理と色を変えず3D形状の高さだけを一時的に誇張する。
 import * as THREE from 'three';
 import { CONFIG } from './config';
+import type { CoursePoint, SurfaceType } from './course/course-types';
 
 const C = CONFIG.green;
 
 /** lil-gui から変えられる生成パラメータ。変えたら作り直す */
 export interface GreenParams {
   seed: number;
+  /** X方向の幅 [m] */
+  width?: number;
+  /** Z方向の長さ [m] */
+  length?: number;
   /** うねりの振幅 [m]（±） */
   undulationAmplitude: number;
   /** 全体傾斜 [%]。向きはシードから決まる */
@@ -18,6 +23,8 @@ export interface GreenParams {
 export function defaultGreenParams(): GreenParams {
   return {
     seed: C.seed,
+    width: C.width,
+    length: C.length,
     undulationAmplitude: C.undulationAmplitude,
     tiltPercent: C.tiltPercent,
   };
@@ -49,15 +56,19 @@ interface Gaussian {
 }
 
 /**
- * 20m × 20m のグリーン。
+ * 長方形の地形ハイトマップ。
  * 高さと勾配をグリッドに持ち、任意座標はバイリニア補間で返す。
  */
 export class Green {
-  /** 一辺 [m] */
-  readonly size = C.size;
-  /** グリッドの分割数（res × res） */
-  readonly res = C.heightmapResolution;
-  /** グリッド間隔 [m] */
+  readonly width: number;
+  readonly length: number;
+  readonly resX: number;
+  readonly resZ: number;
+  readonly cellX: number;
+  readonly cellZ: number;
+  /** 正方形前提の green-test 互換。ゲーム本体では width / length を使う */
+  readonly size: number;
+  readonly res: number;
   readonly cell: number;
 
   private readonly heights: Float32Array;
@@ -70,18 +81,30 @@ export class Green {
   /** 全体傾斜 [%] */
   tiltPercent = 0;
 
-  constructor(params: GreenParams) {
-    this.cell = this.size / (this.res - 1);
-    this.heights = new Float32Array(this.res * this.res);
-    this.gradX = new Float32Array(this.res * this.res);
-    this.gradZ = new Float32Array(this.res * this.res);
+  constructor(
+    params: GreenParams,
+    private readonly classifySurface?: (x: number, z: number) => SurfaceType,
+  ) {
+    this.width = params.width ?? C.width;
+    this.length = params.length ?? C.length;
+    this.resX = Math.ceil(this.width / C.heightmapCellSize) + 1;
+    this.resZ = Math.ceil(this.length / C.heightmapCellSize) + 1;
+    this.cellX = this.width / (this.resX - 1);
+    this.cellZ = this.length / (this.resZ - 1);
+    this.size = this.width;
+    this.res = this.resX;
+    this.cell = this.cellX;
+    this.heights = new Float32Array(this.resX * this.resZ);
+    this.gradX = new Float32Array(this.resX * this.resZ);
+    this.gradZ = new Float32Array(this.resX * this.resZ);
     this.generate(params);
   }
 
   /** ハイトマップを作り直す。同じ params なら必ず同じ地形になる */
   generate(params: GreenParams): void {
     const rng = makeRng(params.seed);
-    const half = this.size / 2;
+    const halfWidth = this.width / 2;
+    const halfLength = this.length / 2;
 
     // 緩やかな全体傾斜。向きだけシードから決め、大きさは params で指定する
     const tiltAngle = rng() * Math.PI * 2;
@@ -91,12 +114,13 @@ export class Green {
     const tiltZ = Math.sin(tiltAngle) * tilt;
 
     // うねりのガウシアン
-    const spread = this.size * C.gaussianSpread;
+    const spreadX = this.width * C.gaussianSpread;
+    const spreadZ = this.length * C.gaussianSpread;
     const gaussians: Gaussian[] = [];
     for (let i = 0; i < C.gaussianCount; i++) {
       gaussians.push({
-        cx: (rng() - 0.5) * spread,
-        cz: (rng() - 0.5) * spread,
+        cx: (rng() - 0.5) * spreadX,
+        cz: (rng() - 0.5) * spreadZ,
         sigma: lerp(C.gaussianSigmaMin, C.gaussianSigmaMax, rng()),
         weight: (rng() < 0.5 ? -1 : 1) * lerp(0.4, 1, rng()),
       });
@@ -104,19 +128,19 @@ export class Green {
 
     // 先にうねりだけを積んで、振幅が params.undulationAmplitude ちょうどになるよう正規化する。
     // こうしておくと lil-gui の「うねりの振幅」がそのまま m 単位の意味を持つ
-    const undulation = new Float32Array(this.res * this.res);
+    const undulation = new Float32Array(this.resX * this.resZ);
     let maxAbs = 0;
-    for (let j = 0; j < this.res; j++) {
-      const z = -half + j * this.cell;
-      for (let i = 0; i < this.res; i++) {
-        const x = -half + i * this.cell;
+    for (let j = 0; j < this.resZ; j++) {
+      const z = -halfLength + j * this.cellZ;
+      for (let i = 0; i < this.resX; i++) {
+        const x = -halfWidth + i * this.cellX;
         let u = 0;
         for (const g of gaussians) {
           const dx = x - g.cx;
           const dz = z - g.cz;
           u += g.weight * Math.exp(-(dx * dx + dz * dz) / (2 * g.sigma * g.sigma));
         }
-        undulation[j * this.res + i] = u;
+        undulation[j * this.resX + i] = u;
         const abs = Math.abs(u);
         if (abs > maxAbs) maxAbs = abs;
       }
@@ -125,12 +149,12 @@ export class Green {
 
     this.minHeight = Infinity;
     this.maxHeight = -Infinity;
-    for (let j = 0; j < this.res; j++) {
-      const z = -half + j * this.cell;
-      for (let i = 0; i < this.res; i++) {
-        const x = -half + i * this.cell;
-        const h = tiltX * x + tiltZ * z + undulation[j * this.res + i] * scale;
-        this.heights[j * this.res + i] = h;
+    for (let j = 0; j < this.resZ; j++) {
+      const z = -halfLength + j * this.cellZ;
+      for (let i = 0; i < this.resX; i++) {
+        const x = -halfWidth + i * this.cellX;
+        const h = tiltX * x + tiltZ * z + undulation[j * this.resX + i] * scale;
+        this.heights[j * this.resX + i] = h;
         if (h < this.minHeight) this.minHeight = h;
         if (h > this.maxHeight) this.maxHeight = h;
       }
@@ -141,25 +165,36 @@ export class Green {
 
   /** グリッド上の勾配を中心差分で求める。端は片側差分 */
   private computeGradients(): void {
-    const n = this.res;
-    for (let j = 0; j < n; j++) {
-      for (let i = 0; i < n; i++) {
+    for (let j = 0; j < this.resZ; j++) {
+      for (let i = 0; i < this.resX; i++) {
         const i0 = i > 0 ? i - 1 : i;
-        const i1 = i < n - 1 ? i + 1 : i;
+        const i1 = i < this.resX - 1 ? i + 1 : i;
         const j0 = j > 0 ? j - 1 : j;
-        const j1 = j < n - 1 ? j + 1 : j;
-        this.gradX[j * n + i] =
-          (this.heights[j * n + i1] - this.heights[j * n + i0]) / ((i1 - i0) * this.cell);
-        this.gradZ[j * n + i] =
-          (this.heights[j1 * n + i] - this.heights[j0 * n + i]) / ((j1 - j0) * this.cell);
+        const j1 = j < this.resZ - 1 ? j + 1 : j;
+        this.gradX[j * this.resX + i] =
+          (this.heights[j * this.resX + i1] - this.heights[j * this.resX + i0]) /
+          ((i1 - i0) * this.cellX);
+        this.gradZ[j * this.resX + i] =
+          (this.heights[j1 * this.resX + i] - this.heights[j0 * this.resX + i]) /
+          ((j1 - j0) * this.cellZ);
       }
     }
   }
 
   /** グリーンの内側か */
   contains(x: number, z: number): boolean {
-    const half = this.size / 2;
-    return x >= -half && x <= half && z >= -half && z <= half;
+    return (
+      x >= -this.width / 2 &&
+      x <= this.width / 2 &&
+      z >= -this.length / 2 &&
+      z <= this.length / 2
+    );
+  }
+
+  /** 地形上の地面種別。分類指定がない検証ページでは全面をグリーンとして扱う。 */
+  surfaceAt(x: number, z: number): SurfaceType {
+    if (!this.contains(x, z)) return 'ob';
+    return this.classifySurface?.(x, z) ?? 'green';
   }
 
   /** 任意座標の高さ [m]。バイリニア補間。範囲外は端をクランプ */
@@ -178,18 +213,18 @@ export class Green {
   }
 
   private bilinear(grid: Float32Array, x: number, z: number): number {
-    const n = this.res;
-    const half = this.size / 2;
-    const u = (Math.min(Math.max(x, -half), half) + half) / this.cell;
-    const v = (Math.min(Math.max(z, -half), half) + half) / this.cell;
-    const i = Math.min(Math.max(Math.floor(u), 0), n - 2);
-    const j = Math.min(Math.max(Math.floor(v), 0), n - 2);
+    const halfWidth = this.width / 2;
+    const halfLength = this.length / 2;
+    const u = (Math.min(Math.max(x, -halfWidth), halfWidth) + halfWidth) / this.cellX;
+    const v = (Math.min(Math.max(z, -halfLength), halfLength) + halfLength) / this.cellZ;
+    const i = Math.min(Math.max(Math.floor(u), 0), this.resX - 2);
+    const j = Math.min(Math.max(Math.floor(v), 0), this.resZ - 2);
     const fx = u - i;
     const fz = v - j;
-    const h00 = grid[j * n + i];
-    const h10 = grid[j * n + i + 1];
-    const h01 = grid[(j + 1) * n + i];
-    const h11 = grid[(j + 1) * n + i + 1];
+    const h00 = grid[j * this.resX + i];
+    const h10 = grid[j * this.resX + i + 1];
+    const h01 = grid[(j + 1) * this.resX + i];
+    const h11 = grid[(j + 1) * this.resX + i + 1];
     return lerp(lerp(h00, h10, fx), lerp(h01, h11, fx), fz);
   }
 }
@@ -242,7 +277,12 @@ function softRamp(value: number, fullRange: number): number {
 export class GreenMesh {
   readonly mesh: THREE.Mesh;
   private readonly geometry: THREE.PlaneGeometry;
-  private readonly base = new THREE.Color(C.color);
+  private readonly bases: Record<SurfaceType, THREE.Color> = {
+    green: new THREE.Color(C.surfaceColors.green),
+    rough: new THREE.Color(C.surfaceColors.rough),
+    water: new THREE.Color(C.surfaceColors.water),
+    ob: new THREE.Color(C.surfaceColors.ob),
+  };
   private readonly grad = { x: 0, z: 0 };
   private heightScale = 1;
 
@@ -252,7 +292,14 @@ export class GreenMesh {
     heightScale = 1,
   ) {
     this.heightScale = heightScale;
-    this.geometry = new THREE.PlaneGeometry(green.size, green.size, C.segments, C.segments);
+    const segmentsX = Math.ceil(green.width / C.renderCellSize);
+    const segmentsZ = Math.ceil(green.length / C.renderCellSize);
+    this.geometry = new THREE.PlaneGeometry(
+      green.width,
+      green.length,
+      segmentsX,
+      segmentsZ,
+    );
     // XZ 平面へ倒しておく。以降は頂点の x/z がそのままワールド座標になる
     this.geometry.rotateX(-Math.PI / 2);
     const count = this.geometry.attributes.position.count;
@@ -280,6 +327,7 @@ export class GreenMesh {
       const z = position.getZ(i);
       const h = green.sampleHeight(x, z);
       position.setY(i, h * this.heightScale);
+      const base = this.bases[green.surfaceAt(x, z)];
 
       // 勾配ベース比較用の値と、正式採用している高さベースの値を同じ式で合成できるよう保持する
       green.sampleGradient(x, z, this.grad);
@@ -294,7 +342,7 @@ export class GreenMesh {
         shade.heightStrength * (2 * height - 1);
       // 段に丸める（レトロ表現）。0 なら連続のまま
       const q = shade.levels > 0 ? Math.round(k * shade.levels) / shade.levels : k;
-      color.setXYZ(i, this.base.r * q, this.base.g * q, this.base.b * q);
+      color.setXYZ(i, base.r * q, base.g * q, base.b * q);
     }
     position.needsUpdate = true;
     color.needsUpdate = true;
@@ -312,10 +360,14 @@ export class GreenMesh {
  * カップ（§1）。直径 108mm、深さ 100mm の円筒。見た目は暗い円で十分。
  * 旗竿は必ず鉛直に立てる。傾き表現の基準になる。
  */
-export function createHole(green: Green, heightScale = 1): THREE.Group {
+export function createHole(
+  green: Green,
+  heightScale = 1,
+  position: CoursePoint = CONFIG.hole.position,
+): THREE.Group {
   const h = CONFIG.hole;
   const group = new THREE.Group();
-  const surfaceY = green.sampleHeight(h.position.x, h.position.z) * heightScale;
+  const surfaceY = green.sampleHeight(position.x, position.z) * heightScale;
   const radius = h.diameter / 2;
   const dark = new THREE.MeshBasicMaterial({ color: h.cupColor });
 
@@ -324,7 +376,7 @@ export function createHole(green: Green, heightScale = 1): THREE.Group {
   // これがないとカップの内側は芝に隠れて、どこにカップがあるのか分からない
   const mouth = new THREE.Mesh(new THREE.CircleGeometry(radius, 24), dark);
   mouth.rotation.x = -Math.PI / 2;
-  mouth.position.set(h.position.x, surfaceY + h.mouthLift, h.position.z);
+  mouth.position.set(position.x, surfaceY + h.mouthLift, position.z);
   group.add(mouth);
 
   // 内壁。上端をグリーン面に合わせる
@@ -332,13 +384,13 @@ export function createHole(green: Green, heightScale = 1): THREE.Group {
     new THREE.CylinderGeometry(radius, radius, h.depth, 24, 1, true),
     new THREE.MeshBasicMaterial({ color: h.cupColor, side: THREE.BackSide }),
   );
-  wall.position.set(h.position.x, surfaceY - h.depth / 2, h.position.z);
+  wall.position.set(position.x, surfaceY - h.depth / 2, position.z);
   group.add(wall);
 
   // 底
   const bottom = new THREE.Mesh(new THREE.CircleGeometry(radius, 24), dark);
   bottom.rotation.x = -Math.PI / 2;
-  bottom.position.set(h.position.x, surfaceY - h.depth, h.position.z);
+  bottom.position.set(position.x, surfaceY - h.depth, position.z);
   group.add(bottom);
 
   // 旗竿。近くでは自然な細さにし、遠くでは低解像度レンダー上の最低幅だけを確保する。
@@ -347,7 +399,7 @@ export function createHole(green: Green, heightScale = 1): THREE.Group {
     new THREE.CylinderGeometry(h.flagstickRadius, h.flagstickRadius, h.flagstickHeight, 8),
     new THREE.MeshLambertMaterial({ color: 0xf0f0f0 }),
   );
-  stick.position.set(h.position.x, surfaceY - h.depth + h.flagstickHeight / 2, h.position.z);
+  stick.position.set(position.x, surfaceY - h.depth + h.flagstickHeight / 2, position.z);
 
   const renderSize = new THREE.Vector2();
   const stickWorld = new THREE.Vector3();
@@ -382,9 +434,9 @@ export function createHole(green: Green, heightScale = 1): THREE.Group {
     new THREE.MeshBasicMaterial({ color: h.flagColor, side: THREE.DoubleSide }),
   );
   flag.position.set(
-    h.position.x + h.flagWidth / 2,
+    position.x + h.flagWidth / 2,
     surfaceY - h.depth + h.flagstickHeight - h.flagHeight,
-    h.position.z,
+    position.z,
   );
   group.add(flag);
 
@@ -394,8 +446,9 @@ export function createHole(green: Green, heightScale = 1): THREE.Group {
 /** グリーンの外に敷く地面。グリーンが宙に浮いて見えないようにするだけ */
 export function createSurround(green: Green, heightScale = 1): THREE.Mesh {
   const s = CONFIG.surround;
+  const span = Math.max(green.width, green.length, s.size / 3);
   const mesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(s.size, s.size),
+    new THREE.PlaneGeometry(span * 3, span * 3),
     new THREE.MeshLambertMaterial({ color: s.color }),
   );
   mesh.rotation.x = -Math.PI / 2;
@@ -409,12 +462,14 @@ export function createTrees(green: Green, seed: number, heightScale = 1): THREE.
   const rng = makeRng(seed);
   const group = new THREE.Group();
   const baseY = green.minHeight * heightScale - CONFIG.surround.drop;
+  const radiusMin = Math.max(t.radiusMin, Math.max(green.width, green.length) / 2 + 1);
+  const radiusMax = radiusMin + (t.radiusMax - t.radiusMin);
   const trunkMat = new THREE.MeshLambertMaterial({ color: t.trunkColor });
   const leafMat = new THREE.MeshLambertMaterial({ color: t.leafColor });
 
   for (let i = 0; i < t.count; i++) {
     const angle = ((i + rng() * 0.6) / t.count) * Math.PI * 2;
-    const radius = lerp(t.radiusMin, t.radiusMax, rng());
+    const radius = lerp(radiusMin, radiusMax, rng());
     const height = lerp(t.heightMin, t.heightMax, rng());
     const x = Math.cos(angle) * radius;
     const z = Math.sin(angle) * radius;

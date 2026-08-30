@@ -2,6 +2,7 @@
 // 固定タイムステップ 1/240 秒。決定論的に保つ（後でリプレイに使う）。
 import { CONFIG, FEET_TO_METERS } from './config';
 import type { Green } from './green';
+import type { CoursePoint } from './course/course-types';
 
 const P = CONFIG.physics;
 
@@ -14,8 +15,10 @@ export type RollStatus =
   | 'stopped'
   /** カップイン */
   | 'holed'
-  /** グリーン外へ出た（グリーンオーバー） */
-  | 'offGreen';
+  /** 池へ入った */
+  | 'water'
+  /** OBへ出た */
+  | 'outOfBounds';
 
 /**
  * スティンプ値 [ft] から摩擦による減速 MU [m/s^2] を逆算する。
@@ -70,7 +73,10 @@ export class Roller {
   private stepCount = 0;
   private readonly grad = { x: 0, z: 0 };
 
-  constructor(private readonly green: Green) {}
+  constructor(
+    private readonly green: Green,
+    private readonly cup: CoursePoint = CONFIG.hole.position,
+  ) {}
 
   /** 現在の摩擦 [m/s^2] */
   get friction(): number {
@@ -121,7 +127,9 @@ export class Roller {
   }
 
   private step(dt: number): void {
-    const mu = this.friction;
+    const surface = this.green.surfaceAt(this.x, this.z);
+    const mu =
+      this.friction * (surface === 'rough' ? P.roughFrictionMultiplier : 1);
     this.green.sampleGradient(this.x, this.z, this.grad);
 
     // 勾配による加速度。転がる球なので 5/7
@@ -151,11 +159,17 @@ export class Roller {
 
     if (this.checkCup()) return;
 
-    if (!this.green.contains(this.x, this.z)) {
-      const half = this.green.size / 2;
-      this.x = Math.min(Math.max(this.x, -half), half);
-      this.z = Math.min(Math.max(this.z, -half), half);
-      this.finish('offGreen');
+    const nextSurface = this.green.surfaceAt(this.x, this.z);
+    if (nextSurface === 'water') {
+      this.vx = 0;
+      this.vz = 0;
+      this.finish('water');
+      return;
+    }
+    if (nextSurface === 'ob') {
+      this.vx = 0;
+      this.vz = 0;
+      this.finish('outOfBounds');
       return;
     }
 
@@ -169,14 +183,14 @@ export class Roller {
 
   /** カップイン／リップアウト判定（§2）。決着したら true */
   private checkCup(): boolean {
-    const dx = this.x - CONFIG.hole.position.x;
-    const dz = this.z - CONFIG.hole.position.z;
+    const dx = this.x - this.cup.x;
+    const dz = this.z - this.cup.z;
     const dist = Math.hypot(dx, dz);
     if (dist > P.cupCaptureRadius) return false;
 
     if (Math.hypot(this.vx, this.vz) < P.cupCaptureSpeed) {
-      this.x = CONFIG.hole.position.x;
-      this.z = CONFIG.hole.position.z;
+      this.x = this.cup.x;
+      this.z = this.cup.z;
       this.vx = 0;
       this.vz = 0;
       this.finish('holed');
@@ -189,8 +203,8 @@ export class Roller {
     const vn = this.vx * nx + this.vz * nz;
     this.vx = (this.vx - 2 * vn * nx) * P.lipOutDamping;
     this.vz = (this.vz - 2 * vn * nz) * P.lipOutDamping;
-    this.x = CONFIG.hole.position.x + nx * P.cupCaptureRadius;
-    this.z = CONFIG.hole.position.z + nz * P.cupCaptureRadius;
+    this.x = this.cup.x + nx * P.cupCaptureRadius;
+    this.z = this.cup.z + nz * P.cupCaptureRadius;
     this.lipOuts++;
     this.path.push(this.x, this.z);
     return false;

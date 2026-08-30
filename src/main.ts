@@ -21,6 +21,8 @@ import {
   defaultShadeParams,
 } from './green';
 import { Roller } from './physics';
+import { surfaceAt } from './course/course-map';
+import { PROTOTYPE_COURSE } from './course/prototype-course';
 import { SmoothLineOverlay } from './smooth-line-overlay';
 import { StrokeView } from './stroke-view';
 import {
@@ -41,6 +43,7 @@ import {
 } from './cameras';
 
 const G = CONFIG.game;
+const course = PROTOTYPE_COURSE;
 
 // --- シーン ---------------------------------------------------------------
 
@@ -134,12 +137,14 @@ const UNDULATION_MODES = [
 ] as const;
 let undulationMode = 3;
 let visualHeightScale = UNDULATION_MODES[undulationMode].visualScale;
-let seed = seedFromUrl() ?? CONFIG.green.seed;
+let seed = seedFromUrl() ?? course.seed;
 let green = new Green({
   ...defaultGreenParams(),
   seed,
+  width: course.bounds.width,
+  length: course.bounds.length,
   undulationAmplitude: UNDULATION_MODES[undulationMode].amplitude,
-});
+}, (x, z) => surfaceAt(course, x, z));
 
 function visualHeight(x: number, z: number): number {
   return green.sampleHeight(x, z) * visualHeightScale;
@@ -190,7 +195,7 @@ function buildTerrain(): void {
   disposeGroup(props);
   greenMesh = new GreenMesh(green, shade, visualHeightScale);
   terrain.add(greenMesh.mesh);
-  terrain.add(createHole(green, visualHeightScale));
+  terrain.add(createHole(green, visualHeightScale, course.cup));
   props.add(createSurround(green, visualHeightScale));
   props.add(createTrees(green, seed, visualHeightScale));
 }
@@ -304,12 +309,13 @@ type State = 'ADDRESS' | 'STROKE' | 'FOLLOW' | 'CUP' | 'RESULT';
 type AimView = 'AIM' | ReadView;
 type StrokeCameraView = 'DOWN' | 'CUP';
 
-let roller = new Roller(green);
-const cup = new THREE.Vector2(CONFIG.hole.position.x, CONFIG.hole.position.z);
+let roller = new Roller(green, course.cup);
+const cup = new THREE.Vector2(course.cup.x, course.cup.z);
 /** ボールの現在位置（XZ）。roller から毎フレーム写す */
-const ball = new THREE.Vector2(G.ballStart.x, G.ballStart.z);
-/** この一打を打つ前の位置。グリーンオーバーしたらここへ戻す */
-const shotStart = new THREE.Vector2(G.ballStart.x, G.ballStart.z);
+const ball = new THREE.Vector2(course.tee.x, course.tee.z);
+/** この一打を打つ前の位置。池またはOBならここへ戻す */
+const shotStart = new THREE.Vector2(course.tee.x, course.tee.z);
+const strokeLimit = course.par + 5;
 
 let state: State = 'ADDRESS';
 /** ADDRESS の中で、方向調整か読み用定点かを切り替える。初期は方向調整。 */
@@ -321,6 +327,7 @@ let aim = 0;
 /** ボール→カップ方向。狙いの振れ幅はここから測る */
 let aimBase = 0;
 let shots = 0;
+let penaltyApplied = false;
 let lastResult = '';
 let notice = '';
 let lastSwing = '';
@@ -548,6 +555,7 @@ function launch(speedMs: number, launchAngle: number): void {
   // 画面の左＝狙い方向。スワイプが画面下へ流れた分だけ狙いの左へ出る
   const direction = aim - launchAngle;
   shotStart.copy(ball);
+  penaltyApplied = false;
   cupViewUsed = false;
   roller.launch(ball.x, ball.y, speedMs, direction);
   shots++;
@@ -631,6 +639,13 @@ function resumeFollowFromCup(): void {
 /** ボールが完全に停止してから呼ぶ。ここで初めて俯瞰と軌跡を出す（§3） */
 function enterResult(): void {
   state = 'RESULT';
+  if (
+    !penaltyApplied &&
+    (roller.status === 'water' || roller.status === 'outOfBounds')
+  ) {
+    shots = Math.min(shots + 1, strokeLimit);
+    penaltyApplied = true;
+  }
   syncLineVisibility();
   if (holding) revealCourse();
   settleElapsed = 0;
@@ -642,6 +657,15 @@ function enterResult(): void {
 /** 結果テキスト（§3）。打ち出しラインへの射影で オーバー／ショート と左右のズレを出す */
 function describeResult(): string {
   if (roller.status === 'holed') return `カップイン（${shots} 打）`;
+  if (roller.status === 'water' && shots >= strokeLimit) {
+    return `池・打ち切り（${shots} 打）`;
+  }
+  if (roller.status === 'outOfBounds' && shots >= strokeLimit) {
+    return `OB・打ち切り（${shots} 打）`;
+  }
+  if (roller.status === 'water') return `池（1罰打）・${shots} 打`;
+  if (roller.status === 'outOfBounds') return `OB（1罰打）・${shots} 打`;
+  if (shots >= strokeLimit) return `打ち切り（${shots} 打）`;
   const ux = cup.x - shotStart.x;
   const uz = cup.y - shotStart.y;
   const len = Math.hypot(ux, uz) || 1;
@@ -658,18 +682,17 @@ function describeResult(): string {
     Math.abs(lateral) < 0.05
       ? ''
       : `、${lateral >= 0 ? '右' : '左'} ${Math.abs(lateral).toFixed(1)}m`;
-  const over = roller.status === 'offGreen' ? 'グリーンオーバー ・ ' : '';
-  return `${over}${head}${side}`;
+  return `${head}${side}`;
 }
 
 /** RESULT でタップされた。次のパットへ */
 function nextPutt(): void {
-  if (roller.status === 'holed') {
+  if (roller.status === 'holed' || shots >= strokeLimit) {
     // 同じグリーン・同じカップで打ち直し
-    ball.set(G.ballStart.x, G.ballStart.z);
+    ball.set(course.tee.x, course.tee.z);
     shots = 0;
     lastResult = '';
-  } else if (roller.status === 'offGreen') {
+  } else if (roller.status === 'water' || roller.status === 'outOfBounds') {
     // 打つ前の位置へ戻す。打数はそのまま
     ball.copy(shotStart);
   }
@@ -689,9 +712,11 @@ function rebuildGreenForUndulationCompare(): void {
   green = new Green({
     ...defaultGreenParams(),
     seed,
+    width: course.bounds.width,
+    length: course.bounds.length,
     undulationAmplitude: mode.amplitude,
-  });
-  roller = new Roller(green);
+  }, (x, z) => surfaceAt(course, x, z));
+  roller = new Roller(green, course.cup);
   roller.place(ball.x, ball.y);
   buildTerrain();
   trailPointCount = 0;
@@ -711,11 +736,13 @@ function newGreen(next: number): void {
   green = new Green({
     ...defaultGreenParams(),
     seed,
+    width: course.bounds.width,
+    length: course.bounds.length,
     undulationAmplitude: mode.amplitude,
-  });
-  roller = new Roller(green);
+  }, (x, z) => surfaceAt(course, x, z));
+  roller = new Roller(green, course.cup);
   buildTerrain();
-  ball.set(G.ballStart.x, G.ballStart.z);
+  ball.set(course.tee.x, course.tee.z);
   shotStart.copy(ball);
   roller.place(ball.x, ball.y);
   shots = 0;
@@ -796,9 +823,10 @@ surface.addEventListener('pointermove', (e) => {
   const adjustingCupCheck =
     state === 'STROKE' && strokeCameraView === 'CUP' && !rig.transitioning;
   if (adjustingAddress || adjustingCupCheck) {
-    const max = THREE.MathUtils.degToRad(G.aim.maxOffsetDeg);
-    const offset = THREE.MathUtils.clamp(aim - aimBase + dx * G.aim.sensitivity, -max, max);
-    aim = aimBase + offset;
+    aim = Math.atan2(
+      Math.sin(aim + dx * G.aim.sensitivity),
+      Math.cos(aim + dx * G.aim.sensitivity),
+    );
     updateAimGuide();
 
     if (adjustingAddress && aimView === 'LOW_LINE' && !rig.transitioning) {
@@ -1088,15 +1116,18 @@ function updateHud(): void {
   } else {
     hud.view.textContent = '';
   }
-  // 狙いはボール→カップ方向からのズレで出す。+ が右
-  const offsetDeg = THREE.MathUtils.radToDeg(aim - aimBase);
-  hud.aim.textContent = `狙い ${offsetDeg >= 0 ? '+' : ''}${offsetDeg.toFixed(1)}°`;
+  const offset = Math.atan2(Math.sin(aim - aimBase), Math.cos(aim - aimBase));
+  const offsetDeg = THREE.MathUtils.radToDeg(offset);
+  const headingDeg = (THREE.MathUtils.radToDeg(aim) + 360) % 360;
+  hud.aim.textContent =
+    `方角 ${headingDeg.toFixed(0)}° ・ カップから ` +
+    `${offsetDeg >= 0 ? '+' : ''}${offsetDeg.toFixed(1)}°`;
   hud.dist.textContent = `カップまで ${distanceToCup().toFixed(2)}m`;
   hud.shots.textContent = `${shots} 打`;
   hud.swing.textContent = lastSwing;
   hud.result.textContent = lastResult;
   hud.notice.textContent = notice;
-  hud.seed.textContent = `シード ${seed} ⟳`;
+  hud.seed.textContent = `${course.name}・PAR ${course.par}・シード ${seed} ⟳`;
   hud.pixel.textContent = PIXEL_MODES[pixelMode];
   hud.line.textContent = lineMode === 'DOT' ? 'ライン:ドット' : 'ライン:滑らか';
   hud.undulation.textContent = selectedUndulation().label;
@@ -1143,7 +1174,7 @@ window.addEventListener('resize', resize);
 buildTerrain();
 applyPixelMode();
 updatePutterTuningUi();
-roller.place(G.ballStart.x, G.ballStart.z);
+roller.place(course.tee.x, course.tee.z);
 ball.set(roller.x, roller.z);
 updateBallMesh();
 enterAddress(true);
