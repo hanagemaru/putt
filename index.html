@@ -52,8 +52,7 @@
         left: 0;
         right: 0;
         z-index: 20;
-        /* 右側はSTROKE中のボタン列が入るので空けておく */
-        padding: 8px 116px calc(8px + 6px) 12px;
+        padding: 8px 12px calc(8px + 6px);
         pointer-events: none;
         font-family: system-ui, -apple-system, sans-serif;
         color: #e8f0e8;
@@ -115,7 +114,7 @@
       /* 練習用のパター反発調整。入口はSTROKE中だけ表示する */
       #tuning-panel {
         position: fixed;
-        top: max(104px, calc(env(safe-area-inset-top) + 104px));
+        top: max(76px, calc(env(safe-area-inset-top) + 76px));
         right: max(10px, env(safe-area-inset-right));
         z-index: 40;
         width: min(280px, calc(100vw - 20px));
@@ -170,29 +169,30 @@
         font-family: system-ui, -apple-system, sans-serif;
       }
       /*
-       * STROKE中のボタンは画面上部の右へ縦に積む。
-       * 真下視点では画面のどこが空いているかが決まっている:
-       *  - 下中央 … つま先の描画（画面下端から18px、高さ30px、幅108〜282px）
-       *  - 中央の横帯 … ボール・パター・指のドラッグ経路
-       *  - 中央から左 … 残り0.5m未満のときカップが出る（画面左方向＝狙った方向、§4.1）
-       * 空いているのは上部だけなので、そこへまとめる
+       * STROKE中のボタンは画面下の左右の角へ置く。
+       * 真下視点で埋まっているのは中央の横帯（ボール・パター・指のドラッグ経路）と、
+       * 残り0.5m未満のときカップが出る中央から左の帯（画面左方向＝狙った方向、§4.1）。
+       * どちらも画面の高さの中ほどなので、下の角は空いている
        */
       #stroke-controls,
       #stroke-camera-controls {
         position: fixed;
-        right: max(8px, env(safe-area-inset-right));
+        bottom: max(14px, env(safe-area-inset-bottom));
         z-index: 30;
         display: none;
         flex-direction: column;
-        align-items: flex-end;
         gap: 6px;
         font-family: system-ui, -apple-system, sans-serif;
       }
+      /* 打つのをやめて戻る側は右下 */
       #stroke-controls {
-        top: max(10px, calc(env(safe-area-inset-top) + 10px));
+        right: max(10px, env(safe-area-inset-right));
+        align-items: flex-end;
       }
+      /* 見る向きを変える側は左下 */
       #stroke-camera-controls {
-        top: max(56px, calc(env(safe-area-inset-top) + 56px));
+        left: max(10px, env(safe-area-inset-left));
+        align-items: flex-start;
       }
       .camera-button,
       #stroke-back,
@@ -317,13 +317,13 @@
         <button type="button" id="hud-line" hidden>ライン</button>
         <button type="button" id="hud-undulation" hidden>地形</button>
       </div>
-      <button type="button" id="hud-adjust" style="display: none">調整</button>
+      <button type="button" id="hud-adjust" style="display: none">強さ</button>
     </div>
 
     <div id="tuning-panel" hidden>
-      <div class="tuning-title">ストローク調整</div>
+      <div class="tuning-title">パターの強さ</div>
       <div class="tuning-value">
-        <span>パター反発</span>
+        <span>強さ</span>
         <strong id="putter-power-value">1.00×</strong>
       </div>
       <input type="range" id="putter-power" />
@@ -331,7 +331,7 @@
     </div>
 
     <div id="camera-controls" aria-label="カメラ視点">
-      <button type="button" class="camera-button" data-aim-view="AIM">方向調整</button>
+      <button type="button" class="camera-button" data-aim-view="AIM">ボール後方</button>
       <button type="button" class="camera-button" data-aim-view="LOW_LINE">低い視点</button>
       <button type="button" class="camera-button" data-aim-view="BEHIND_HOLE">カップ後方</button>
       <button type="button" class="camera-button" data-aim-view="SIDE_MID">横から</button>
@@ -339,16 +339,16 @@
 
     <!-- マップは読み視点ではなく一時的な参照画面なので、視点バーとは別に置く -->
     <div id="map-control">
-      <button type="button" id="map-toggle">マップ</button>
+      <button type="button" id="map-toggle">コースマップ</button>
     </div>
 
     <div id="stroke-controls">
-      <button type="button" id="stroke-back">方向調整に戻る</button>
+      <button type="button" id="stroke-back">読みに戻る</button>
     </div>
 
-    <div id="stroke-camera-controls" aria-label="ストローク中のカップ確認">
-      <button type="button" class="stroke-camera-button" id="stroke-cup-check">カップ確認</button>
-      <button type="button" class="stroke-camera-button" id="stroke-cup-return">ストロークに戻る</button>
+    <div id="stroke-camera-controls" aria-label="見る向きの切り替え">
+      <button type="button" class="stroke-camera-button" id="stroke-cup-check">狙いを見る</button>
+      <button type="button" class="stroke-camera-button" id="stroke-cup-return">手元を見る</button>
     </div>
 
     <div id="rotate-overlay">
