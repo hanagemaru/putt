@@ -274,7 +274,8 @@ const STATUS_LABEL: Record<RollStatus, string> = {
   rolling: '転がり中',
   stopped: '停止',
   holed: 'カップイン',
-  offGreen: 'グリーンオーバー',
+  water: '池',
+  outOfBounds: 'OB',
 };
 
 const grad = { x: 0, z: 0 };
