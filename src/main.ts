@@ -23,6 +23,7 @@ import {
 import { Roller } from './physics';
 import { surfaceAt } from './course/course-map';
 import { PROTOTYPE_COURSE } from './course/prototype-course';
+import { CourseMapMarker } from './course-map-marker';
 import { SmoothLineOverlay, type BallOccluder } from './smooth-line-overlay';
 import { StrokeView } from './stroke-view';
 import {
@@ -294,52 +295,49 @@ aimGuide.visible = false;
 scene.add(aimGuide);
 
 /**
- * コースマップのボール・カップ位置マーカー。真上から見た平面の丸で、**マップの間だけ出す**。
- * 実寸のボールは真上30m超からは点にもならないので、位置だけをこれで示す。
+ * コースマップのボール・カップ位置マーカー。**マップの間だけ出す。**
+ * 実寸のボールは真上30m超からは点にもならないので、
+ * 斜めの矢印とドット文字で位置とそこが何かを示す（作りは course-map-marker.ts）。
  * 曲がりの予測線や推奨ルートは描かない（§3 / ゲーム設計の原則）
  */
 const mapMarkers = new THREE.Group();
 mapMarkers.visible = false;
 scene.add(mapMarkers);
 
-function createMapMarker(color: number, radius: number): THREE.Group {
-  const M = G.courseMap;
-  const group = new THREE.Group();
-  const outline = new THREE.Mesh(
-    new THREE.CircleGeometry(radius * M.markerOutlineScale, 24),
-    new THREE.MeshBasicMaterial({
-      color: M.markerOutlineColor,
-      transparent: true,
-      opacity: M.markerOutlineOpacity,
-      depthTest: false,
-      depthWrite: false,
-    }),
-  );
-  const face = new THREE.Mesh(
-    new THREE.CircleGeometry(radius, 24),
-    new THREE.MeshBasicMaterial({ color, depthTest: false, depthWrite: false }),
-  );
-  outline.rotation.x = -Math.PI / 2;
-  face.rotation.x = -Math.PI / 2;
-  // 芝より必ず手前に描く。深度ではなく描画順で重ねる
-  outline.renderOrder = 30;
-  face.renderOrder = 31;
-  group.add(outline, face);
-  return group;
+const ballMarker = new CourseMapMarker(G.courseMap.ballMarkerColor);
+const cupMarker = new CourseMapMarker(G.courseMap.cupMarkerColor);
+mapMarkers.add(ballMarker.sprite, cupMarker.sprite);
+
+/** ボールがティー上にあるか。ラベルを TEE と BALL で呼び分ける */
+function ballOnTee(): boolean {
+  return Math.hypot(ball.x - course.tee.x, ball.y - course.tee.z) <= G.courseMap.teeLabelRadius;
 }
 
-const ballMarker = createMapMarker(G.courseMap.ballMarkerColor, G.courseMap.ballMarkerRadius);
-const cupMarker = createMapMarker(G.courseMap.cupMarkerColor, G.courseMap.cupMarkerRadius);
-mapMarkers.add(ballMarker, cupMarker);
+/**
+ * マーカーの画面上の大きさを合わせる。
+ * マップへ入る遷移中は FOV が動くので、表示中は毎フレーム取り直す。
+ */
+function layoutMapMarkers(): void {
+  const height = app.clientHeight;
+  const ratio = renderer.getPixelRatio();
+  ballMarker.layout(camera.fov, height, ratio);
+  cupMarker.layout(camera.fov, height, ratio);
+}
 
 /** マップのマーカーを現在のボール・カップへ合わせ、マップの間だけ表示する */
 function syncMapMarkers(): void {
   const showing = state === 'ADDRESS' && aimView === 'MAP';
   mapMarkers.visible = showing;
   if (!showing) return;
-  const lift = G.courseMap.markerLift;
-  ballMarker.position.set(ball.x, visualHeight(ball.x, ball.y) + lift, ball.y);
-  cupMarker.position.set(cup.x, visualHeight(cup.x, cup.y) + lift, cup.y);
+  const M = G.courseMap;
+  const lift = M.markerLift;
+  // アートは指し示す点の左上へ伸びる。コースの左半分にある点だけ左右を入れ替えて、
+  // ラベルが画面の外へ出ないようにする
+  ballMarker.setLabel(ballOnTee() ? M.teeLabel : M.ballLabel, ball.x < 0);
+  cupMarker.setLabel(M.cupLabel, cup.x < 0);
+  ballMarker.sprite.position.set(ball.x, visualHeight(ball.x, ball.y) + lift, ball.y);
+  cupMarker.sprite.position.set(cup.x, visualHeight(cup.x, cup.y) + lift, cup.y);
+  layoutMapMarkers();
 }
 
 const smoothLines = new SmoothLineOverlay(
@@ -1012,6 +1010,8 @@ renderer.setAnimationLoop((now) => {
           rig.apply(lowLineAimPose(ball, cup, aim, visualGreen, distanceToCup()));
         }
       }
+      // マップへの遷移中は FOV が動く。マーカーの画面上の大きさを保つ
+      if (mapMarkers.visible) layoutMapMarkers();
       break;
 
     case 'STROKE':
@@ -1251,6 +1251,7 @@ function resize(): void {
   if (state === 'ADDRESS' && aimView === 'MAP' && !rig.transitioning) {
     rig.apply(courseMapPose(course.bounds, visualGreen, camera.aspect));
   }
+  if (mapMarkers.visible) layoutMapMarkers();
   // インパクトラインをボールの見かけの大きさに合わせる（§4.2）。
   // 真下から見たボールまでの距離は、視点高さから半径を引いたぶん
   strokeView.setBallRadiusPx(
