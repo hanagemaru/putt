@@ -464,17 +464,30 @@ export const CONFIG = {
       transition: 0.9,
       /**
        * ボールとカップの位置マーカー。実寸のボール（半径21mm）は真上30m超からは見えないので、
-       * 俯瞰の間だけ平面の丸を重ねて位置を示す。マップ以外では出さない
+       * 俯瞰の間だけ**斜めの矢印とドット文字**を重ねて、位置とそこが何かを示す。
+       * マップ以外では出さない
        */
       markerLift: 0.06,
-      ballMarkerRadius: 0.35,
+      /**
+       * 1アートピクセルをゲームのドット何個ぶんで描くか。
+       * 1 なら画面の粒とちょうど同じ大きさ。2 は粒2つぶんで、文字が読める最小限の太さ
+       */
+      markerArtPixelDots: 2,
+      /** 斜めの矢印の斜辺の長さ [アートピクセル] */
+      markerArrowLength: 7,
+      /**
+       * ラベル。ドット文字なので大文字の英字だけを使う。
+       * ボールはティー上にあるかどうかで呼び分ける（ゴルフでは開始地点がティー、目標がカップ）
+       */
+      teeLabel: 'TEE',
+      ballLabel: 'BALL',
+      cupLabel: 'CUP',
+      /** ティー上と見なす距離 [m] */
+      teeLabelRadius: 0.05,
       ballMarkerColor: 0xf6f8f4,
-      cupMarkerRadius: 0.45,
       cupMarkerColor: 0xd94f3d,
-      /** マーカーの縁取り。芝の緑に対して輪郭を出す */
-      markerOutlineScale: 1.5,
+      /** マーカーの縁取り。芝の緑にも池の青にも埋もれないように1ドット敷く */
       markerOutlineColor: 0x101810,
-      markerOutlineOpacity: 0.75,
     },
 
     /** RESULT（§3）。ボールが完全に停止してから真上俯瞰へ。走行中は絶対に切り替えない */
