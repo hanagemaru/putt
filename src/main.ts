@@ -23,6 +23,7 @@ import {
 import { Roller } from './physics';
 import { surfaceAt } from './course/course-map';
 import { PROTOTYPE_COURSE } from './course/prototype-course';
+import type { CourseDefinition } from './course/course-types';
 import { CourseMapMarker } from './course-map-marker';
 import { SmoothLineOverlay, type BallOccluder } from './smooth-line-overlay';
 import { StrokeView } from './stroke-view';
@@ -46,7 +47,15 @@ import {
 } from './cameras';
 
 const G = CONFIG.game;
-const course = PROTOTYPE_COURSE;
+
+/**
+ * シードは**地形のうねりとコースの外形の両方**を決める。
+ * 芝・ラフ・セカンドカットの縁と池の輪郭は `CourseDefinition.seed` の揺らぎから決まるので、
+ * シードを切り替えると外形ごと別のホールになる（同じシードなら必ず同じ形）。
+ */
+function courseWithSeed(value: number): CourseDefinition {
+  return { ...PROTOTYPE_COURSE, seed: value >>> 0 };
+}
 
 // --- シーン ---------------------------------------------------------------
 
@@ -140,7 +149,8 @@ const UNDULATION_MODES = [
 ] as const;
 let undulationMode = 3;
 let visualHeightScale = UNDULATION_MODES[undulationMode].visualScale;
-let seed = seedFromUrl() ?? course.seed;
+let seed = seedFromUrl() ?? PROTOTYPE_COURSE.seed;
+let course = courseWithSeed(seed);
 let green = new Green({
   ...defaultGreenParams(),
   seed,
@@ -860,11 +870,14 @@ function rebuildGreenForUndulationCompare(): void {
 }
 
 /**
- * 別のグリーンにする。うねりはシード次第なので、いろいろな地形で読みを試すために要る。
- * URL にも書いておくので、面白い地形が出たらその URL でもう一度出せる
+ * 別のシードにする。うねりも芝・ラフ・セカンドカットの縁も池の輪郭もシード次第なので、
+ * これでいろいろな地形と外形を試せる。
+ * URL にも書いておくので、面白いコースが出たらその URL でもう一度出せる
  */
 function newGreen(next: number): void {
   seed = next >>> 0;
+  // 外形もシードから決まるので、コース定義そのものを作り直す
+  course = courseWithSeed(seed);
   const mode = selectedUndulation();
   visualHeightScale = mode.visualScale;
   green = new Green({
