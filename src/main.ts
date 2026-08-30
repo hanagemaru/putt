@@ -520,16 +520,35 @@ function updateAimGuide(): void {
   const dz = -Math.cos(aim);
   // ボール中心から始めると球の中を通るので、半径ぶん少し前から描く
   const ballOffset = CONFIG.ball.radius * 1.5;
-  // カップ確認だけは真上から前を見る姿勢で、ボール直後は画角に入らない。
-  // 線の長さと向きは変えず、置く位置だけ狙い方向へ進めて画面に入れる
-  const startOffset =
-    state === 'STROKE' && strokeCameraView === 'CUP'
-      ? cupCheckGuideOffset(ball, aim, visualGreen, distanceToCup(), G.aim.guideLift, ballOffset)
-      : ballOffset;
-  const sx = ball.x + dx * startOffset;
-  const sz = ball.y + dz * startOffset;
-  const ex = sx + dx * G.aim.guideLength;
-  const ez = sz + dz * G.aim.guideLength;
+  // 「狙いを見る」だけは真上から前を見る姿勢で、ボール直後は画角に入らない。
+  // 奥端は狙い方向へ進めて画面に入れ、手前端は画面下端の外まで下げる。
+  // 手前端が画面内で終わると、宙に浮いた黄色い棒に見えてガイドとして読めない
+  const checkingAim = state === 'STROKE' && strokeCameraView === 'CUP';
+  let nearOffset = ballOffset;
+  let farOffset = ballOffset + G.aim.guideLength;
+  if (checkingAim) {
+    const S = G.stroke;
+    const look = distanceToCup();
+    // 奥端は従来どおり。前方に見える範囲を増やさないので、曲がりの予測も増えない
+    farOffset =
+      cupCheckGuideOffset(ball, aim, visualGreen, look, G.aim.guideLift, ballOffset) +
+      G.aim.guideLength;
+    const near = cupCheckGuideOffset(
+      ball,
+      aim,
+      visualGreen,
+      look,
+      G.aim.guideLift,
+      ballOffset,
+      S.cupCheckGuideNearScreenFraction,
+    );
+    // ボールより後ろへは出さない。線が潰れないよう最短長さも確保する
+    nearOffset = Math.min(Math.max(near, ballOffset), farOffset - S.cupCheckGuideMinLength);
+  }
+  const sx = ball.x + dx * nearOffset;
+  const sz = ball.y + dz * nearOffset;
+  const ex = ball.x + dx * farOffset;
+  const ez = ball.y + dz * farOffset;
 
   aimGuidePositions[0] = sx;
   aimGuidePositions[1] = visualHeight(sx, sz) + G.aim.guideLift;
