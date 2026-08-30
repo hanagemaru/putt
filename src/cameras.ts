@@ -3,6 +3,7 @@
 // カメラの作り方を main.ts に散らさない。
 import * as THREE from 'three';
 import { CONFIG } from './config';
+import type { CourseBounds } from './course/course-types';
 
 const G = CONFIG.game;
 
@@ -304,6 +305,40 @@ export function resultPose(
     mz - dirZ * Math.cos(pitch) * distance,
   );
   return pose(position, target, 0, R.fov);
+}
+
+/**
+ * コースマップ（§3）。コース全体（幅 X・長さ Z の長方形）を真上から見渡す。
+ * **ボールが止まっている間しか使わない。**
+ *
+ * RESULT の俯瞰との違いは枠取りだけ。3点ではなく `course.bounds` が収まる距離まで引く。
+ * 縦画面は横の画角が横幅ぶんだけ狭いので、「横が収まる距離」と「縦が収まる距離」の
+ * 遠いほうを採らないと、幅の広いコースが左右にはみ出す。
+ *
+ * コース座標系は枠の中心が原点（`surfaceAt` の判定と同じ約束）。
+ * 見下ろす向きは -Z（ティー側が画面下、カップ側が画面上）で、RESULT の yaw 0 と揃う。
+ */
+export function courseMapPose(
+  bounds: CourseBounds,
+  green: HeightSampler,
+  aspect: number,
+): CameraPose {
+  const M = G.courseMap;
+  const halfTan = Math.tan(THREE.MathUtils.degToRad(M.fov) / 2);
+  // 縦（Z）が縦画面に収まる距離と、横（X）が収まる距離
+  const needLength = ((bounds.length / 2) * M.fitMargin) / halfTan;
+  const needWidth = ((bounds.width / 2) * M.fitMargin) / (halfTan * aspect);
+  const distance = Math.max(needLength, needWidth, M.distanceMin);
+  const pitch = THREE.MathUtils.degToRad(M.pitchDeg);
+
+  const target = above(green, 0, 0, 0);
+  const position = new THREE.Vector3(
+    0,
+    target.y + Math.sin(pitch) * distance,
+    // 見る向きが -Z なので、カメラはわずかに +Z 側（ティー側）へ引く
+    Math.cos(pitch) * distance,
+  );
+  return pose(position, target, 0, M.fov);
 }
 
 /** ease-in-out。遷移の頭と尻を丸める */

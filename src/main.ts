@@ -29,6 +29,7 @@ import {
   CameraRig,
   READ_VIEW_LABEL,
   addressPose,
+  courseMapPose,
   cupPose,
   followFov,
   lerpAngle,
@@ -292,6 +293,55 @@ aimGuide.frustumCulled = false;
 aimGuide.visible = false;
 scene.add(aimGuide);
 
+/**
+ * コースマップのボール・カップ位置マーカー。真上から見た平面の丸で、**マップの間だけ出す**。
+ * 実寸のボールは真上30m超からは点にもならないので、位置だけをこれで示す。
+ * 曲がりの予測線や推奨ルートは描かない（§3 / ゲーム設計の原則）
+ */
+const mapMarkers = new THREE.Group();
+mapMarkers.visible = false;
+scene.add(mapMarkers);
+
+function createMapMarker(color: number, radius: number): THREE.Group {
+  const M = G.courseMap;
+  const group = new THREE.Group();
+  const outline = new THREE.Mesh(
+    new THREE.CircleGeometry(radius * M.markerOutlineScale, 24),
+    new THREE.MeshBasicMaterial({
+      color: M.markerOutlineColor,
+      transparent: true,
+      opacity: M.markerOutlineOpacity,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  const face = new THREE.Mesh(
+    new THREE.CircleGeometry(radius, 24),
+    new THREE.MeshBasicMaterial({ color, depthTest: false, depthWrite: false }),
+  );
+  outline.rotation.x = -Math.PI / 2;
+  face.rotation.x = -Math.PI / 2;
+  // 芝より必ず手前に描く。深度ではなく描画順で重ねる
+  outline.renderOrder = 30;
+  face.renderOrder = 31;
+  group.add(outline, face);
+  return group;
+}
+
+const ballMarker = createMapMarker(G.courseMap.ballMarkerColor, G.courseMap.ballMarkerRadius);
+const cupMarker = createMapMarker(G.courseMap.cupMarkerColor, G.courseMap.cupMarkerRadius);
+mapMarkers.add(ballMarker, cupMarker);
+
+/** マップのマーカーを現在のボール・カップへ合わせ、マップの間だけ表示する */
+function syncMapMarkers(): void {
+  const showing = state === 'ADDRESS' && aimView === 'MAP';
+  mapMarkers.visible = showing;
+  if (!showing) return;
+  const lift = G.courseMap.markerLift;
+  ballMarker.position.set(ball.x, visualHeight(ball.x, ball.y) + lift, ball.y);
+  cupMarker.position.set(cup.x, visualHeight(cup.x, cup.y) + lift, cup.y);
+}
+
 const smoothLines = new SmoothLineOverlay(
   app,
   G.aim.guideColor,
@@ -306,7 +356,14 @@ let lineMode: LineMode = 'SMOOTH';
 // --- 状態 -----------------------------------------------------------------
 
 type State = 'ADDRESS' | 'STROKE' | 'FOLLOW' | 'CUP' | 'RESULT';
-type AimView = 'AIM' | ReadView;
+/** ADDRESS の中の視点。MAP はコース全体を真上から見渡すコースマップ */
+type AimView = 'AIM' | 'MAP' | ReadView;
+
+const AIM_VIEW_LABEL: Record<AimView, string> = {
+  AIM: '方向調整',
+  MAP: 'コースマップ',
+  ...READ_VIEW_LABEL,
+};
 type StrokeCameraView = 'DOWN' | 'CUP';
 
 let roller = new Roller(green, course.cup);
@@ -493,6 +550,7 @@ function enterAddress(cut = false, resetAim = true): void {
   }
   updateBallMesh();
   updateAimGuide();
+  syncMapMarkers();
   const p = addressPose(ball, aim, visualGreen, distanceToCup());
   if (cut) rig.cut(p);
   else rig.transition(p, G.address.transition);
@@ -505,10 +563,21 @@ function setAimView(view: AimView): void {
   aimView = view;
   setReadingFlagFade(view === 'BEHIND_HOLE');
   updateAimGuide();
+  syncMapMarkers();
 
   if (view === 'AIM') {
     notice = '左右スワイプで狙い、タップでストローク';
     rig.transition(addressPose(ball, aim, visualGreen, distanceToCup()), G.address.transition);
+    return;
+  }
+
+  if (view === 'MAP') {
+    // コース全体の枠取り。ボールが止まっている ADDRESS でしか入れない
+    notice = 'コースマップ ・ 下のボタンで方向調整へ戻れます';
+    rig.transition(
+      courseMapPose(course.bounds, visualGreen, camera.aspect),
+      G.courseMap.transition,
+    );
     return;
   }
 
@@ -533,6 +602,7 @@ function enterStroke(): void {
   strokeArmed = false;
   setReadingFlagFade(false);
   syncLineVisibility();
+  syncMapMarkers();
   // 背景は見えない。ボールとカップは 3D のまま実寸で見せる（§3 / §4）。
   // 真下を向いた視野は狭いので、カップが映るのはタップインの距離だけ
   props.visible = false;
@@ -1132,7 +1202,7 @@ function updateControls(): void {
 function updateHud(): void {
   hud.state.textContent = state;
   if (state === 'ADDRESS') {
-    hud.view.textContent = aimView === 'AIM' ? '方向調整' : READ_VIEW_LABEL[aimView];
+    hud.view.textContent = AIM_VIEW_LABEL[aimView];
   } else if (state === 'STROKE' && strokeCameraView === 'CUP') {
     hud.view.textContent = 'カップ確認';
   } else {
@@ -1177,6 +1247,10 @@ function resize(): void {
   resizeLowRes();
   smoothLines.resize(w, h);
   strokeView.resize();
+  // マップの枠取りはアスペクト比に依存する。表示中に画面サイズが変わったら取り直す
+  if (state === 'ADDRESS' && aimView === 'MAP' && !rig.transitioning) {
+    rig.apply(courseMapPose(course.bounds, visualGreen, camera.aspect));
+  }
   // インパクトラインをボールの見かけの大きさに合わせる（§4.2）。
   // 真下から見たボールまでの距離は、視点高さから半径を引いたぶん
   strokeView.setBallRadiusPx(
