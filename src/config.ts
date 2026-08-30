@@ -19,13 +19,24 @@ export const CONFIG = {
      * （実測：芝の平均輝度 45/255 → 105/255）
      */
     color: 0x74cf5c,
-    /** サーフェス別の基準色。高さの濃淡はそれぞれの色を中心に掛ける */
+    /**
+     * サーフェス別の基準色。芝（green / rough / deepRough）は高さの濃淡を掛けるが、
+     * 池とOBは高さを読む対象ではないので単色で塗る（`flatSurfaces`）。
+     */
     surfaceColors: {
       green: 0x74cf5c,
       rough: 0x4f9844,
+      deepRough: 0x3a7332,
       water: 0x3d83bd,
-      ob: 0x2f5d2a,
+      ob: 0x27431f,
     },
+    /** 高さの濃淡を掛けないサーフェス。ここは高さを読ませない */
+    flatSurfaces: ['water', 'ob'] as const,
+    /**
+     * 池を見た目だけ一段下げる量 [m]。物理のハイトマップは変えない。
+     * 岸との段差で「水面が低い」と分かればよいので浅くてよい
+     */
+    waterSurfaceDrop: 0.12,
     /** 手続き生成のシード。同じ値なら同じ地形になる */
     seed: 20250823,
     /**
@@ -130,10 +141,24 @@ export const CONFIG = {
     drop: 0.35,
   },
 
-  /** 背景の木。傾きの基準になるので必ず鉛直に立てる */
+  /** 木。傾きの基準になるので必ず鉛直に立てる */
   trees: {
     count: 14,
-    /** グリーン中心からの距離 [m] の範囲 */
+    /**
+     * コース枠内のOBエリアへ置くときの条件。
+     * OBがどこかを木で示せるので、枠の外に並べるより手掛かりになる
+     */
+    inBounds: {
+      /** コース枠の内側へこれだけ余裕を取る [m]。木が枠から半分はみ出さないように */
+      edgeMargin: 0.6,
+      /** 芝（ラフ・セカンドカット含む）からこれだけ離す [m] */
+      playableClearance: 0.5,
+      /** 木どうしの最小間隔 [m] */
+      minSpacing: 1.6,
+      /** 1本あたりの配置試行回数。OBが狭いコースでも無限ループにしない */
+      maxAttemptsPerTree: 60,
+    },
+    /** OBエリアが足りないときに使う、コース枠の外側の距離 [m] の範囲 */
     radiusMin: 13,
     radiusMax: 18,
     heightMin: 3.5,
@@ -151,8 +176,10 @@ export const CONFIG = {
     slopeFactor: 5 / 7,
     /** スティンプ値 [ft]。摩擦 MU はここから逆算する */
     stimpFeet: 10,
-    /** ラフ上の摩擦倍率。試験ホールの実機確認後に調整する */
-    roughFrictionMultiplier: 2.5,
+    /** ラフ上の摩擦倍率 */
+    roughFrictionMultiplier: 3.5,
+    /** セカンドカット上の摩擦倍率。ラフよりはっきり重くする */
+    deepRoughFrictionMultiplier: 6,
     /**
      * スティンプメーターの解放速度 [m/s]。
      * 「この初速で stimpFeet だけ転がる」から MU = v^2 / (2 * 距離) を出す

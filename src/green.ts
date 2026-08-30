@@ -274,12 +274,18 @@ function softRamp(value: number, fullRange: number): number {
  * `heightScale` は形状視認性の比較専用。色の計算と物理には元の h を使うため、
  * 2倍表示でも色が意味する高さと実際の物理は変えない。
  */
+/** 高さの濃淡を掛けないサーフェスか（池・OB） */
+function isFlatSurface(surface: SurfaceType): boolean {
+  return (C.flatSurfaces as readonly SurfaceType[]).includes(surface);
+}
+
 export class GreenMesh {
   readonly mesh: THREE.Mesh;
   private readonly geometry: THREE.PlaneGeometry;
   private readonly bases: Record<SurfaceType, THREE.Color> = {
     green: new THREE.Color(C.surfaceColors.green),
     rough: new THREE.Color(C.surfaceColors.rough),
+    deepRough: new THREE.Color(C.surfaceColors.deepRough),
     water: new THREE.Color(C.surfaceColors.water),
     ob: new THREE.Color(C.surfaceColors.ob),
   };
@@ -326,8 +332,17 @@ export class GreenMesh {
       const x = position.getX(i);
       const z = position.getZ(i);
       const h = green.sampleHeight(x, z);
-      position.setY(i, h * this.heightScale);
-      const base = this.bases[green.surfaceAt(x, z)];
+      const surface = green.surfaceAt(x, z);
+      // 池だけ見た目を一段下げる。ハイトマップ自体は変えないので物理は同じ
+      const drop = surface === 'water' ? C.waterSurfaceDrop : 0;
+      position.setY(i, h * this.heightScale - drop);
+      const base = this.bases[surface];
+
+      // 池とOBは高さを読む対象ではないので、濃淡を掛けず単色で塗る
+      if (isFlatSurface(surface)) {
+        color.setXYZ(i, base.r, base.g, base.b);
+        continue;
+      }
 
       // 勾配ベース比較用の値と、正式採用している高さベースの値を同じ式で合成できるよう保持する
       green.sampleGradient(x, z, this.grad);
@@ -456,23 +471,74 @@ export function createSurround(green: Green, heightScale = 1): THREE.Mesh {
   return mesh;
 }
 
-/** 背景の木を数本。これも傾きの基準になるので必ず鉛直に立てる */
+/**
+ * OBエリアの中から木を置ける点を探す。
+ * 見つかった数が count に満たない場合もあるので、呼ぶ側で枠の外へ回す。
+ */
+function pickTreeSpotsInBounds(green: Green, rng: () => number, count: number): CoursePoint[] {
+  const t = CONFIG.trees.inBounds;
+  const spots: CoursePoint[] = [];
+  const halfWidth = green.width / 2 - t.edgeMargin;
+  const halfLength = green.length / 2 - t.edgeMargin;
+  if (halfWidth <= 0 || halfLength <= 0) return spots;
+
+  for (let i = 0; i < count; i++) {
+    for (let attempt = 0; attempt < t.maxAttemptsPerTree; attempt++) {
+      const x = (rng() * 2 - 1) * halfWidth;
+      const z = (rng() * 2 - 1) * halfLength;
+      if (green.surfaceAt(x, z) !== 'ob') continue;
+      // 幹の周りが芝に食い込まないよう、四方も OB であることを確かめる
+      const c = t.playableClearance;
+      if (
+        green.surfaceAt(x + c, z) !== 'ob' ||
+        green.surfaceAt(x - c, z) !== 'ob' ||
+        green.surfaceAt(x, z + c) !== 'ob' ||
+        green.surfaceAt(x, z - c) !== 'ob'
+      ) {
+        continue;
+      }
+      if (spots.some((s) => Math.hypot(s.x - x, s.z - z) < t.minSpacing)) continue;
+      spots.push({ x, z });
+      break;
+    }
+  }
+  return spots;
+}
+
+/**
+ * 木を数本。これも傾きの基準になるので必ず鉛直に立てる。
+ * OBエリアが取れるコースでは枠内のOBへ置き、OBの位置そのものを見て分かるようにする。
+ * OBが狭い（検証ページのように分類がない）場合だけ、従来どおり枠の外へ並べる。
+ */
 export function createTrees(green: Green, seed: number, heightScale = 1): THREE.Group {
   const t = CONFIG.trees;
   const rng = makeRng(seed);
   const group = new THREE.Group();
-  const baseY = green.minHeight * heightScale - CONFIG.surround.drop;
+  const outsideBaseY = green.minHeight * heightScale - CONFIG.surround.drop;
   const radiusMin = Math.max(t.radiusMin, Math.max(green.width, green.length) / 2 + 1);
   const radiusMax = radiusMin + (t.radiusMax - t.radiusMin);
   const trunkMat = new THREE.MeshLambertMaterial({ color: t.trunkColor });
   const leafMat = new THREE.MeshLambertMaterial({ color: t.leafColor });
+  const spots = pickTreeSpotsInBounds(green, rng, t.count);
 
   for (let i = 0; i < t.count; i++) {
-    const angle = ((i + rng() * 0.6) / t.count) * Math.PI * 2;
-    const radius = lerp(radiusMin, radiusMax, rng());
+    const spot = spots[i];
     const height = lerp(t.heightMin, t.heightMax, rng());
-    const x = Math.cos(angle) * radius;
-    const z = Math.sin(angle) * radius;
+    let x: number;
+    let z: number;
+    let baseY: number;
+    if (spot) {
+      x = spot.x;
+      z = spot.z;
+      // 枠内では地面に立たせる。池の見た目の段下げは芝の高さと別なのでここでは使わない
+      baseY = green.sampleHeight(x, z) * heightScale;
+    } else {
+      const angle = ((i + rng() * 0.6) / t.count) * Math.PI * 2;
+      const radius = lerp(radiusMin, radiusMax, rng());
+      x = Math.cos(angle) * radius;
+      z = Math.sin(angle) * radius;
+      baseY = outsideBaseY;
+    }
 
     const trunkHeight = height * 0.35;
     const trunk = new THREE.Mesh(
