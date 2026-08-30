@@ -31,6 +31,7 @@ import {
   READ_VIEW_LABEL,
   addressPose,
   courseMapPose,
+  cupCheckGuideOffset,
   cupPose,
   followFov,
   lerpAngle,
@@ -508,7 +509,13 @@ function updateAimGuide(): void {
   const dx = Math.sin(aim);
   const dz = -Math.cos(aim);
   // ボール中心から始めると球の中を通るので、半径ぶん少し前から描く
-  const startOffset = CONFIG.ball.radius * 1.5;
+  const ballOffset = CONFIG.ball.radius * 1.5;
+  // カップ確認だけは真上から前を見る姿勢で、ボール直後は画角に入らない。
+  // 線の長さと向きは変えず、置く位置だけ狙い方向へ進めて画面に入れる
+  const startOffset =
+    state === 'STROKE' && strokeCameraView === 'CUP'
+      ? cupCheckGuideOffset(ball, aim, visualGreen, distanceToCup(), G.aim.guideLift, ballOffset)
+      : ballOffset;
   const sx = ball.x + dx * startOffset;
   const sz = ball.y + dz * startOffset;
   const ex = sx + dx * G.aim.guideLength;
