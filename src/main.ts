@@ -23,7 +23,8 @@ import {
 import { Roller } from './physics';
 import { surfaceAt } from './course/course-map';
 import { PROTOTYPE_COURSE } from './course/prototype-course';
-import type { CourseDefinition } from './course/course-types';
+import { approachDirection, generateCourse } from './course/course-generate';
+import type { CourseDefinition, TerrainType } from './course/course-types';
 import { CourseMapMarker } from './course-map-marker';
 import { SmoothLineOverlay, type BallOccluder } from './smooth-line-overlay';
 import { StrokeView } from './stroke-view';
@@ -48,13 +49,47 @@ import {
 
 const G = CONFIG.game;
 
+/** 地形の性格の表示名。開発用の表示にだけ使う */
+const TERRAIN_LABEL: Record<TerrainType, string> = {
+  random: 'ランダム',
+  singleSlope: '片流れ',
+  receiving: '受け',
+  saddle: 'ポテトチップ',
+  twoTier: '2段',
+};
+
 /**
- * シードは**地形のうねりとコースの外形の両方**を決める。
- * 芝・ラフ・セカンドカットの縁と池の輪郭は `CourseDefinition.seed` の揺らぎから決まるので、
- * シードを切り替えると外形ごと別のホールになる（同じシードなら必ず同じ形）。
+ * シードは**ホールの外形・地形の性格・うねりのすべて**を決める。
+ * `?course=prototype` のときだけ、実機確認を重ねた手作りの試験ホールを使い、
+ * シードは縁の揺らぎとうねりにだけ効く（形の比較用に残してある）。
  */
 function courseWithSeed(value: number): CourseDefinition {
-  return { ...PROTOTYPE_COURSE, seed: value >>> 0 };
+  const seed = value >>> 0;
+  if (usePrototypeCourse) return { ...PROTOTYPE_COURSE, seed };
+  return generateCourse(seed);
+}
+
+/** URL の ?course=prototype 。生成器を入れる前の手作りホールを出す */
+const usePrototypeCourse =
+  new URLSearchParams(location.search).get('course') === 'prototype';
+
+/**
+ * 現在のコースに合わせた `Green` の生成パラメータ。
+ * 地形の性格はコース定義が持ち、カップと最終アプローチの向きを基準に形を置く。
+ */
+function greenParamsFor(target: CourseDefinition, amplitude: number) {
+  return {
+    ...defaultGreenParams(),
+    seed: target.seed,
+    width: target.bounds.width,
+    length: target.bounds.length,
+    undulationAmplitude: amplitude,
+    terrain: {
+      type: target.terrain,
+      cup: target.cup,
+      approach: approachDirection(target),
+    },
+  };
 }
 
 // --- シーン ---------------------------------------------------------------
@@ -151,13 +186,10 @@ let undulationMode = 3;
 let visualHeightScale = UNDULATION_MODES[undulationMode].visualScale;
 let seed = seedFromUrl() ?? PROTOTYPE_COURSE.seed;
 let course = courseWithSeed(seed);
-let green = new Green({
-  ...defaultGreenParams(),
-  seed,
-  width: course.bounds.width,
-  length: course.bounds.length,
-  undulationAmplitude: UNDULATION_MODES[undulationMode].amplitude,
-}, (x, z) => surfaceAt(course, x, z));
+let green = new Green(
+  greenParamsFor(course, UNDULATION_MODES[undulationMode].amplitude),
+  (x, z) => surfaceAt(course, x, z),
+);
 
 function visualHeight(x: number, z: number): number {
   return green.sampleHeight(x, z) * visualHeightScale;
@@ -381,7 +413,10 @@ const cup = new THREE.Vector2(course.cup.x, course.cup.z);
 const ball = new THREE.Vector2(course.tee.x, course.tee.z);
 /** この一打を打つ前の位置。池またはOBならここへ戻す */
 const shotStart = new THREE.Vector2(course.tee.x, course.tee.z);
-const strokeLimit = course.par + 5;
+/** 打ち切りの打数。コースごとに par が変わるので、その都度求める */
+function strokeLimit(): number {
+  return course.par + 5;
+}
 
 let state: State = 'ADDRESS';
 /** ADDRESS の中で、方向調整か読み用定点かを切り替える。初期は方向調整。 */
@@ -787,7 +822,7 @@ function enterResult(): void {
     !penaltyApplied &&
     (roller.status === 'water' || roller.status === 'outOfBounds')
   ) {
-    shots = Math.min(shots + 1, strokeLimit);
+    shots = Math.min(shots + 1, strokeLimit());
     penaltyApplied = true;
   }
   syncLineVisibility();
@@ -801,15 +836,15 @@ function enterResult(): void {
 /** 結果テキスト（§3）。打ち出しラインへの射影で オーバー／ショート と左右のズレを出す */
 function describeResult(): string {
   if (roller.status === 'holed') return `カップイン（${shots} 打）`;
-  if (roller.status === 'water' && shots >= strokeLimit) {
+  if (roller.status === 'water' && shots >= strokeLimit()) {
     return `池・打ち切り（${shots} 打）`;
   }
-  if (roller.status === 'outOfBounds' && shots >= strokeLimit) {
+  if (roller.status === 'outOfBounds' && shots >= strokeLimit()) {
     return `OB・打ち切り（${shots} 打）`;
   }
   if (roller.status === 'water') return `池（1罰打）・${shots} 打`;
   if (roller.status === 'outOfBounds') return `OB（1罰打）・${shots} 打`;
-  if (shots >= strokeLimit) return `打ち切り（${shots} 打）`;
+  if (shots >= strokeLimit()) return `打ち切り（${shots} 打）`;
   const ux = cup.x - shotStart.x;
   const uz = cup.y - shotStart.y;
   const len = Math.hypot(ux, uz) || 1;
@@ -831,7 +866,7 @@ function describeResult(): string {
 
 /** RESULT でタップされた。次のパットへ */
 function nextPutt(): void {
-  if (roller.status === 'holed' || shots >= strokeLimit) {
+  if (roller.status === 'holed' || shots >= strokeLimit()) {
     // 同じグリーン・同じカップで打ち直し
     ball.set(course.tee.x, course.tee.z);
     shots = 0;
@@ -853,13 +888,7 @@ function selectedUndulation() {
 function rebuildGreenForUndulationCompare(): void {
   const mode = selectedUndulation();
   visualHeightScale = mode.visualScale;
-  green = new Green({
-    ...defaultGreenParams(),
-    seed,
-    width: course.bounds.width,
-    length: course.bounds.length,
-    undulationAmplitude: mode.amplitude,
-  }, (x, z) => surfaceAt(course, x, z));
+  green = new Green(greenParamsFor(course, mode.amplitude), (x, z) => surfaceAt(course, x, z));
   roller = new Roller(green, course.cup);
   roller.place(ball.x, ball.y);
   buildTerrain();
@@ -880,13 +909,7 @@ function newGreen(next: number): void {
   course = courseWithSeed(seed);
   const mode = selectedUndulation();
   visualHeightScale = mode.visualScale;
-  green = new Green({
-    ...defaultGreenParams(),
-    seed,
-    width: course.bounds.width,
-    length: course.bounds.length,
-    undulationAmplitude: mode.amplitude,
-  }, (x, z) => surfaceAt(course, x, z));
+  green = new Green(greenParamsFor(course, mode.amplitude), (x, z) => surfaceAt(course, x, z));
   roller = new Roller(green, course.cup);
   buildTerrain();
   ball.set(course.tee.x, course.tee.z);
@@ -1271,7 +1294,8 @@ function updateControls(): void {
 
 function updateHud(): void {
   // 状態名は英語の内部名なので、通常のプレイ画面には出さない
-  hud.state.textContent = debugEnabled ? state : '';
+  // 開発用の表示だけ、地形の性格も出す。実機で「今どの型か」を見ながら確かめるため
+  hud.state.textContent = debugEnabled ? `${state} / ${TERRAIN_LABEL[course.terrain]}` : '';
   if (state === 'ADDRESS') {
     hud.view.textContent = AIM_VIEW_LABEL[aimView];
   } else if (state === 'STROKE' && strokeCameraView === 'CUP') {

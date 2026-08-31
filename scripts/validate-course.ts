@@ -10,7 +10,8 @@
 
 import { PROTOTYPE_COURSE } from '../src/course/prototype-course.ts';
 import { courseSurfaceDigest, validateCourse } from '../src/course/course-validate.ts';
-import type { CourseDefinition, SurfaceType } from '../src/course/course-types.ts';
+import { generateCourseDetailed } from '../src/course/course-generate.ts';
+import type { CourseDefinition, SurfaceType, TerrainType } from '../src/course/course-types.ts';
 
 const SURFACES: readonly SurfaceType[] = ['green', 'rough', 'deepRough', 'water', 'ob'];
 const LABEL: Record<SurfaceType, string> = {
@@ -83,6 +84,55 @@ for (const base of courses) {
   } else {
     failed = true;
     for (const line of bad) console.log(`  ! ${line}`);
+  }
+}
+
+// 生成器の掃引。シードから作ったホールが、そのまま遊べる形になっているかを確かめる。
+// 生成器は内部で検証器を通すので、ここは「通ったと言い張っていないか」の答え合わせでもある
+const GEN_COUNT = 200;
+const GEN_CELL_SIZE = 0.15;
+const GEN_BASE_SEED = 20260901;
+
+console.log(`\n=== コース生成器: シード掃引（${GEN_COUNT}通り・格子${GEN_CELL_SIZE}m）===`);
+{
+  const terrainCount: Partial<Record<TerrainType, number>> = {};
+  const parCount: Record<number, number> = {};
+  const obRatios: number[] = [];
+  let attempts = 0;
+  let fallbacks = 0;
+  const bad: string[] = [];
+
+  for (let i = 0; i < GEN_COUNT; i++) {
+    const seed = (GEN_BASE_SEED + i * 7919) >>> 0;
+    const generated = generateCourseDetailed(seed);
+    const course = generated.course;
+    attempts += generated.attempts;
+    if (generated.fallback) fallbacks++;
+    terrainCount[course.terrain] = (terrainCount[course.terrain] ?? 0) + 1;
+    parCount[course.par] = (parCount[course.par] ?? 0) + 1;
+
+    // 同じシードから作り直したものと、サーフェスが完全に一致するか
+    const digest = courseSurfaceDigest(course, { cellSize: GEN_CELL_SIZE });
+    const again = courseSurfaceDigest(generateCourseDetailed(seed).course, { cellSize: GEN_CELL_SIZE });
+    if (digest !== again) bad.push(`シード ${seed}: 同じシードで違う形になった（${digest} / ${again}）`);
+
+    const result = validateCourse(course, { cellSize: GEN_CELL_SIZE });
+    obRatios.push(result.areaRatio.ob);
+    if (!result.ok) bad.push(`シード ${seed}: ${result.issues.join(' / ')}`);
+  }
+
+  obRatios.sort((a, b) => a - b);
+  const mean = obRatios.reduce((a, b) => a + b, 0) / obRatios.length;
+  console.log(`平均試行回数: ${(attempts / GEN_COUNT).toFixed(2)} 回 / 池なしへ落ちた回数: ${fallbacks}`);
+  console.log(`OB面積比: 最小 ${percent(obRatios[0])} / 平均 ${percent(mean)} / 最大 ${percent(obRatios[obRatios.length - 1])}`);
+  console.log(`par の内訳: ${Object.keys(parCount).sort().map((k) => `par${k} ${parCount[Number(k)]}`).join(' / ')}`);
+  console.log(`地形の内訳: ${Object.entries(terrainCount).map(([k, v]) => `${k} ${v}`).join(' / ')}`);
+  if (bad.length === 0) {
+    console.log('すべてのシードで、決定論・ティー/カップが通常芝・ティーからカップまで芝が連結: OK');
+  } else {
+    failed = true;
+    for (const line of bad.slice(0, 10)) console.log(`  ! ${line}`);
+    if (bad.length > 10) console.log(`  ! ほか ${bad.length - 10} 件`);
   }
 }
 

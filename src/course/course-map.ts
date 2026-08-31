@@ -28,7 +28,8 @@ function pointSegmentDistance(point: CoursePoint, a: CoursePoint, b: CoursePoint
   return Math.hypot(point.x - (a.x + dx * t), point.z - (a.z + dz * t));
 }
 
-function distanceToRoute(course: CourseDefinition, x: number, z: number): number {
+/** ルート（芝の中心線）までの最短距離 [m]。生成器が池を置くときにも使う */
+export function distanceToRoute(course: CourseDefinition, x: number, z: number): number {
   const point = { x, z };
   let distance = Infinity;
   for (let i = 1; i < course.route.length; i++) {
