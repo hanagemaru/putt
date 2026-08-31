@@ -151,6 +151,131 @@ export const CONFIG = {
       },
     },
     /**
+     * 地形の性格ごとの高さの作り方。`CourseDefinition.terrain` で選ぶ。
+     * どの性格でも最後にうねりを足すので、幾何学的な形そのままにはならない。
+     */
+    terrain: {
+      /** 生成器が性格を選ぶときの重み。大きいほど出やすい */
+      weights: {
+        random: 1,
+        singleSlope: 1,
+        receiving: 1.6,
+        saddle: 1.2,
+        twoTier: 1.2,
+      },
+      /**
+       * 性格ごとのうねりの倍率。`GreenParams.undulationAmplitude` に掛ける。
+       * 絶対値ではなく倍率にしてあるので、lil-gui の振幅スライダと
+       * アンジュレーション比較モードが今までどおり効く。
+       * 形をはっきり読ませたい性格ほど小さくして、形がうねりに埋もれないようにする
+       */
+      undulationGain: {
+        random: 1,
+        singleSlope: 0.5,
+        receiving: 0.6,
+        saddle: 0.5,
+        twoTier: 0.5,
+      },
+      /**
+       * `singleSlope` の傾斜倍率。`GreenParams.tiltPercent` に掛ける。
+       * `random` の緩い全体傾斜と違い、片流れは向きが読めるだけ強くする
+       */
+      singleSlopeGain: 2.2,
+      /**
+       * `receiving` の高低差 [m]。カップの奥側がこれだけ高くなる。
+       * 面の傾斜は最大で rise / scale なので、この2つで 5〜6% に収まるようにしてある
+       */
+      receivingRise: 0.28,
+      /** `receiving` が平らになるまでの距離 [m]。カップからこの距離で上りが緩む */
+      receivingScale: 5,
+      /** `saddle` の高低差 [m]（±）。高い対角と低い対角の振れ幅 */
+      saddleAmplitude: 0.22,
+      /** `saddle` の広がり [m]。小さいほど鞍点が急になる */
+      saddleScale: 4,
+      /** `twoTier` の段差 [m] */
+      twoTierStep: 0.24,
+      /**
+       * `twoTier` の段の幅 [m]。ここで段差を上り下りする。
+       * 面の傾斜は最大で 1.5 × step / width になるので、狭いと崖に見えて上れない
+       */
+      twoTierWidth: 2.2,
+      /** 段をカップの手前どれだけに置くか [m] */
+      twoTierOffsetMin: 2,
+      twoTierOffsetMax: 4.5,
+    },
+
+    /**
+     * コース生成器（`generateCourse`）の調整値。
+     * 範囲は [最小, 最大] で、シードから決めた乱数で線形に補間する。
+     */
+    generator: {
+      /** 難易度の出やすさ。9ホールに易しい〜難しいが混ざるようにする */
+      difficultyWeights: { easy: 1, normal: 2, hard: 1 },
+      /** 形の型の出やすさ */
+      shapeWeights: { straight: 1, dogleg: 2.5, doubleDogleg: 1.2 },
+      /** 難易度ごとの寸法。routeLength はルート（芝の中心線）の全長 [m] */
+      difficulty: {
+        easy: {
+          routeLength: [9, 14],
+          greenWidth: [4.6, 5.6],
+          roughFringe: [1.4, 1.8],
+          deepRoughFringe: [2.2, 2.8],
+          hazardCount: [0, 1],
+          cornerAngle: [25, 55],
+        },
+        normal: {
+          routeLength: [14, 21],
+          greenWidth: [3.8, 4.8],
+          roughFringe: [1.1, 1.5],
+          deepRoughFringe: [2, 2.6],
+          hazardCount: [1, 1],
+          cornerAngle: [40, 80],
+        },
+        hard: {
+          routeLength: [20, 28],
+          greenWidth: [3, 3.9],
+          roughFringe: [0.9, 1.3],
+          deepRoughFringe: [1.6, 2.2],
+          hazardCount: [1, 2],
+          cornerAngle: [60, 105],
+        },
+      },
+      /** 池の岸をラフにする幅 [m] */
+      waterFringe: [0.8, 1.4],
+      /** 池の半径 [m]（長い方） */
+      hazardRadius: [1.4, 3],
+      /** 池の縦横比。1 から離れるほど細長い */
+      hazardAspect: [0.6, 1.6],
+      /**
+       * 池の中心をルートからどれだけ離すか。
+       * 「芝の半分 + 岸 + 池の半径 × この係数」より近づけない。
+       * 小さくすると池が芝を食い込んで塞ぎやすくなる
+       */
+      hazardRouteClearance: 0.45,
+      /** 池の縁をティー・カップからこれだけ離す [m] */
+      hazardTeeCupClearance: 1.5,
+      /**
+       * コース枠を、ルートの外接矩形から各辺へどれだけ広げるか。
+       * 「揺らぎが最大に振れたときの芝の幅 × この係数」で決める。
+       * 1 を超えると枠の縁が必ずOBになり、小さくすると盤面が芝で埋まってOBが消える。
+       * 試行ごとに範囲の中から選び、OB面積比が `obRatio` に入るものを採る
+       */
+      boundsExpand: [0.5, 1.05],
+      /** コース枠の丸め単位 [m] */
+      boundsStep: 0.5,
+      /** ストレートの型でも真っ直ぐにしないための中間点のずれ [m] */
+      straightBow: [0.6, 1.8],
+      /** par を決めるルート全長の境目 [m]。順に par 2 / 3 / 4、それより長ければ 5 */
+      parThresholds: [12, 22, 30],
+      /** 受け入れるOB面積比の範囲。狭すぎても広すぎても遊びづらい */
+      obRatio: [0.18, 0.45],
+      /** 検証に通るまでの作り直し回数 */
+      maxAttempts: 40,
+      /** 生成時の検証の格子間隔 [m]。実機で待たせないよう検証器の既定より粗くする */
+      validationCellSize: 0.2,
+    },
+
+    /**
      * 検証器（`validateCourse`）のグリッド間隔 [m]。
      * 芝の連結判定と面積比をこの粒度で数える。細かいほど正確だが計算量は二乗で増える
      */

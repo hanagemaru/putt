@@ -10,6 +10,7 @@ export const PROTOTYPE_COURSE: CourseDefinition = {
   name: '試験ホール・池越えドッグレッグ',
   par: 3,
   seed: 20260830,
+  terrain: 'receiving',
   bounds: { width: 16, length: 24 },
   tee: { x: -4, z: 8 },
   cup: { x: 4, z: -3 },

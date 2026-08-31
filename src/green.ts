@@ -3,9 +3,23 @@
 // 比較用の「形状2×」だけは、物理と色を変えず3D形状の高さだけを一時的に誇張する。
 import * as THREE from 'three';
 import { CONFIG } from './config';
-import type { CoursePoint, SurfaceType } from './course/course-types';
+import type { CoursePoint, SurfaceType, TerrainType } from './course/course-types';
 
 const C = CONFIG.green;
+const T = CONFIG.course.terrain;
+
+/**
+ * 地形の性格と、その形を置くための基準。
+ * 性格ごとの形はカップとアプローチの向きを基準に作るので、
+ * ドッグレッグでも「カップへ向かって上り」のような意味のある形になる。
+ */
+export interface TerrainParams {
+  type: TerrainType;
+  /** カップの位置 [m] */
+  cup: CoursePoint;
+  /** 最終アプローチの向き（ティー側からカップへ向かう単位ベクトル） */
+  approach: CoursePoint;
+}
 
 /** lil-gui から変えられる生成パラメータ。変えたら作り直す */
 export interface GreenParams {
@@ -18,6 +32,8 @@ export interface GreenParams {
   undulationAmplitude: number;
   /** 全体傾斜 [%]。向きはシードから決まる */
   tiltPercent: number;
+  /** 地形の性格。省略すると `random`（従来どおりの全体傾斜＋うねり） */
+  terrain?: TerrainParams;
 }
 
 export function defaultGreenParams(): GreenParams {
@@ -106,12 +122,19 @@ export class Green {
     const halfWidth = this.width / 2;
     const halfLength = this.length / 2;
 
-    // 緩やかな全体傾斜。向きだけシードから決め、大きさは params で指定する
+    const type = params.terrain?.type ?? 'random';
+
+    // 全体傾斜の向き。うねりより先に引く順序は元のまま保つ
     const tiltAngle = rng() * Math.PI * 2;
-    this.tiltPercent = params.tiltPercent;
-    const tilt = this.tiltPercent / 100;
-    const tiltX = Math.cos(tiltAngle) * tilt;
-    const tiltZ = Math.sin(tiltAngle) * tilt;
+
+    // 全体傾斜 [%] は `random` / `singleSlope` の見出しとして残す。
+    // それ以外の性格は自前の形で高低差を作るので 0 とする
+    this.tiltPercent =
+      type === 'random'
+        ? params.tiltPercent
+        : type === 'singleSlope'
+          ? params.tiltPercent * T.singleSlopeGain
+          : 0;
 
     // うねりのガウシアン
     const spreadX = this.width * C.gaussianSpread;
@@ -126,7 +149,21 @@ export class Green {
       });
     }
 
-    // 先にうねりだけを積んで、振幅が params.undulationAmplitude ちょうどになるよう正規化する。
+    // 性格ごとの形に使う乱数は、**うねりのガウシアンを引き終わってから**引く。
+    // こうしておくと、性格を足しても既存のうねりの並びが1つもずれない
+    const tierOffset = lerp(T.twoTierOffsetMin, T.twoTierOffsetMax, rng());
+    const tierSign = rng() < 0.5 ? -1 : 1;
+    const saddleSign = rng() < 0.5 ? -1 : 1;
+
+    // 「性格の形」。ここが読ませたい主役で、うねりは後から足す添え物
+    const shapeAt = this.makeShape(params, type, {
+      tiltAngle,
+      tierOffset,
+      tierSign,
+      saddleSign,
+    });
+
+    // 先にうねりだけを積んで、振幅が指定どおりになるよう正規化する。
     // こうしておくと lil-gui の「うねりの振幅」がそのまま m 単位の意味を持つ
     const undulation = new Float32Array(this.resX * this.resZ);
     let maxAbs = 0;
@@ -145,7 +182,9 @@ export class Green {
         if (abs > maxAbs) maxAbs = abs;
       }
     }
-    const scale = maxAbs > 0 ? params.undulationAmplitude / maxAbs : 0;
+    // 性格ごとに倍率で薄める。形をはっきり読ませたい性格ほどうねりを抑える
+    const targetAmplitude = params.undulationAmplitude * T.undulationGain[type];
+    const scale = maxAbs > 0 ? targetAmplitude / maxAbs : 0;
 
     this.minHeight = Infinity;
     this.maxHeight = -Infinity;
@@ -153,7 +192,7 @@ export class Green {
       const z = -halfLength + j * this.cellZ;
       for (let i = 0; i < this.resX; i++) {
         const x = -halfWidth + i * this.cellX;
-        const h = tiltX * x + tiltZ * z + undulation[j * this.resX + i] * scale;
+        const h = shapeAt(x, z) + undulation[j * this.resX + i] * scale;
         this.heights[j * this.resX + i] = h;
         if (h < this.minHeight) this.minHeight = h;
         if (h > this.maxHeight) this.maxHeight = h;
@@ -161,6 +200,81 @@ export class Green {
     }
 
     this.computeGradients();
+  }
+
+  /**
+   * 性格ごとの「読ませたい形」を、座標から高さ [m] へ変換する関数を作る。
+   *
+   * `receiving` / `saddle` / `twoTier` はカップを原点、最終アプローチの向きを u 軸、
+   * その左を v 軸とする局所座標で組み立てる。こうするとドッグレッグでも
+   * 「カップへ向かって上り」「カップ手前に段」が意図どおりの向きになる。
+   * u と v は tanh で潰してから使うので、コースがどれだけ長くても高さは振幅の中に収まる。
+   */
+  private makeShape(
+    params: GreenParams,
+    type: TerrainType,
+    draw: { tiltAngle: number; tierOffset: number; tierSign: number; saddleSign: number },
+  ): (x: number, z: number) => number {
+    const cup = params.terrain?.cup ?? { x: 0, z: 0 };
+    const ax = params.terrain?.approach.x ?? 0;
+    const az = params.terrain?.approach.z ?? 1;
+    // 最終アプローチの向き。長さ0が来ても割らずに済むよう既定へ落とす
+    const length = Math.hypot(ax, az);
+    const ux = length > 0 ? ax / length : 0;
+    const uz = length > 0 ? az / length : 1;
+    // 左手側。u とこれで右手系の局所座標になる
+    const vx = -uz;
+    const vz = ux;
+
+    const local = (x: number, z: number): { u: number; v: number } => {
+      const dx = x - cup.x;
+      const dz = z - cup.z;
+      return { u: dx * ux + dz * uz, v: dx * vx + dz * vz };
+    };
+
+    switch (type) {
+      case 'singleSlope': {
+        // 片流れ。向きだけシードから決め、傾斜は `random` より強くする
+        const tilt = (params.tiltPercent * T.singleSlopeGain) / 100;
+        const tx = Math.cos(draw.tiltAngle) * tilt;
+        const tz = Math.sin(draw.tiltAngle) * tilt;
+        return (x, z) => tx * x + tz * z;
+      }
+      case 'receiving': {
+        // 受けグリーン。カップへ向かって上り、カップの奥では平らになる。
+        // tanh なので手前も奥も振幅の外へは出ない
+        const rise = T.receivingRise;
+        const scale = T.receivingScale;
+        return (x, z) => rise * Math.tanh(local(x, z).u / scale);
+      }
+      case 'saddle': {
+        // ポテトチップ。u と v の積なので、対角の2つが高く、残る対角が低い鞍点になる
+        const amp = T.saddleAmplitude * draw.saddleSign;
+        const scale = T.saddleScale;
+        return (x, z) => {
+          const p = local(x, z);
+          return amp * Math.tanh(p.u / scale) * Math.tanh(p.v / scale);
+        };
+      }
+      case 'twoTier': {
+        // 2段グリーン。カップの手前 tierOffset [m] に、アプローチと直交する段を1本入れる。
+        // tierSign が +1 ならカップ側が高い（上りの段）、-1 なら低い（下りの段）
+        const step = T.twoTierStep * draw.tierSign;
+        const width = Math.max(T.twoTierWidth, 0.01);
+        return (x, z) => {
+          const t = Math.min(Math.max((local(x, z).u + draw.tierOffset) / width + 0.5, 0), 1);
+          // 5次のスムーズステップ。段の上下が平らになり、境目だけが斜面になる
+          return step * (t * t * t * (t * (t * 6 - 15) + 10) - 0.5);
+        };
+      }
+      default: {
+        // random: 従来どおりの緩い全体傾斜。うねりが主役
+        const tilt = params.tiltPercent / 100;
+        const tx = Math.cos(draw.tiltAngle) * tilt;
+        const tz = Math.sin(draw.tiltAngle) * tilt;
+        return (x, z) => tx * x + tz * z;
+      }
+    }
   }
 
   /** グリッド上の勾配を中心差分で求める。端は片側差分 */

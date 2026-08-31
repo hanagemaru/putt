@@ -4,6 +4,19 @@
  */
 export type SurfaceType = 'green' | 'rough' | 'deepRough' | 'water' | 'ob';
 
+/**
+ * 地形の性格。ハイトマップの作り方を決める（spec §1）。
+ * 完全に無性格なランダムだけだと「どう転がるか読む」対象にならないので、
+ * 読める形を数種類そろえて、そこへうねりを足す。
+ *
+ * - `random`      : 従来どおり。緩い全体傾斜＋ガウシアンのうねり
+ * - `singleSlope` : 片流れ。一方向へ素直に流れる
+ * - `receiving`   : 受けグリーン。カップへ向かって上り、カップの奥で平らになる
+ * - `saddle`      : ポテトチップ。対角が高く、残る対角が低い鞍点
+ * - `twoTier`     : 2段グリーン。カップ手前に段差が1本入る
+ */
+export type TerrainType = 'random' | 'singleSlope' | 'receiving' | 'saddle' | 'twoTier';
+
 export interface CoursePoint {
   x: number;
   z: number;
@@ -46,4 +59,6 @@ export interface CourseDefinition {
   /** 池の縁の外側をラフにする幅 [m]。芝の中の池でも岸はラフになる */
   waterFringe: number;
   hazards: readonly EllipseHazard[];
+  /** 地形の性格。高さの作り方だけを決め、サーフェス分類には影響しない */
+  terrain: TerrainType;
 }
