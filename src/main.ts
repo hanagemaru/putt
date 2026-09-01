@@ -907,6 +907,9 @@ function newGreen(next: number): void {
   seed = next >>> 0;
   // 外形もシードから決まるので、コース定義そのものを作り直す
   course = courseWithSeed(seed);
+  // カップはシードごとに変わる。狙いの初期値・カップまでの距離・マップのピンが
+  // すべてここを見ているので、コース定義と一緒に必ず引き直す
+  cup.set(course.cup.x, course.cup.z);
   const mode = selectedUndulation();
   visualHeightScale = mode.visualScale;
   green = new Green(greenParamsFor(course, mode.amplitude), (x, z) => surfaceAt(course, x, z));
