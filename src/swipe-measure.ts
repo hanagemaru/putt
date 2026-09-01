@@ -172,6 +172,18 @@ export class SwipeMeasure {
     this.prev = null;
   }
 
+  /**
+   * 計測を止めたうえでサンプルも捨てる。描画側は samples() を毎フレーム描くので、
+   * 残しておくと次に画面へ入ったときに前の一打の軌跡がそのまま出る。
+   * 直前のスイングを見せたい /swipe-test/ は cancel() のままにする
+   */
+  reset(): void {
+    this.cancel();
+    this.buf = [];
+    this.head = 0;
+    this.count = 0;
+  }
+
   /** 描画用。ダウンスイングが解禁されているか */
   armed(): boolean {
     return this.phase === 'downswing';
