@@ -455,7 +455,9 @@ let strokeArmed = false;
 function aimGuideShouldShow(): boolean {
   return (
     (state === 'ADDRESS' && (aimView === 'AIM' || aimView === 'LOW_LINE')) ||
-    (state === 'STROKE' && strokeCameraView === 'CUP')
+    // 「狙いを見る」はカメラが着いてから出す。移動中に出すと、着いた姿勢では
+    // 画面下端の外にあるはずの手前端が画面内に見えてしまう
+    (state === 'STROKE' && strokeCameraView === 'CUP' && !rig.transitioning)
   );
 }
 
@@ -705,12 +707,14 @@ function showCupCheck(): void {
   strokeArmed = false;
   strokeView.exit();
   props.visible = true;
-  notice = '狙いを見る ・ 左右スワイプで狙いを調整できます';
-  updateAimGuide();
+  notice = '狙いを見る ・ 左右スワイプで狙いを調整 ・ タップで手元へ戻る';
+  // 先に遷移を始めてから引き直す。こうするとガイドは移動中は出ず、
+  // 着いたフレームで初めて出る
   rig.transition(
     strokeCupPose(ball, aim, visualGreen, distanceToCup()),
     G.stroke.cupCheckTransition,
   );
+  updateAimGuide();
 }
 
 /** カップ確認から、同じ位置の真下STROKE視点へ戻る。戻り切るまでスワイプ入力は受けない。 */
@@ -1025,6 +1029,12 @@ function pointerEnd(e: PointerEvent): void {
     else enterStroke();
     return;
   }
+  if (state === 'STROKE') {
+    // 「進む＝タップ」で統一する。狙いを見る視点からはタップで手元へ戻る。
+    // 真下視点のスワイプは stroke-view.ts が受け持つので、ここでは何もしない
+    if (isTap && strokeCameraView === 'CUP') returnToStrokeView();
+    return;
+  }
   if (state === 'RESULT') {
     if (isTap && resultReady) nextPutt();
   }
@@ -1112,6 +1122,8 @@ renderer.setAnimationLoop((now) => {
       } else if (!transitioning) {
         // カップ確認では現在の aim 方向を見続ける。左右スワイプで aim が変われば即座に追従する。
         rig.apply(strokeCupPose(ball, aim, visualGreen, distanceToCup()));
+        // 着いたフレームでガイドを出す（updateAimGuide が表示状態も揃える）
+        updateAimGuide();
       }
       break;
 
@@ -1187,7 +1199,6 @@ const strokeControls = document.getElementById('stroke-controls')!;
 const strokeBack = document.getElementById('stroke-back') as HTMLButtonElement;
 const strokeCameraControls = document.getElementById('stroke-camera-controls')!;
 const strokeCupCheck = document.getElementById('stroke-cup-check') as HTMLButtonElement;
-const strokeCupReturn = document.getElementById('stroke-cup-return') as HTMLButtonElement;
 
 const tuningPanel = document.getElementById('tuning-panel') as HTMLDivElement;
 const putterPower = document.getElementById('putter-power') as HTMLInputElement;
@@ -1232,7 +1243,6 @@ for (const button of cameraButtons) {
 mapToggle.addEventListener('click', toggleMap);
 strokeBack.addEventListener('click', returnToAddress);
 strokeCupCheck.addEventListener('click', showCupCheck);
-strokeCupReturn.addEventListener('click', returnToStrokeView);
 
 /**
  * ドット感の切り替え。既定は 2（採用した見た目）。比較用に OFF も残す。
@@ -1290,9 +1300,9 @@ function updateControls(): void {
     button.classList.toggle('active', button.dataset.aimView === aimView);
   }
 
+  // 戻るのはタップなので、出すのは「狙いを見る」だけ
   const checkingCup = state === 'STROKE' && strokeCameraView === 'CUP';
   strokeCupCheck.style.display = checkingCup ? 'none' : 'block';
-  strokeCupReturn.style.display = checkingCup ? 'block' : 'none';
 }
 
 function updateHud(): void {

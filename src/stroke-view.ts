@@ -132,7 +132,8 @@ export class StrokeView {
     this.active = true;
     this.pointerId = null;
     this.live = null;
-    this.measure.cancel();
+    // 前の一打のサンプルを捨てる。残っていると、その軌跡が描かれたまま構えることになる
+    this.measure.reset();
     this.restPutter();
     this.canvas.style.display = 'block';
   }
