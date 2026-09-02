@@ -256,6 +256,117 @@
         display: none;
       }
 
+      /*
+       * スコア表示（spec §6）。ホール間はRESULTの俯瞰と軌跡を背景に残したままカードを重ね、
+       * ラウンド終了時だけ9ホールの一覧表を出す。
+       * タップで進む規則は変えないので、overlay自体は指を通す（pointer-events: none）。
+       * 押すのはラウンド終了のボタンだけ
+       */
+      #score-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 35;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        pointer-events: none;
+        font-family: system-ui, -apple-system, sans-serif;
+        color: #e8f0e8;
+      }
+      #score-overlay[hidden] {
+        display: none;
+      }
+      #score-card {
+        width: min(320px, calc(100vw - 40px));
+        padding: 18px 20px;
+        border: 1px solid rgba(232, 240, 232, 0.55);
+        border-radius: 16px;
+        background: rgba(12, 20, 14, 0.86);
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+      }
+      #score-title {
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.16em;
+        color: #9ede8a;
+      }
+      /* ホール間はこの1行が主役。打数とパー差を大きく出す */
+      #score-headline {
+        margin-top: 10px;
+        font-size: 30px;
+        font-weight: 700;
+        line-height: 1.1;
+      }
+      #score-sub {
+        margin-top: 6px;
+        font-size: 13px;
+        color: #cfe0d2;
+      }
+      /* ラウンド終了の一覧表 */
+      #score-table {
+        margin-top: 12px;
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      #score-table[hidden] {
+        display: none;
+      }
+      #score-table th {
+        font-weight: 600;
+        color: #a8bfae;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        padding-bottom: 4px;
+      }
+      #score-table th,
+      #score-table td {
+        padding: 2px 0;
+        text-align: center;
+      }
+      #score-table th:first-child,
+      #score-table td:first-child {
+        text-align: left;
+      }
+      #score-table td.diff {
+        text-align: right;
+        color: #ffd08a;
+      }
+      #score-table tr.total td,
+      #score-table tr.total th {
+        border-top: 1px solid rgba(232, 240, 232, 0.35);
+        padding-top: 6px;
+        font-weight: 700;
+      }
+      #score-hint {
+        margin-top: 12px;
+        font-size: 12px;
+        color: #ffd08a;
+      }
+      #score-hint[hidden] {
+        display: none;
+      }
+      #score-again {
+        margin-top: 14px;
+        pointer-events: auto;
+        appearance: none;
+        border: 1px solid rgba(232, 240, 232, 0.55);
+        border-radius: 999px;
+        background: rgba(232, 240, 232, 0.92);
+        color: #162018;
+        min-height: 40px;
+        padding: 8px 22px;
+        font: inherit;
+        font-size: 13px;
+        font-weight: 700;
+        touch-action: manipulation;
+      }
+      #score-again[hidden] {
+        display: none;
+      }
+
       /* 横画面のときだけ出す「縦にしてください」オーバーレイ。縦画面専用（spec §0） */
       #rotate-overlay {
         position: fixed;
@@ -348,6 +459,20 @@
 
     <div id="stroke-camera-controls" aria-label="見る向きの切り替え">
       <button type="button" class="stroke-camera-button" id="stroke-cup-check">狙いを見る</button>
+    </div>
+
+    <!-- ホール間とラウンド終了のスコア表示。3Dの上に重ねる -->
+    <div id="score-overlay" hidden>
+      <div id="score-card">
+        <div id="score-title"></div>
+        <div id="score-headline"></div>
+        <div id="score-sub"></div>
+        <table id="score-table" hidden>
+          <tbody id="score-rows"></tbody>
+        </table>
+        <div id="score-hint"></div>
+        <button type="button" id="score-again" hidden>もう一度</button>
+      </div>
     </div>
 
     <div id="rotate-overlay">
