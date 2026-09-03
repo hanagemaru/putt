@@ -3,7 +3,7 @@
 // カメラの作り方を main.ts に散らさない。
 import * as THREE from 'three';
 import { CONFIG } from './config';
-import type { CourseBounds } from './course/course-types';
+import type { CourseBounds, CoursePoint } from './course/course-types';
 
 const G = CONFIG.game;
 
@@ -337,6 +337,29 @@ export function resultPose(
 }
 
 /**
+ * マップでコースを 180 度回すか（§3）。
+ *
+ * ゴルフのコース図の約束どおり、**常にカップが画面上・ティーが画面下**にする。
+ * カメラを枠の +Z 側に置くと画面の上は -Z なので、カップが +Z 側にあるホールだけ
+ * カメラを -Z 側へ置き換える。向きはホールごとに tee → cup で決まり、
+ * **ホールの途中でボールが動いても変わらない**（基準は常にティーとカップ）。
+ *
+ * 回すのはワールドの ±Z のどちらを画面上にするかだけで、斜めには回さない。
+ * コース枠は原点中心の軸並行な長方形なので、枠取りの計算はそのまま使える。
+ */
+export function courseMapRotated(tee: CoursePoint, cup: CoursePoint): boolean {
+  return cup.z > tee.z;
+}
+
+/**
+ * マップで、ワールドの +X が画面のどちら向きに写るか（+1 なら右、-1 なら左）。
+ * 180 度回すと左右も入れ替わるので、マーカーが画面のどちら半分にいるかの判定に使う。
+ */
+export function courseMapScreenXSign(tee: CoursePoint, cup: CoursePoint): number {
+  return courseMapRotated(tee, cup) ? -1 : 1;
+}
+
+/**
  * コースマップ（§3）。コース全体（幅 X・長さ Z の長方形）を真上から見渡す。
  * **ボールが止まっている間しか使わない。**
  *
@@ -345,10 +368,12 @@ export function resultPose(
  * 遠いほうを採らないと、幅の広いコースが左右にはみ出す。
  *
  * コース座標系は枠の中心が原点（`surfaceAt` の判定と同じ約束）。
- * 見下ろす向きは -Z（ティー側が画面下、カップ側が画面上）で、RESULT の yaw 0 と揃う。
+ * 見下ろす向きは `courseMapRotated` で決まり、**カップが必ず画面上**に来る。
  */
 export function courseMapPose(
   bounds: CourseBounds,
+  tee: CoursePoint,
+  cup: CoursePoint,
   green: HeightSampler,
   aspect: number,
 ): CameraPose {
@@ -359,13 +384,15 @@ export function courseMapPose(
   const needWidth = ((bounds.width / 2) * M.fitMargin) / (halfTan * aspect);
   const distance = Math.max(needLength, needWidth, M.distanceMin);
   const pitch = THREE.MathUtils.degToRad(M.pitchDeg);
+  // カメラを置く側。ここに置いた側と反対の向きが画面の上になる
+  const side = courseMapRotated(tee, cup) ? -1 : 1;
 
   const target = above(green, 0, 0, 0);
   const position = new THREE.Vector3(
     0,
     target.y + Math.sin(pitch) * distance,
-    // 見る向きが -Z なので、カメラはわずかに +Z 側（ティー側）へ引く
-    Math.cos(pitch) * distance,
+    // カメラを引く側と反対（ティー→カップの向き）が画面の上に写る
+    side * Math.cos(pitch) * distance,
   );
   return pose(position, target, 0, M.fov);
 }

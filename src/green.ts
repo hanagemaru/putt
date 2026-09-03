@@ -526,7 +526,7 @@ export function createHole(
   // 高さは変えず XZ 方向だけ拡大するので、鉛直の基準としての役割は保たれる。
   const stick = new THREE.Mesh(
     new THREE.CylinderGeometry(h.flagstickRadius, h.flagstickRadius, h.flagstickHeight, 8),
-    new THREE.MeshLambertMaterial({ color: 0xf0f0f0 }),
+    new THREE.MeshLambertMaterial({ color: h.flagstickColor }),
   );
   stick.position.set(position.x, surfaceY - h.depth + h.flagstickHeight / 2, position.z);
 
