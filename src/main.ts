@@ -399,12 +399,13 @@ function syncMapMarkers(): void {
   if (!showing) return;
   const M = G.courseMap;
   const lift = M.markerLift;
-  // アートは指し示す点の左上（旗は右上）へ伸びる。**画面の**左半分にある点だけ
-  // 左右を入れ替えて、ラベルや旗が画面の外へ出ないようにする。
+  // ボールのアートは指し示す点の左上へ伸びる。**画面の**左半分にある点だけ左右を入れ替えて、
+  // ラベルが画面の外へ出ないようにする。
   // マップはホールによって 180 度回るので、ワールドの X ではなく画面の左右で判定する
   const xSign = courseMapScreenXSign(course.tee, course.cup);
   ballMarker.setArrow(ballOnTee() ? M.teeLabel : M.ballLabel, ball.x * xSign < 0);
-  cupMarker.setFlag(cup.x * xSign < 0);
+  // 旗は右へたなびく形で固定。左右は反転しない
+  cupMarker.setFlag();
   ballMarker.sprite.position.set(ball.x, visualHeight(ball.x, ball.y) + lift, ball.y);
   cupMarker.sprite.position.set(cup.x, visualHeight(cup.x, cup.y) + lift, cup.y);
   layoutMapMarkers();

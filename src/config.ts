@@ -300,6 +300,8 @@ export const CONFIG = {
     flagWidth: 0.32,
     flagHeight: 0.22,
     flagColor: 0xd94f3d,
+    /** 旗竿の色。コースマップの旗のマーカーもこれに揃える */
+    flagstickColor: 0xf0f0f0,
     cupColor: 0x121a12,
     /** 穴に見せる円を芝から浮かせる量 [m]。Z ファイティング防止 */
     mouthLift: 0.004,
@@ -681,23 +683,23 @@ export const CONFIG = {
       markerLift: 0.06,
       /**
        * 1アートピクセルをゲームのドット何個ぶんで描くか。
-       * 1 なら画面の粒とちょうど同じ大きさ。粒を細かくしたぶん、以下の寸法は
-       * アートピクセル数を増やして画面上の大きさを保っている
+       * 1 なら画面の粒とちょうど同じ大きさ。2 は粒2つぶんで、文字が読める最小限の太さ
        */
-      markerArtPixelDots: 1,
+      markerArtPixelDots: 2,
       /** 斜めの矢印の斜辺の長さ [アートピクセル] */
-      markerArrowLength: 14,
+      markerArrowLength: 7,
       /** 矢じりの返しの長さ [アートピクセル]。斜辺と合わせて45度の矢じりになる */
-      markerArrowHeadLength: 4,
+      markerArrowHeadLength: 2,
       /**
        * カップの旗。旗竿の根元が指し示す点（＝カップ）に載る。
-       * 旗と分かればよいので CUP の文字は持たない
+       * 旗と分かればよいので CUP の文字は持たない。
+       * 旗は**右へたなびく形で固定**する（左右の反転をしない）
        */
-      markerFlagPoleHeight: 24,
-      /** 旗の横幅 [アートピクセル]。旗竿から横へ張り出す長さ */
-      markerFlagWidth: 9,
-      /** 旗の高さ [アートピクセル] */
-      markerFlagHeight: 7,
+      markerFlagPoleHeight: 12,
+      /** 旗の横幅 [アートピクセル]。旗竿から右へ張り出す長さ */
+      markerFlagWidth: 5,
+      /** 旗の高さ [アートピクセル]。四角い旗 */
+      markerFlagHeight: 4,
       /** 旗竿の根元の足の幅 [アートピクセル]。奇数。指し示す点を跨いで左右対称に置く */
       markerFlagFootWidth: 3,
       /**
@@ -712,11 +714,8 @@ export const CONFIG = {
       cupMarkerColor: 0xd94f3d,
       /** マーカーの縁取り。芝の緑にも池の青にも埋もれないように塗りの周りを暗く敷く */
       markerOutlineColor: 0x101810,
-      /**
-       * 縁取りの太さ [アートピクセル]。粒が細かくなったぶん2にして、
-       * 画面上の太さを従来（1アートピクセル＝ドット2個）と同じに保つ
-       */
-      markerOutlineWidth: 2,
+      /** 縁取りの太さ [アートピクセル] */
+      markerOutlineWidth: 1,
     },
 
     /** RESULT（§3）。ボールが完全に停止してから真上俯瞰へ。走行中は絶対に切り替えない */

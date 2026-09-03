@@ -2,7 +2,7 @@
 //
 // 真上からの俯瞰では実寸のボール（半径21mm）もカップも点にならないので、
 // マーカーを重ねて「どこか」と「そこが何か」を示す。
-// ボールは**斜めの矢印とピクセル文字**、カップは**旗の絵**。
+// ボールは**斜めの矢印とピクセル文字**、カップは**右へたなびく四角い旗**。
 // ゲーム画面は 1/3 解像度＋色の量子化でドット絵にしているので、マーカーも
 // アンチエイリアスのない矩形ドットだけで組み、同じ粒に揃える。
 //
@@ -13,44 +13,44 @@ import { CONFIG } from './config';
 const M = CONFIG.game.courseMap;
 
 /** 字形そのものの寸法。フォントのデータと一体なのでここに置く */
-const GLYPH_W = 5;
-const GLYPH_H = 7;
+const GLYPH_W = 3;
+const GLYPH_H = 5;
 /** 字間 [アートピクセル] */
 const GLYPH_GAP = 1;
 /** ラベルと矢印の間隔 [アートピクセル] */
-const LABEL_GAP = 2;
+const LABEL_GAP = 1;
 
 /**
- * 5×7 の大文字ビットマップ。曲線を持たないので、そのままドット絵の世界観に合う。
+ * 3×5 の大文字ビットマップ。曲線を持たないので、そのままドット絵の世界観に合う。
  * 表にない文字は空白として扱う。
  */
 const FONT: Record<string, readonly string[]> = {
-  A: ['.###.', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
-  B: ['####.', '#...#', '#...#', '####.', '#...#', '#...#', '####.'],
-  C: ['.###.', '#...#', '#....', '#....', '#....', '#...#', '.###.'],
-  D: ['####.', '#...#', '#...#', '#...#', '#...#', '#...#', '####.'],
-  E: ['#####', '#....', '#....', '####.', '#....', '#....', '#####'],
-  F: ['#####', '#....', '#....', '####.', '#....', '#....', '#....'],
-  G: ['.###.', '#...#', '#....', '#.###', '#...#', '#...#', '.####'],
-  H: ['#...#', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
-  I: ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '#####'],
-  J: ['..###', '...#.', '...#.', '...#.', '...#.', '#..#.', '.##..'],
-  K: ['#...#', '#..#.', '#.#..', '##...', '#.#..', '#..#.', '#...#'],
-  L: ['#....', '#....', '#....', '#....', '#....', '#....', '#####'],
-  M: ['#...#', '##.##', '#.#.#', '#.#.#', '#...#', '#...#', '#...#'],
-  N: ['#...#', '##..#', '#.#.#', '#..##', '#...#', '#...#', '#...#'],
-  O: ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
-  P: ['####.', '#...#', '#...#', '####.', '#....', '#....', '#....'],
-  Q: ['.###.', '#...#', '#...#', '#...#', '#.#.#', '#..#.', '.##.#'],
-  R: ['####.', '#...#', '#...#', '####.', '#.#..', '#..#.', '#...#'],
-  S: ['.####', '#....', '#....', '.###.', '....#', '....#', '####.'],
-  T: ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '..#..'],
-  U: ['#...#', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
-  V: ['#...#', '#...#', '#...#', '#...#', '#...#', '.#.#.', '..#..'],
-  W: ['#...#', '#...#', '#...#', '#.#.#', '#.#.#', '##.##', '#...#'],
-  X: ['#...#', '#...#', '.#.#.', '..#..', '.#.#.', '#...#', '#...#'],
-  Y: ['#...#', '#...#', '.#.#.', '..#..', '..#..', '..#..', '..#..'],
-  Z: ['#####', '....#', '...#.', '..#..', '.#...', '#....', '#####'],
+  A: ['###', '#.#', '###', '#.#', '#.#'],
+  B: ['##.', '#.#', '##.', '#.#', '##.'],
+  C: ['###', '#..', '#..', '#..', '###'],
+  D: ['##.', '#.#', '#.#', '#.#', '##.'],
+  E: ['###', '#..', '##.', '#..', '###'],
+  F: ['###', '#..', '##.', '#..', '#..'],
+  G: ['###', '#..', '#.#', '#.#', '###'],
+  H: ['#.#', '#.#', '###', '#.#', '#.#'],
+  I: ['###', '.#.', '.#.', '.#.', '###'],
+  J: ['..#', '..#', '..#', '#.#', '###'],
+  K: ['#.#', '#.#', '##.', '#.#', '#.#'],
+  L: ['#..', '#..', '#..', '#..', '###'],
+  M: ['#.#', '###', '###', '#.#', '#.#'],
+  N: ['#.#', '##.', '###', '.##', '#.#'],
+  O: ['###', '#.#', '#.#', '#.#', '###'],
+  P: ['##.', '#.#', '##.', '#..', '#..'],
+  Q: ['###', '#.#', '#.#', '###', '..#'],
+  R: ['##.', '#.#', '##.', '#.#', '#.#'],
+  S: ['###', '#..', '###', '..#', '###'],
+  T: ['###', '.#.', '.#.', '.#.', '.#.'],
+  U: ['#.#', '#.#', '#.#', '#.#', '###'],
+  V: ['#.#', '#.#', '#.#', '#.#', '.#.'],
+  W: ['#.#', '#.#', '###', '###', '#.#'],
+  X: ['#.#', '#.#', '.#.', '#.#', '#.#'],
+  Y: ['#.#', '#.#', '.#.', '.#.', '.#.'],
+  Z: ['###', '..#', '.#.', '#..', '###'],
 };
 
 /** 描いたアートと、指し示す点の位置（矢印の先端 / 旗竿の根元） */
@@ -66,7 +66,8 @@ interface Art {
  * 座標は縁取りの余白を含まない「絵の中」の座標で、`flip` は左右だけを入れ替える。
  */
 class Bitmap {
-  private readonly on: boolean[];
+  /** 0 は空き、1以上は塗りの色番号（`render` に渡す配列の添字 + 1） */
+  private readonly on: number[];
   private readonly pad = M.markerOutlineWidth;
   readonly canvasW: number;
   readonly canvasH: number;
@@ -78,7 +79,7 @@ class Bitmap {
   ) {
     this.canvasW = w + this.pad * 2;
     this.canvasH = h + this.pad * 2;
-    this.on = new Array(this.canvasW * this.canvasH).fill(false);
+    this.on = new Array(this.canvasW * this.canvasH).fill(0);
   }
 
   /** 左右反転はここだけで吸収する。**文字自体は鏡像にしない** */
@@ -86,9 +87,10 @@ class Bitmap {
     return this.flip ? this.w - 1 - x : x;
   }
 
-  set(x: number, y: number): void {
+  /** `color` は `render` に渡す色配列の添字 */
+  set(x: number, y: number, color = 0): void {
     if (x < 0 || x >= this.w || y < 0 || y >= this.h) return;
-    this.on[(y + this.pad) * this.canvasW + (x + this.pad)] = true;
+    this.on[(y + this.pad) * this.canvasW + (x + this.pad)] = color + 1;
   }
 
   /** キャンバス座標（縁取りの余白を含む）へ変換する */
@@ -104,7 +106,7 @@ class Bitmap {
    * 縁取りは、塗りから `markerOutlineWidth` ドット以内の空きを暗く敷いたもの。
    * 芝の緑にも池の青にも埋もれないようにするために要る
    */
-  render(color: number): HTMLCanvasElement {
+  render(colors: readonly number[]): HTMLCanvasElement {
     const { canvasW: cw, canvasH: ch, on, pad } = this;
     const canvas = document.createElement('canvas');
     canvas.width = cw;
@@ -131,10 +133,12 @@ class Bitmap {
       }
     }
 
-    ctx.fillStyle = cssColor(color);
-    for (let y = 0; y < ch; y++) {
-      for (let x = 0; x < cw; x++) {
-        if (on[y * cw + x]) ctx.fillRect(x, y, 1, 1);
+    for (let i = 0; i < colors.length; i++) {
+      ctx.fillStyle = cssColor(colors[i]);
+      for (let y = 0; y < ch; y++) {
+        for (let x = 0; x < cw; x++) {
+          if (on[y * cw + x] === i + 1) ctx.fillRect(x, y, 1, 1);
+        }
       }
     }
     return canvas;
@@ -188,7 +192,7 @@ function buildArrowArt(label: string, color: number, flip: boolean): Art {
   }
 
   return {
-    canvas: bmp.render(color),
+    canvas: bmp.render([color]),
     tipX: bmp.canvasX(bmp.mx(w - 1)),
     tipY: bmp.canvasY(h - 1),
   };
@@ -199,33 +203,32 @@ function buildArrowArt(label: string, color: number, flip: boolean): Art {
  *
  * **旗竿の根元が指し示す点（＝カップ）にちょうど載る。** 根元には左右対称の足を付けて、
  * どの点を指しているかを矢印と同じ精度で読めるようにする。
- * `flip` の意味は矢印と揃える（＝画面の左半分にある点では、アートを右へ伸ばす）。
- * 旗はここでは既定で右へ張り出すので、`Bitmap` へは反転して渡す。
+ * 旗は**右へたなびく四角い旗で固定**する（ボール側の矢印と違い、左右を反転しない）。
+ * 旗竿はゲーム内の旗竿と同じ色、旗はカップの色で塗る。
  */
-function buildFlagArt(color: number, flip: boolean): Art {
+function buildFlagArt(poleColor: number, flagColor: number): Art {
   const poleH = M.markerFlagPoleHeight;
   const flagW = M.markerFlagWidth;
   const flagH = M.markerFlagHeight;
   // 足は指し示す点を跨ぐので、旗と反対側にも張り出す
   const foot = Math.floor((M.markerFlagFootWidth - 1) / 2);
-  const w = foot + 1 + Math.max(flagW, foot);
-  const bmp = new Bitmap(w, poleH, !flip);
+  const poleX = foot;
+  const w = poleX + 1 + flagW;
+  const bmp = new Bitmap(w, poleH, false);
 
   // 旗竿。根元（下端）が指し示す点
-  const poleX = foot;
-  for (let y = 0; y < poleH; y++) bmp.set(bmp.mx(poleX), y);
+  for (let y = 0; y < poleH; y++) bmp.set(poleX, y, 0);
   // 根元の足
-  for (let i = -foot; i <= foot; i++) bmp.set(bmp.mx(poleX + i), poleH - 1);
+  for (let i = -foot; i <= foot; i++) bmp.set(poleX + i, poleH - 1, 0);
 
-  // 旗。竿の先から横へ張り出し、下へ向かって細くなる三角旗
+  // 旗。竿の先から右へ張り出す四角い旗
   for (let y = 0; y < flagH; y++) {
-    const len = Math.max(1, Math.round((flagW * (flagH - y)) / flagH));
-    for (let x = 1; x <= len; x++) bmp.set(bmp.mx(poleX + x), y);
+    for (let x = 1; x <= flagW; x++) bmp.set(poleX + x, y, 1);
   }
 
   return {
-    canvas: bmp.render(color),
-    tipX: bmp.canvasX(bmp.mx(poleX)),
+    canvas: bmp.render([poleColor, flagColor]),
+    tipX: bmp.canvasX(poleX),
     tipY: bmp.canvasY(poleH - 1),
   };
 }
@@ -259,9 +262,9 @@ export class CourseMapMarker {
     this.setArt(`arrow:${label}|${flip ? 'L' : 'R'}`, () => buildArrowArt(label, this.color, flip));
   }
 
-  /** カップ側。旗の向きを差し替える */
-  setFlag(flip: boolean): void {
-    this.setArt(`flag|${flip ? 'L' : 'R'}`, () => buildFlagArt(this.color, flip));
+  /** カップ側。旗は右へたなびく形で固定なので、差し替える向きはない */
+  setFlag(): void {
+    this.setArt('flag', () => buildFlagArt(CONFIG.hole.flagstickColor, this.color));
   }
 
   /** 同じ絵は作り直さない */
