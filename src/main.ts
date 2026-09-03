@@ -28,6 +28,7 @@ import type { CourseDefinition, TerrainType } from './course/course-types';
 import { TOUR_HOLE_SEEDS } from './course/tour-holes';
 import { CourseMapMarker } from './course-map-marker';
 import { Round, formatToPar, type HoleScore } from './round';
+import { RoundProgressStore } from './round-storage';
 import { SmoothLineOverlay, type BallOccluder } from './smooth-line-overlay';
 import { StrokeView } from './stroke-view';
 import {
@@ -97,6 +98,38 @@ const mode = modeFromUrl();
 
 /** 通常ツアーのラウンド状態。**練習モードでは null**（ホールを進めず、同じホールを打ち直す） */
 const round = mode === 'tour' ? new Round(TOUR_HOLE_SEEDS) : null;
+
+/**
+ * ラウンド進行の保存先（spec §6）。**通常ツアーだけ**。
+ * 練習モードは同じホールを打ち直すだけなので、保存も復元もしない
+ */
+const roundStore =
+  mode === 'tour'
+    ? new RoundProgressStore(
+        CONFIG.game.round.save.tourKey,
+        CONFIG.game.round.save.version,
+        TOUR_HOLE_SEEDS,
+      )
+    : null;
+
+/**
+ * 復帰したときに一度だけ出す一言。進行中のホールの打数は保存していないので、
+ * 黙って戻すと打数が減ったように見える。最初の操作で消す
+ */
+let resumeNotice = '';
+
+// 前回の続きを戻す。合わない保存（シードを選び直した後・壊れた JSON）は
+// `load()` と `restore()` が弾くので、そのときは黙って最初から始まる
+if (round && roundStore) {
+  const saved = roundStore.load();
+  if (saved) {
+    if (round.restore(saved)) {
+      if (round.holeNumber > 1) resumeNotice = `ホール${round.holeNumber}から再開します`;
+    } else {
+      roundStore.clear();
+    }
+  }
+}
 
 /**
  * 現在のコースに合わせた `Green` の生成パラメータ。
@@ -641,6 +674,16 @@ function updateAimGuide(): void {
 
 // --- 状態遷移 -------------------------------------------------------------
 
+/** ADDRESS の方向調整視点で出す通常の案内 */
+const AIM_NOTICE = '左右スワイプで狙い、タップで構える';
+
+/** 復帰の一言を消して通常の案内へ戻す。最初の操作で消える */
+function clearResumeNotice(): void {
+  if (!resumeNotice) return;
+  resumeNotice = '';
+  if (state === 'ADDRESS' && aimView === 'AIM') notice = AIM_NOTICE;
+}
+
 /**
  * 読みと方向調整を統合した入口。常に現行の方向調整カメラから始める。
  * resetAim=false は STROKE から戻るとき用で、それまでの狙いを保持する。
@@ -650,7 +693,7 @@ function enterAddress(cut = false, resetAim = true): void {
   aimView = 'AIM';
   strokeCameraView = 'DOWN';
   cupViewUsed = false;
-  notice = '左右スワイプで狙い、タップで構える';
+  notice = resumeNotice || AIM_NOTICE;
   props.visible = true;
   ballMesh.visible = roller.status !== 'holed';
   strokeView.exit();
@@ -697,7 +740,7 @@ function setAimView(view: AimView): void {
   syncMapMarkers();
 
   if (view === 'AIM') {
-    notice = '左右スワイプで狙い、タップで構える';
+    notice = AIM_NOTICE;
     rig.transition(addressPose(ball, aim, visualGreen, distanceToCup()), G.address.transition);
     return;
   }
@@ -943,6 +986,12 @@ function enterHoleOut(): void {
   if (!round) return;
   state = 'HOLE_OUT';
   round.recordHole(course.par, shots, roller.status === 'holed');
+  // スコアが確定した時点で保存する。1打ごとには保存しない（復元はホールの頭からなので、
+  // それ以上の頻度に意味がない）。
+  // 最終ホールのあとは再開できるホールがない。ここで残すと終わったラウンドを
+  // 読み直してしまうので片付ける（この直後の ROUND_END でも片付ける）
+  if (round.hasNext) roundStore?.save(round.snapshot());
+  else roundStore?.clear();
   notice = '';
   showHoleOutCard(round);
 }
@@ -955,6 +1004,8 @@ function advanceFromHoleOut(): void {
     return;
   }
   round.next();
+  // 次のホールを読み込む時点でも保存する。ここが復元の単位
+  roundStore?.save(round.snapshot());
   hideScoreOverlay();
   loadHole(round.currentSeed);
 }
@@ -963,6 +1014,8 @@ function advanceFromHoleOut(): void {
 function enterRoundEnd(): void {
   if (!round) return;
   state = 'ROUND_END';
+  // 終わったラウンドを再開してしまわないように片付ける
+  roundStore?.clear();
   notice = '';
   showRoundEndCard(round);
 }
@@ -971,6 +1024,7 @@ function enterRoundEnd(): void {
 function restartRound(): void {
   if (!round || state !== 'ROUND_END') return;
   round.reset();
+  roundStore?.clear();
   hideScoreOverlay();
   loadHole(round.currentSeed);
 }
@@ -1087,6 +1141,7 @@ surface.addEventListener('pointerdown', (e) => {
   downT = e.timeStamp;
   lastX = e.clientX;
   moved = 0;
+  clearResumeNotice();
 });
 
 surface.addEventListener('pointermove', (e) => {
