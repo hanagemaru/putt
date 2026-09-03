@@ -35,6 +35,7 @@ import {
   READ_VIEW_LABEL,
   addressPose,
   courseMapPose,
+  courseMapScreenXSign,
   cupCheckGuideOffset,
   cupPose,
   followFov,
@@ -398,10 +399,12 @@ function syncMapMarkers(): void {
   if (!showing) return;
   const M = G.courseMap;
   const lift = M.markerLift;
-  // アートは指し示す点の左上へ伸びる。コースの左半分にある点だけ左右を入れ替えて、
-  // ラベルが画面の外へ出ないようにする
-  ballMarker.setLabel(ballOnTee() ? M.teeLabel : M.ballLabel, ball.x < 0);
-  cupMarker.setLabel(M.cupLabel, cup.x < 0);
+  // アートは指し示す点の左上（旗は右上）へ伸びる。**画面の**左半分にある点だけ
+  // 左右を入れ替えて、ラベルや旗が画面の外へ出ないようにする。
+  // マップはホールによって 180 度回るので、ワールドの X ではなく画面の左右で判定する
+  const xSign = courseMapScreenXSign(course.tee, course.cup);
+  ballMarker.setArrow(ballOnTee() ? M.teeLabel : M.ballLabel, ball.x * xSign < 0);
+  cupMarker.setFlag(cup.x * xSign < 0);
   ballMarker.sprite.position.set(ball.x, visualHeight(ball.x, ball.y) + lift, ball.y);
   cupMarker.sprite.position.set(cup.x, visualHeight(cup.x, cup.y) + lift, cup.y);
   layoutMapMarkers();
@@ -702,7 +705,7 @@ function setAimView(view: AimView): void {
     // コース全体の枠取り。ボールが止まっている ADDRESS でしか入れない
     notice = 'コースマップ ・ タップで戻る';
     rig.transition(
-      courseMapPose(course.bounds, visualGreen, camera.aspect),
+      courseMapPose(course.bounds, course.tee, course.cup, visualGreen, camera.aspect),
       G.courseMap.transition,
     );
     return;
@@ -1593,7 +1596,7 @@ function resize(): void {
   strokeView.resize();
   // マップの枠取りはアスペクト比に依存する。表示中に画面サイズが変わったら取り直す
   if (state === 'ADDRESS' && aimView === 'MAP' && !rig.transitioning) {
-    rig.apply(courseMapPose(course.bounds, visualGreen, camera.aspect));
+    rig.apply(courseMapPose(course.bounds, course.tee, course.cup, visualGreen, camera.aspect));
   }
   if (mapMarkers.visible) layoutMapMarkers();
   // インパクトラインをボールの見かけの大きさに合わせる（§4.2）。
