@@ -11,7 +11,7 @@ export interface HoleScore {
   seed: number;
   par: number;
   strokes: number;
-  /** カップインしたか。false は打ち切り */
+  /** カップインしたか。false はギブアップ */
   holedOut: boolean;
 }
 

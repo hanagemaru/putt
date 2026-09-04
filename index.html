@@ -252,6 +252,50 @@
         font-weight: 700;
       }
 
+      /*
+       * ギブアップ（spec §3）。ダブルパーに達したときだけ出す出口。
+       * ラウンドを1ホール捨てる操作なので、一度のタップでは確定させず押し続けを要求する。
+       * 「進む＝タップ」の規則を壊さないよう、確認カードは重ねずボタンの中だけで完結させる。
+       * 置き場所はマップと左右対称の左下。中央のタップ領域からも視点バーからも離す
+       */
+      #giveup-control {
+        position: fixed;
+        left: max(10px, env(safe-area-inset-left));
+        bottom: max(58px, calc(env(safe-area-inset-bottom) + 58px));
+        z-index: 30;
+        display: none;
+        font-family: system-ui, -apple-system, sans-serif;
+      }
+      #giveup {
+        position: relative;
+        overflow: hidden;
+        appearance: none;
+        border: 1px solid rgba(255, 176, 176, 0.5);
+        border-radius: 999px;
+        background: rgba(12, 20, 14, 0.72);
+        color: #f0d8d8;
+        min-height: 36px;
+        padding: 7px 13px;
+        font: inherit;
+        font-size: 11px;
+        line-height: 1;
+        white-space: nowrap;
+        touch-action: manipulation;
+      }
+      /* 押し続けている間だけ伸びる帯。どれだけ押せば決まるかを指に見せる */
+      #giveup-fill {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 0;
+        background: rgba(255, 140, 140, 0.45);
+        pointer-events: none;
+      }
+      #giveup-label {
+        position: relative;
+      }
+
       #debug-controls[hidden] {
         display: none;
       }
@@ -451,6 +495,14 @@
     <!-- マップは読み視点ではなく一時的な参照画面なので、視点バーとは別に置く -->
     <div id="map-control">
       <button type="button" id="map-toggle">コースマップ</button>
+    </div>
+
+    <!-- ダブルパーに達したときだけ出す出口。押し続けで確定する（spec §3） -->
+    <div id="giveup-control">
+      <button type="button" id="giveup">
+        <span id="giveup-fill"></span>
+        <span id="giveup-label">ギブアップ</span>
+      </button>
     </div>
 
     <div id="stroke-controls">

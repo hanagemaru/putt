@@ -485,11 +485,6 @@ const cup = new THREE.Vector2(course.cup.x, course.cup.z);
 const ball = new THREE.Vector2(course.tee.x, course.tee.z);
 /** この一打を打つ前の位置。池またはOBならここへ戻す */
 const shotStart = new THREE.Vector2(course.tee.x, course.tee.z);
-/** 打ち切りの打数。コースごとに par が変わるので、その都度求める */
-function strokeLimit(): number {
-  return course.par + G.round.strokeLimitOverPar;
-}
-
 let state: State = 'ADDRESS';
 /** ADDRESS の中で、方向調整か読み用定点かを切り替える。初期は方向調整。 */
 let aimView: AimView = 'AIM';
@@ -911,7 +906,7 @@ function enterResult(): void {
     !penaltyApplied &&
     (roller.status === 'water' || roller.status === 'outOfBounds')
   ) {
-    shots = Math.min(shots + 1, strokeLimit());
+    shots += 1;
     penaltyApplied = true;
   }
   syncLineVisibility();
@@ -926,15 +921,8 @@ function enterResult(): void {
 /** 結果テキスト（§3）。打ち出しラインへの射影で オーバー／ショート と左右のズレを出す */
 function describeResult(): string {
   if (roller.status === 'holed') return `カップイン（${shots} 打）`;
-  if (roller.status === 'water' && shots >= strokeLimit()) {
-    return `池・打ち切り（${shots} 打）`;
-  }
-  if (roller.status === 'outOfBounds' && shots >= strokeLimit()) {
-    return `OB・打ち切り（${shots} 打）`;
-  }
   if (roller.status === 'water') return `池（1罰打）・${shots} 打`;
   if (roller.status === 'outOfBounds') return `OB（1罰打）・${shots} 打`;
-  if (shots >= strokeLimit()) return `打ち切り（${shots} 打）`;
   const ux = cup.x - shotStart.x;
   const uz = cup.y - shotStart.y;
   const len = Math.hypot(ux, uz) || 1;
@@ -971,9 +959,53 @@ function nextPutt(): void {
   enterAddress();
 }
 
-/** このホールが終わったか。カップインか打ち切り */
+/**
+ * このホールが打ち終わったか。打数でホールが終わることはないので、
+ * 自然に終わるのはカップインだけ（もう一方の出口はギブアップ）
+ */
 function holeFinished(): boolean {
-  return roller.status === 'holed' || shots >= strokeLimit();
+  return roller.status === 'holed';
+}
+
+/**
+ * ギブアップを出してよい場面か（spec §3）。
+ * 打数がダブルパー（par × `giveUpParMultiple`）に達したときだけ出す。
+ * 出すのはボールが止まっている ADDRESS と、打ち終わった後の RESULT に限る
+ */
+function canGiveUp(): boolean {
+  if (state !== 'ADDRESS' && state !== 'RESULT') return false;
+  if (roller.status === 'holed') return false;
+  return shots >= course.par * G.round.giveUpParMultiple;
+}
+
+/**
+ * ギブアップ（spec §3）。押し続けが満ちたときだけ呼ぶ。
+ * ツアーはその時点の**実打数のまま** `holedOut: false` で記録して終える。丸めない。
+ * 練習はランキング対象外なので、記録せずティーへ戻って打ち直す（spec §6）
+ */
+function giveUp(): void {
+  if (!canGiveUp()) return;
+  if (round) {
+    // スコアカードは俯瞰の上に重ねる約束なので、ADDRESS から降りたときもまず俯瞰へ寄せる
+    rig.transition(resultPose(shotStart, ball, cup, visualGreen), G.result.transition);
+    enterHoleOut();
+    syncMapMarkers();
+    syncLineVisibility();
+  } else {
+    restartPracticeHole();
+  }
+}
+
+/** 練習でティーへ戻して打ち直す。ホールは進めず、スコアも記録しない（spec §6） */
+function restartPracticeHole(): void {
+  ball.set(course.tee.x, course.tee.z);
+  shotStart.copy(ball);
+  shots = 0;
+  lastResult = '';
+  lastSwing = '';
+  roller.place(ball.x, ball.y);
+  updateBallMesh();
+  enterAddress();
 }
 
 /** ツアーで、この RESULT のあとホールアウトのカードへ移る場面か */
@@ -1371,6 +1403,10 @@ debugControls.hidden = !debugEnabled;
 const cameraButtons = Array.from(
   cameraControls.querySelectorAll<HTMLButtonElement>('[data-aim-view]'),
 );
+const giveUpControl = document.getElementById('giveup-control')!;
+const giveUpButton = document.getElementById('giveup') as HTMLButtonElement;
+const giveUpFill = document.getElementById('giveup-fill') as HTMLSpanElement;
+const giveUpLabel = document.getElementById('giveup-label') as HTMLSpanElement;
 const strokeControls = document.getElementById('stroke-controls')!;
 const strokeBack = document.getElementById('stroke-back') as HTMLButtonElement;
 const strokeCameraControls = document.getElementById('stroke-camera-controls')!;
@@ -1407,7 +1443,7 @@ function showHoleOutCard(current: Round): void {
   scoreTitle.textContent = `HOLE ${last.number} / ${current.holeCount}`;
   scoreHeadline.textContent = strokesHeadline(last.strokes, last.par);
   scoreSub.textContent =
-    `PAR ${last.par}${last.holedOut ? '' : '・打ち切り'}　` +
+    `PAR ${last.par}${last.holedOut ? '' : '・ギブアップ'}　` +
     `ここまで ${current.totalStrokes} 打 ${formatToPar(current.toPar)}`;
   scoreTable.hidden = true;
   scoreRows.replaceChildren();
@@ -1419,11 +1455,11 @@ function showHoleOutCard(current: Round): void {
 
 /** ラウンド終了のカード。全ホールの一覧と合計を出す */
 function showRoundEndCard(current: Round): void {
-  const cutOff = current.scores.some((hole) => !hole.holedOut);
+  const gaveUp = current.scores.some((hole) => !hole.holedOut);
   scoreTitle.textContent = 'ラウンド終了';
   scoreHeadline.textContent = strokesHeadline(current.totalStrokes, current.totalPar);
   scoreSub.textContent =
-    `${current.holeCount} ホール ・ PAR ${current.totalPar}` + (cutOff ? '　* は打ち切り' : '');
+    `${current.holeCount} ホール ・ PAR ${current.totalPar}` + (gaveUp ? '　* はギブアップ' : '');
   scoreRows.replaceChildren(
     scoreHeaderRow(),
     ...current.scores.map(scoreRow),
@@ -1458,7 +1494,7 @@ function scoreRow(hole: HoleScore): HTMLTableRowElement {
   row.append(
     scoreCell('td', String(hole.number)),
     scoreCell('td', String(hole.par)),
-    // 打ち切りのホールは印を付けて、カップインしたホールと区別する
+    // ギブアップしたホールは印を付けて、カップインしたホールと区別する
     scoreCell('td', hole.holedOut ? String(hole.strokes) : `${hole.strokes}*`),
     scoreCell('td', formatToPar(hole.strokes - hole.par), 'diff'),
   );
@@ -1517,6 +1553,56 @@ for (const button of cameraButtons) {
     if (view) setAimView(view);
   });
 }
+/*
+ * ギブアップは押し続けて確定する（spec §3）。
+ * ラウンドを1ホール捨てる操作なので、一度のタップでは決まらない。
+ * 確認カードを重ねる案は採らなかった。カードはどこをタップしても進む約束（§3）なので、
+ * 「タップで進む」と「タップで取り消す」が同じ画面に並んでしまう
+ */
+let giveUpTimer: number | null = null;
+let giveUpStartedAt = 0;
+
+function giveUpHoldProgress(): number {
+  if (giveUpTimer === null) return 0;
+  return Math.min((performance.now() - giveUpStartedAt) / G.round.giveUpHoldMs, 1);
+}
+
+function cancelGiveUpHold(): void {
+  if (giveUpTimer !== null) {
+    clearTimeout(giveUpTimer);
+    giveUpTimer = null;
+  }
+  giveUpFill.style.width = '0%';
+}
+
+function startGiveUpHold(e: PointerEvent): void {
+  if (giveUpTimer !== null) return;
+  if (!canGiveUp()) return;
+  e.preventDefault();
+  giveUpStartedAt = performance.now();
+  giveUpTimer = window.setTimeout(() => {
+    giveUpTimer = null;
+    giveUpFill.style.width = '0%';
+    giveUp();
+  }, G.round.giveUpHoldMs);
+}
+
+giveUpButton.addEventListener('pointerdown', startGiveUpHold);
+giveUpButton.addEventListener('pointerup', cancelGiveUpHold);
+giveUpButton.addEventListener('pointercancel', cancelGiveUpHold);
+giveUpButton.addEventListener('pointerleave', cancelGiveUpHold);
+// タッチは押した要素へ暗黙に捕捉されるので、指がボタンから外れても pointerleave が来ない。
+// 位置を見て自分で取り消す。押したまま指をずらせば、決まる前にやめられる
+giveUpButton.addEventListener('pointermove', (e) => {
+  if (giveUpTimer === null) return;
+  const r = giveUpButton.getBoundingClientRect();
+  const outside =
+    e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+  if (outside) cancelGiveUpHold();
+});
+// 長押しでコンテキストメニューや選択を出させない
+giveUpButton.addEventListener('contextmenu', (e) => e.preventDefault());
+
 mapToggle.addEventListener('click', toggleMap);
 strokeBack.addEventListener('click', returnToAddress);
 strokeCupCheck.addEventListener('click', showCupCheck);
@@ -1565,6 +1651,14 @@ hud.seed.addEventListener('click', () => {
 });
 
 function updateControls(): void {
+  // ギブアップはダブルパーに達するまで出さない。出る場面を離れたら押し続けも取り消す
+  // コースマップは一時的な参照画面。タップで閉じる約束なので、ここには重ねない
+  const showGiveUp = canGiveUp() && !(state === 'ADDRESS' && aimView === 'MAP');
+  if (!showGiveUp) cancelGiveUpHold();
+  giveUpControl.style.display = showGiveUp ? 'block' : 'none';
+  giveUpLabel.textContent = round ? 'ギブアップ' : 'ギブアップ（ティーへ）';
+  giveUpFill.style.width = `${(giveUpHoldProgress() * 100).toFixed(1)}%`;
+
   const inAddress = state === 'ADDRESS';
   cameraControls.style.display = inAddress ? 'flex' : 'none';
   mapControl.style.display = inAddress ? 'block' : 'none';
