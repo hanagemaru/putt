@@ -1,14 +1,14 @@
 import type { CourseDefinition } from './course-types';
 
 /**
- * コース基盤を実機検証するための手作りパー3。
+ * コース基盤を実機検証するための手作りパー4。
  * ティーからカップへの直線は池とOBを横切り、左奥の曲がり角へ刻む安全ルートを持つ。
  * 芝を外してもすぐOBにならないよう、ラフとセカンドカットで合計3.6mの余地を取る。
  */
 export const PROTOTYPE_COURSE: CourseDefinition = {
   id: 'prototype-dogleg-01',
   name: '試験ホール・池越えドッグレッグ',
-  par: 3,
+  par: 4,
   seed: 20260830,
   terrain: 'receiving',
   bounds: { width: 16, length: 24 },

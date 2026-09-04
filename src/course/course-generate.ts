@@ -162,10 +162,10 @@ function routeLength(route: readonly CoursePoint[]): number {
 
 function parFor(length: number): number {
   const [a, b, c] = G.parThresholds;
-  if (length <= a) return 2;
-  if (length <= b) return 3;
-  if (length <= c) return 4;
-  return 5;
+  if (length <= a) return 3;
+  if (length <= b) return 4;
+  if (length <= c) return 5;
+  return 6;
 }
 
 /**
