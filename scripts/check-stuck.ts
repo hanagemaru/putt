@@ -17,6 +17,17 @@
 //      **どう打っても池かOBにしか行けないマス**があるかを数える。
 //      1つでも池・OB以外で止まる打ち方があれば、そのマスは「詰まない」とする。
 //
+// 終われることの示し方:
+//   このスクリプトは「全部の打ち方を全部の位置で総当たり」はしない（現実的な時間で終わらない）。
+//   代わりに、次の3つを確かめて繋ぐ。
+//     (a) どの止まれるマスからも、池・OB以外で止まれる打ち方が1つはある（＝詰まない）
+//     (b) どの止まれるマスからも、カップまでの距離を PROGRESS_MIN 以上縮めて止まれる
+//         打ち方が1つはある。例外のマスは、横へ逃げて (b) の効くマスへ移れる
+//     (c) カップから ENDGAME_RADIUS 以内の止まれるマスからは、実際にカップインできる
+//   (b) は1打ごとに距離が PROGRESS_MIN ずつ縮むので、有限の打数で (c) の範囲へ入る。
+//   そこで (c) が効いてホールが終わる。どれも「1つでも見つかれば良い」向きの確認なので、
+//   方向や初速を細かく試さなかったぶんは**安全側**に外れる（見落とすなら「打てない」側）。
+//
 // 決定論の約束: Math.random も時刻も使わない。同じ引数なら必ず同じ結果になる。
 // 実行: npm run check:stuck  （引数は --seeds=1-200 --cell=0.5 など。下の ARGS 参照）
 
@@ -82,6 +93,23 @@ const TOPO_CELL = 0.15;
 
 /** 島として数える最小面積 [m^2]。これ未満は格子の刻みの都合で出る点なので数えない */
 const ISLAND_MIN_AREA = 0.25;
+
+/**
+ * 終盤の確認をする範囲 [m]。カップからこの距離までの止まれるマス全部から、
+ * 「実際に入れられるか」を確かめる。ホールは入れないと終わらないので、
+ * 前進の繰り返しだけでは「終われる」ことの確認にならない。
+ *
+ * カップの口は半径 5.4cm しかないので、10度刻みの36方向では 1m 先で 17cm ずれる。
+ * ここだけは方向をずっと細かく刻む（下の ENDGAME_ANGLE_*）
+ */
+const ENDGAME_RADIUS = 1.0;
+
+/** 終盤の確認で使う、ちょうど届く初速に対する倍率 */
+const ENDGAME_SPEED_FACTORS = [1, 0.85, 1.15, 0.7, 1.3, 1.6] as const;
+
+/** 終盤の確認の方向の刻み [度] と、カップの向きから左右へ振る上限 [度] */
+const ENDGAME_ANGLE_STEP_DEG = 0.5;
+const ENDGAME_ANGLE_MAX_DEG = 30;
 
 /** 力の余裕を見るために、勾配が急な順に選ぶセカンドカットの地点の数 */
 const UPHILL_SAMPLES = 5;
@@ -168,6 +196,15 @@ interface ShotResult {
 }
 
 const grad = { x: 0, z: 0 };
+
+/** 終盤の確認で使う、カップの向きからのずらし角 [rad]。真っ直ぐから外へ広げる順 */
+const endgameAngles: number[] = (() => {
+  const out = [0];
+  const step = (ENDGAME_ANGLE_STEP_DEG * Math.PI) / 180;
+  const count = Math.round(ENDGAME_ANGLE_MAX_DEG / ENDGAME_ANGLE_STEP_DEG);
+  for (let k = 1; k <= count; k++) out.push(k * step, -k * step);
+  return out;
+})();
 
 function shoot(roller: Roller, x: number, z: number, speed: number, direction: number): ShotResult {
   roller.launch(x, z, speed, direction);
@@ -311,6 +348,9 @@ interface SeedReport {
   noReach: StuckCell[];
   /** 多段探索が上限に当たって、行けるとも行けないとも言えなかったマス */
   undecided: StuckCell[];
+  /** カップから ENDGAME_RADIUS 以内で調べたマスの数と、そこから入れられなかったマス */
+  endgameCells: number;
+  noHoleOut: StuckCell[];
   /** 別の連結成分で止まったショットの数（＝細い池やOBを跨いだ回数） */
   crossedComponent: number;
   /** 上限時間まで止まらなかったショットの数 */
@@ -358,8 +398,8 @@ function investigate(seed: number, args: Args): SeedReport {
   }
 
   let shots = 0;
-  const phaseShots = { escape: 0, progress: 0, chase: 0, uphill: 0 };
-  let phase: 'escape' | 'progress' | 'chase' | 'uphill' = 'escape';
+  const phaseShots = { escape: 0, progress: 0, chase: 0, endgame: 0, uphill: 0 };
+  let phase: 'escape' | 'progress' | 'chase' | 'endgame' | 'uphill' = 'escape';
   let crossedComponent = 0;
   let timedOut = 0;
   const stuck: StuckCell[] = [];
@@ -470,7 +510,7 @@ function investigate(seed: number, args: Args): SeedReport {
 
   /**
    * 前進できなかったマスから、横や後ろへ逃げて「前進できるマス」へ移れるかを確かめる。
-   * 移れるなら、そこから先は前進の繰り返しでカップへ近づける（下の帰納の説明を参照）。
+   * 移れるなら、そこから先は前進の繰り返しでカップへ近づける（冒頭の「終われることの示し方」）。
    *   'reach'     : そのまま入るか、前進できるマスへ移れた
    *   'unreachable': 打てる先を全部尽くしても、前進できるマスへ移れない
    *   'undecided' : 探索の上限に当たって決められなかった
@@ -527,11 +567,37 @@ function investigate(seed: number, args: Args): SeedReport {
     }
   }
 
-  if (ARGS.verbose) {
-    console.log(
-      `  ショット内訳: 脱出 ${phaseShots.escape} / 前進 ${phaseShots.progress} / 迂回 ${phaseShots.chase} / 急斜面 ${phaseShots.uphill}`,
-    );
+  // 終盤の確認。カップの近くの止まれるマスから、実際にカップインできるかを見る
+  phase = 'endgame';
+  const noHoleOut: StuckCell[] = [];
+  let endgameCells = 0;
+  for (let j = 0; j < grid.nz; j++) {
+    for (let i = 0; i < grid.nx; i++) {
+      if (!grid.stoppable[j * grid.nx + i]) continue;
+      const x = grid.cellX(i);
+      const z = grid.cellZ(j);
+      const distance = cupDistance(x, z);
+      if (distance > ENDGAME_RADIUS || distance <= P.cupCaptureRadius) continue;
+      endgameCells++;
+      // ちょうど届く初速を基準に、その前後を試す。摩擦は足元の地面のもので見る
+      const base = Math.sqrt(2 * frictionOn(surfaceAt(course, x, z)) * distance);
+      let holed = false;
+      const bearing = Math.atan2(course.cup.x - x, -(course.cup.z - z));
+      for (const factor of ENDGAME_SPEED_FACTORS) {
+        const speed = Math.min(Math.max(base * factor, args.vmin), args.vmax);
+        // カップの向きから左右へ、細かい刻みで振っていく
+        for (const angle of endgameAngles) {
+          if (fire(x, z, speed, bearing + angle).status === 'holed') {
+            holed = true;
+            break;
+          }
+        }
+        if (holed) break;
+      }
+      if (!holed) noHoleOut.push({ x, z, surface: surfaceAt(course, x, z) });
+    }
   }
+
   // 力の余裕（調べること 2）。
   // セカンドカットの上り勾配が急な順に UPHILL_SAMPLES 箇所を選び、
   //   - 真上りへ最強の一打を打ったときに何m動くか
@@ -584,6 +650,11 @@ function investigate(seed: number, args: Args): SeedReport {
     }
   }
 
+  if (ARGS.verbose) {
+    console.log(
+      `  ショット内訳: 脱出 ${phaseShots.escape} / 前進 ${phaseShots.progress} / 迂回 ${phaseShots.chase} / 終盤 ${phaseShots.endgame} / 急斜面 ${phaseShots.uphill}`,
+    );
+  }
   return {
     seed,
     par: course.par,
@@ -598,6 +669,8 @@ function investigate(seed: number, args: Args): SeedReport {
     noProgress,
     noReach,
     undecided,
+    endgameCells,
+    noHoleOut,
     crossedComponent,
     timedOut,
     escapeSpeedHistogram,
@@ -634,6 +707,8 @@ let totalStuck = 0;
 let totalNoProgress = 0;
 let totalNoReach = 0;
 let totalUndecided = 0;
+let totalEndgame = 0;
+let totalNoHoleOut = 0;
 let totalCrossed = 0;
 let totalTimedOut = 0;
 let totalShots = 0;
@@ -665,6 +740,8 @@ for (let seed = ARGS.seedFrom; seed <= ARGS.seedTo; seed++) {
   totalNoProgress += report.noProgress.length;
   totalNoReach += report.noReach.length;
   totalUndecided += report.undecided.length;
+  totalEndgame += report.endgameCells;
+  totalNoHoleOut += report.noHoleOut.length;
   totalCrossed += report.crossedComponent;
   totalIslandArea += report.islandArea;
   totalTimedOut += report.timedOut;
@@ -715,6 +792,14 @@ for (let seed = ARGS.seedFrom; seed <= ARGS.seedTo; seed++) {
       );
     }
   }
+  if (report.noHoleOut.length > 0) {
+    flags.push(`入れられない ${report.noHoleOut.length}マス`);
+    for (const cell of report.noHoleOut.slice(0, 5)) {
+      problems.push(
+        `シード ${seed}: カップ近くで入れられない (${cell.x.toFixed(2)}, ${cell.z.toFixed(2)}) ${cell.surface}`,
+      );
+    }
+  }
   if (report.crossedComponent > 0) flags.push(`成分跨ぎ ${report.crossedComponent}回`);
   if (report.timedOut > 0) flags.push(`止まらず ${report.timedOut}回`);
 
@@ -740,6 +825,9 @@ console.log(`別の連結成分で止まったショット（池・OBを跨い�
 console.log(`上限 ${MAX_SHOT_SECONDS}s まで止まらなかったショット: ${totalTimedOut}`);
 console.log(`詰み（どう打っても池かOB）のマス: ${totalStuck}`);
 console.log(`前進できなかったマス: ${totalNoProgress}（うちカップへ行けない ${totalNoReach} / 未確定 ${totalUndecided}）`);
+console.log(
+  `カップから ${ENDGAME_RADIUS}m 以内で調べたマス: ${totalEndgame} / そこから入れられなかったマス: ${totalNoHoleOut}`,
+);
 console.log(
   `脱出に要った最小の初速の分布: ${SPEEDS.map((v, k) => `${v.toFixed(2)}m/s ${escapeSpeedTotal[k]}`).join(' / ')}`,
 );
