@@ -91,6 +91,9 @@ const CHAIN_MAX_DEPTH = 3;
  */
 const TOPO_CELL = 0.15;
 
+/** 島とティー側の隙間を測る範囲 [m]。これより遠ければ、跨げないことは自明なので測らない */
+const ISLAND_GAP_SEARCH = 1.0;
+
 /** 島として数える最小面積 [m^2]。これ未満は格子の刻みの都合で出る点なので数えない */
 const ISLAND_MIN_AREA = 0.25;
 
@@ -338,6 +341,8 @@ interface SeedReport {
   /** ティー成分の外にある芝の島（面積が閾値以上のもの）の数と、その合計面積 [m^2] */
   islands: number;
   islandArea: number;
+  /** 島とティー側の最短距離 [m]。島が無ければ Infinity */
+  islandGap: number;
   /** 調べた「止まれるマス」の数 */
   stoppableCells: number;
   /** どう打っても池・OBにしかならなかったマス */
@@ -390,11 +395,37 @@ function investigate(seed: number, args: Args): SeedReport {
   const islandMinCells = ISLAND_MIN_AREA / (TOPO_CELL * TOPO_CELL);
   let islands = 0;
   let islandArea = 0;
+  const islandIds: number[] = [];
   for (let id = 0; id < topo.componentSizes.length; id++) {
     if (id === teeComponent) continue;
     if (topo.componentSizes[id] < islandMinCells) continue;
     islands++;
     islandArea += topo.componentSizes[id] * TOPO_CELL * TOPO_CELL;
+    islandIds.push(id);
+  }
+
+  // 島までの隙間の幅。ボールは池・OBに触れた瞬間に止まるので、
+  // 1ステップの移動距離（最強の一打で vmax / 240 秒 ≒ 1.7cm）より広い隙間は跨げない。
+  // 島とティー側の最短距離がそれを超えていれば、転がって島へ渡ることはできない
+  // ISLAND_GAP_SEARCH より遠ければ Infinity のままにする（跨げるかどうかの答えは変わらない）
+  let islandGap = Infinity;
+  if (islandIds.length > 0) {
+    const reach = Math.ceil(ISLAND_GAP_SEARCH / TOPO_CELL);
+    for (let j = 0; j < topo.nz; j++) {
+      for (let i = 0; i < topo.nx; i++) {
+        if (!islandIds.includes(topo.component[j * topo.nx + i])) continue;
+        for (let dj = -reach; dj <= reach; dj++) {
+          const jj = j + dj;
+          if (jj < 0 || jj >= topo.nz) continue;
+          for (let di = -reach; di <= reach; di++) {
+            const ii = i + di;
+            if (ii < 0 || ii >= topo.nx) continue;
+            if (topo.component[jj * topo.nx + ii] !== teeComponent) continue;
+            islandGap = Math.min(islandGap, Math.hypot(di, dj) * TOPO_CELL);
+          }
+        }
+      }
+    }
   }
 
   let shots = 0;
@@ -664,6 +695,7 @@ function investigate(seed: number, args: Args): SeedReport {
     teeCupSameComponent: teeComponent >= 0 && teeComponent === cupComponent,
     islands,
     islandArea,
+    islandGap,
     stoppableCells,
     stuck,
     noProgress,
@@ -791,6 +823,18 @@ for (let seed = ARGS.seedFrom; seed <= ARGS.seedTo; seed++) {
         `シード ${seed}: 未確定 (${cell.x.toFixed(2)}, ${cell.z.toFixed(2)}) ${cell.surface}`,
       );
     }
+  }
+  if (report.islands > 0) {
+    flags.push(`島 ${report.islands}個・${report.islandArea.toFixed(2)}m2`);
+    const stepLength = ARGS.vmax * P.timeStep;
+    const crossable = report.islandGap <= stepLength;
+    problems.push(
+      `シード ${seed}: ティー側と繋がっていない芝の島 ${report.islands}個（合計 ${report.islandArea.toFixed(2)}m2）` +
+        ` / ティー側との最短距離 ${
+          Number.isFinite(report.islandGap) ? `${report.islandGap.toFixed(2)}m` : `${ISLAND_GAP_SEARCH}m 超`
+        }` +
+        `（1ステップの最大移動 ${(stepLength * 100).toFixed(2)}cm なので${crossable ? '跨げるかもしれない' : '転がって渡れない'}）`,
+    );
   }
   if (report.noHoleOut.length > 0) {
     flags.push(`入れられない ${report.noHoleOut.length}マス`);
