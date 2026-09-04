@@ -7,7 +7,8 @@
     "dev": "vite --host",
     "build": "tsc && vite build",
     "preview": "vite preview --host",
-    "validate:course": "node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/validate-course.ts"
+    "validate:course": "node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/validate-course.ts",
+    "check:stuck": "node --experimental-transform-types --import ./scripts/ts-resolve.mjs scripts/check-stuck.ts"
   },
   "dependencies": {
     "lil-gui": "^0.21.0",
