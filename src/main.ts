@@ -25,7 +25,7 @@ import { surfaceAt } from './course/course-map';
 import { PROTOTYPE_COURSE } from './course/prototype-course';
 import { approachDirection, generateCourse } from './course/course-generate';
 import type { CourseDefinition, TerrainType } from './course/course-types';
-import { TOUR_HOLE_SEEDS } from './course/tour-holes';
+import { tourById } from './course/tour-holes';
 import { CourseMapMarker } from './course-map-marker';
 import { Round, formatToPar, type HoleScore } from './round';
 import { RoundProgressStore } from './round-storage';
@@ -75,6 +75,9 @@ function courseWithSeed(value: number): CourseDefinition {
 
 const urlParams = new URLSearchParams(location.search);
 
+/** 通常ツアーの3セット。指定なし・不明なIDは最初のセットを使う */
+const selectedTour = tourById(urlParams.get('tour'));
+
 /** URL の ?course=prototype 。生成器を入れる前の手作りホールを出す */
 const usePrototypeCourse = urlParams.get('course') === 'prototype';
 
@@ -97,7 +100,7 @@ function modeFromUrl(): GameMode {
 const mode = modeFromUrl();
 
 /** 通常ツアーのラウンド状態。**練習モードでは null**（ホールを進めず、同じホールを打ち直す） */
-const round = mode === 'tour' ? new Round(TOUR_HOLE_SEEDS) : null;
+const round = mode === 'tour' ? new Round(selectedTour.seeds) : null;
 
 /**
  * ラウンド進行の保存先（spec §6）。**通常ツアーだけ**。
@@ -106,9 +109,9 @@ const round = mode === 'tour' ? new Round(TOUR_HOLE_SEEDS) : null;
 const roundStore =
   mode === 'tour'
     ? new RoundProgressStore(
-        CONFIG.game.round.save.tourKey,
+        `${CONFIG.game.round.save.tourKey}-${selectedTour.id}`,
         CONFIG.game.round.save.version,
-        TOUR_HOLE_SEEDS,
+        selectedTour.seeds,
       )
     : null;
 
@@ -124,7 +127,9 @@ if (round && roundStore) {
   const saved = roundStore.load();
   if (saved) {
     if (round.restore(saved)) {
-      if (round.holeNumber > 1) resumeNotice = `ホール${round.holeNumber}から再開します`;
+      if (round.holeNumber > 1) {
+        resumeNotice = `${selectedTour.name}・ホール${round.holeNumber}から再開します`;
+      }
     } else {
       roundStore.clear();
     }
@@ -1456,7 +1461,7 @@ function showHoleOutCard(current: Round): void {
 /** ラウンド終了のカード。全ホールの一覧と合計を出す */
 function showRoundEndCard(current: Round): void {
   const gaveUp = current.scores.some((hole) => !hole.holedOut);
-  scoreTitle.textContent = 'ラウンド終了';
+  scoreTitle.textContent = `${selectedTour.name}・ラウンド終了`;
   scoreHeadline.textContent = strokesHeadline(current.totalStrokes, current.totalPar);
   scoreSub.textContent =
     `${current.holeCount} ホール ・ PAR ${current.totalPar}` + (gaveUp ? '　* はギブアップ' : '');
@@ -1695,7 +1700,11 @@ function updateHud(): void {
   const showingScore = state === 'HOLE_OUT' || state === 'ROUND_END';
   // 状態名は英語の内部名なので、通常のプレイ画面には出さない
   // 開発用の表示だけ、地形の性格も出す。実機で「今どの型か」を見ながら確かめるため
-  hud.state.textContent = debugEnabled ? `${state} / ${TERRAIN_LABEL[course.terrain]}` : '';
+  hud.state.textContent = debugEnabled
+    ? `${state} / ${TERRAIN_LABEL[course.terrain]}`
+    : round
+      ? selectedTour.name
+      : '';
   if (state === 'ADDRESS') {
     hud.view.textContent = AIM_VIEW_LABEL[aimView];
   } else if (state === 'STROKE' && strokeCameraView === 'CUP') {

@@ -495,7 +495,7 @@ export const CONFIG = {
        * 復帰時に読み込み直すので、保存しないとラウンドが最初へ戻る
        */
       save: {
-        /** localStorage のキー。通常ツアー用 */
+        /** localStorage のキー接頭辞。通常ツアーのセットIDを末尾へ付ける */
         tourKey: 'putt-tour-progress',
         /**
          * 保存形式のバージョン。**保存する中身の意味を変えたら必ず上げる。**
