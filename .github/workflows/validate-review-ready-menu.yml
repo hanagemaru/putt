@@ -1,0 +1,84 @@
+name: Validate review-ready menu
+
+on:
+  push:
+    branches:
+      - feat/review-ready-menu-info
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/review-ready-menu-info
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Sync status docs
+        shell: python
+        run: |
+          from pathlib import Path
+
+          status = Path('PROJECT_STATUS.md')
+          text = status.read_text(encoding='utf-8')
+          text = text.replace(
+              '最終更新: 2026-09-05（**トップメニューと戻り動線は実機確認OK。AdSense審査掲載準備を優先**）',
+              '最終更新: 2026-09-05（**P0-1 審査掲載用メニュー情報を実装。実機確認待ち**）',
+              1,
+          )
+          old = '''### P0-1. プライバシー・遊び方・未完成表示\n\n同じ実装テーマとしてまとめられる範囲を確認してからブランチを切る。\n\n- トップから `https://hanage.app/privacy/` を開ける\n- トップから簡単な遊び方を確認できる\n- 「週替わりチャレンジ（準備中）」を公開トップから一旦隠す\n- 直接URLや内部の週替わりコアは消さない\n'''
+          new = '''### P0-1. プライバシー・遊び方・未完成表示\n\n**実装済み・実機確認待ち。**\n\n- 公開トップは「通常ツアー / 練習」の2モードだけを大きく表示する\n- 未接続の「週替わりチャレンジ（準備中）」は公開トップから一旦隠した\n- トップ下部の「遊び方」から、コース確認・狙い・構え・ストローク・池/OBの基本操作を確認できる\n- トップ下部の「プライバシー」から `https://hanage.app/privacy/` を別タブで開く\n- 週替わりチャレンジの内部コアは削除していない\n- 通常ツアー、練習、物理、固定ホールは変更していない\n'''
+          if old not in text:
+              raise SystemExit('PROJECT_STATUS P0-1 block not found')
+          text = text.replace(old, new, 1)
+          text = text.replace(
+              '### AdSense審査掲載前に対応\n\n- Putt内のプライバシーポリシー導線\n- 簡単な遊び方\n- 未接続の週替わり「準備中」の公開トップ非表示\n- 必要ならOB境界の小改善',
+              '### AdSense審査掲載前に対応\n\n- P0-1（プライバシー導線 / 遊び方 / 週替わり非表示）は実装済み・実機確認待ち\n- 必要ならOB境界の小改善',
+              1,
+          )
+          status.write_text(text, encoding='utf-8')
+
+          release = Path('RELEASE_PLAN.md')
+          text = release.read_text(encoding='utf-8')
+          old_row = '| 審査掲載準備 | 進行中 | 通常ツアーの基本導線は実装・実機確認OK。プライバシー導線、簡単な遊び方、週替わり「準備中」の公開トップ非表示、必要ならOB境界の小改善が残る | 中間マイルストーンの条件を満たし、公開URLとハブ導線を実機で一巡する | 現在の通常ツアー |'
+          new_row = '| 審査掲載準備 | 進行中 | P0-1（プライバシー導線、簡単な遊び方、週替わり「準備中」の公開トップ非表示）は実装済み・実機確認待ち。必要ならOB境界の小改善が残る | P0-1を実機確認し、必要ならOBを小改善したうえで、公開URLとハブ導線を一巡する | 現在の通常ツアー |'
+          if old_row not in text:
+              raise SystemExit('RELEASE_PLAN review row not found')
+          text = text.replace(old_row, new_row, 1)
+          text = text.replace(
+              '   - `https://hanage.app/privacy/` へのゲーム内導線\n   - トップから見られる簡単な遊び方\n   - 未接続の週替わりチャレンジを公開トップから一旦隠す',
+              '   - `https://hanage.app/privacy/` へのゲーム内導線（実装済み・実機確認待ち）\n   - トップから見られる簡単な遊び方（実装済み・実機確認待ち）\n   - 未接続の週替わりチャレンジを公開トップから一旦隠す（実装済み・実機確認待ち）',
+              1,
+          )
+          release.write_text(text, encoding='utf-8')
+
+          tasks = Path('TASKS.md')
+          text = tasks.read_text(encoding='utf-8')
+          text = text.replace(
+              '  - 週替わりチャレンジは今回は「準備中」の無効ボタン',
+              '  - 週替わりチャレンジは内部コアを残し、AdSense審査掲載中の公開トップでは一旦非表示',
+              1,
+          )
+          marker = '''---\n\n## ゲーム全体の仕様検討\n'''
+          section = '''---\n\n## T10.2. 審査掲載用のトップ情報導線\n\n**実装済み・実機確認待ち。**\n\n- 公開トップの主要モードを「通常ツアー / 練習」に絞り、未接続の週替わり「準備中」は一旦非表示\n- トップ下部に補助リンクとして「遊び方 / プライバシー」を追加\n- 遊び方はゲーム内で表示し、基本操作5項目だけを短く案内する\n- プライバシーは `https://hanage.app/privacy/` を別タブで開く\n- 週替わりの内部コア、通常ツアー、練習、物理、固定ホールは変更しない\n\n---\n\n## ゲーム全体の仕様検討\n'''
+          if marker not in text:
+              raise SystemExit('TASKS insertion marker not found')
+          text = text.replace(marker, section, 1)
+          tasks.write_text(text, encoding='utf-8')
+      - name: Remove temporary workflow
+        run: rm .github/workflows/validate-review-ready-menu.yml
+      - name: Commit status sync
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add PROJECT_STATUS.md RELEASE_PLAN.md TASKS.md .github/workflows/validate-review-ready-menu.yml
+          git commit -m "docs: record review-ready menu implementation"
+          git push origin HEAD:feat/review-ready-menu-info
