@@ -100,7 +100,7 @@ export const CONFIG = {
    * コース外形（spec §1「コース外形とサーフェス」）。
    * 芝の帯も池も、素の定義のままだと折れ線を太らせた帯と真楕円になり、幾何学模様に見える。
    * ここの値で境界に自然な揺らぎを与える。揺らぎは `CourseDefinition.seed` だけから決まるので、
-   * 同じシードなら必ず同じ形になり、デイリーチャレンジの「全員が同じコース」を壊さない。
+   * 同じシードなら必ず同じ形になり、チャレンジの「全員が同じコース」を壊さない。
    */
   course: {
     edgeNoise: {
@@ -497,6 +497,8 @@ export const CONFIG = {
       save: {
         /** localStorage のキー接頭辞。通常ツアーのセットIDを末尾へ付ける */
         tourKey: 'putt-tour-progress',
+        /** localStorage のキープレフィックス。期間別チャレンジ用 */
+        challengeKeyPrefix: 'putt-challenge-progress',
         /**
          * 保存形式のバージョン。**保存する中身の意味を変えたら必ず上げる。**
          * 合わない保存は黙って捨てて最初から始める
