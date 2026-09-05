@@ -1,0 +1,108 @@
+name: Apply release priority docs
+
+on:
+  push:
+    branches:
+      - docs/release-priority-playtest-backlog
+
+permissions:
+  contents: write
+
+jobs:
+  update-tasks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: docs/release-priority-playtest-backlog
+          fetch-depth: 0
+      - name: Update TASKS
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('TASKS.md')
+          text = path.read_text(encoding='utf-8')
+
+          marker = """---
+
+## T0. 土台と自動デプロイ
+"""
+          priority = """---
+
+## 直近の優先順（2026-09-05）
+
+**Puttの完全完成より、まずAdSense審査へ載せられる状態を優先する。**
+Multicolor Sweeperを審査の主力とし、Puttは通常ツアーが開始から終了まで安定して遊べる状態で先に掲載する。
+未確定の試遊改善は `docs/PLAYTEST_BACKLOG.md` に保持し、審査開始を待たせない。
+
+当面の順序:
+
+1. **P0-1 審査掲載用の基本導線**
+   - Putt内から `https://hanage.app/privacy/` を開ける
+   - トップから簡単な遊び方を確認できる
+   - 未接続の「週替わりチャレンジ（準備中）」を審査時の公開トップから一旦隠す
+2. **P0-2 OB境界の小改善（必要なら）**
+   - P0-1後の実機確認で通常プレイの判断を妨げる場合だけ先行する
+3. **P0-3 審査掲載確認**
+   - 公開入口→通常ツアー→9ホール終了→戻る、練習、プライバシー、遊び方、ハブ導線を実機確認
+   - ここまででPutt側はAdSense審査へ載せる状態とする
+4. **審査を待たせない品質改善**
+   - T9固定ツアー再選定（風の丘H5〜H7を重点確認）
+   - コース生成器v2、専用練習グリーン、パター感度・グラフィック、転がりスキップ
+5. **Putt初回完成へ向けた機能統合**
+   - 週替わりチャレンジ画面接続、自己ベスト・ランキング、広告を含む完成版遷移
+
+コース・練習・パター・OB・走行スキップの具体的な試遊メモは `docs/PLAYTEST_BACKLOG.md` を正とする。
+
+---
+
+## T0. 土台と自動デプロイ
+"""
+          if marker not in text:
+              raise SystemExit('TASKS intro marker not found')
+          text = text.replace(marker, priority, 1)
+
+          text = text.replace(
+              "## T10. トップメニューと通常ツアーのコース選択\n\n**実装済み・実機確認待ち。**",
+              "## T10. トップメニューと通常ツアーのコース選択\n\n**実装済み・実機確認OK。**（PR #56）",
+              1,
+          )
+          text = text.replace(
+              "## T10.1. プレイ中と終了後のメニュー動線\n\n**実装済み・実機確認待ち。**",
+              "## T10.1. プレイ中と終了後のメニュー動線\n\n**実装済み・実機確認OK。**（PR #57）",
+              1,
+          )
+
+          old_order = """次の実装順は、試験ホールの実機確認後に以下を基本とする。
+
+1. ~~コース生成器と検証器~~（T3.8 の検証器と T4 の生成器で完了）
+2. 複数ホール進行と9ホール固定コースデータ（3セットの試遊版まで完了、最終確認待ち）
+3. ~~週替わりチャレンジのseed確定・保存構造・再現~~（コア実装済み。画面接続は後続）
+4. スコア保存とランキング
+5. 広告を含むゲーム開始・離脱・完了遷移
+"""
+          new_order = """現在は、完全版の機能順より**AdSense審査掲載準備を先にする**。
+
+1. プライバシー導線・簡単な遊び方・未接続「準備中」の非表示
+2. 必要ならOB境界の最小限の視認性改善
+3. 公開URL・主要端末・ハブ導線を確認し、AdSense審査へ進む
+4. 固定ツアー再選定と `docs/PLAYTEST_BACKLOG.md` の品質改善
+5. 週替わりチャレンジの画面接続、スコア保存・ランキング、広告を含む完成版遷移
+
+週替わりチャレンジのseed確定・保存構造・再現コアは実装済みなので、画面接続を後へ送っても失わない。
+"""
+          if old_order not in text:
+              raise SystemExit('TASKS implementation-order block not found')
+          text = text.replace(old_order, new_order, 1)
+
+          path.write_text(text, encoding='utf-8')
+      - name: Remove temporary workflow
+        run: rm .github/workflows/apply-release-priority-docs.yml
+      - name: Commit documentation sync
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add TASKS.md .github/workflows/apply-release-priority-docs.yml
+          git commit -m "docs: sync task order with review priority"
+          git push origin HEAD:docs/release-priority-playtest-backlog
