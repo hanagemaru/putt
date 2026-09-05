@@ -14,6 +14,7 @@ import { generateCourseDetailed } from '../src/course/course-generate.ts';
 import type { Difficulty, HoleShape } from '../src/course/course-generate.ts';
 import { validateCourse } from '../src/course/course-validate.ts';
 import type { CourseDefinition, SurfaceType, TerrainType } from '../src/course/course-types.ts';
+import { TOUR_SETS } from '../src/course/tour-holes.ts';
 
 const OUTPUT_PATH = 'docs/tour-hole-candidates.md';
 const TERRAIN_ORDER: readonly TerrainType[] = [
@@ -247,23 +248,16 @@ function distributionSummary(
       `PAR境界は12 / 22 / 30mで、PAR3はeasyのみ、PAR5はhardのみという想定は一致した。`,
   );
 
-  const missingPairs: string[] = [];
-  for (const par of PAR_ORDER) {
-    for (const terrain of TERRAIN_ORDER) {
-      if (!eligible.some((row) => row.par === par && row.terrain === terrain)) {
-        missingPairs.push(`PAR${par}×${TERRAIN_LABEL[terrain]}`);
-      }
-    }
-  }
-  if (missingPairs.length === 0) {
-    lines.push(
-      '- PAR3×3・PAR4×4・PAR5×2（合計35）は、各PARに5種類すべての地形が実在するため、5種類を全部使いながら成立する。',
-    );
-  } else {
-    lines.push(
-      `- PAR3×3・PAR4×4・PAR5×2で地形5種類を全部使う際に不足しうる組み合わせ: ${missingPairs.join('、')}。`,
-    );
-  }
+  const hardPar4Counts = TERRAIN_ORDER.map((terrain) => {
+    const count = eligible.filter(
+      (row) => row.par === 4 && row.difficulty === 'hard' && row.terrain === terrain,
+    ).length;
+    return `${TERRAIN_LABEL[terrain]} ${count}本`;
+  });
+  lines.push(
+    `- 「むずかしい」のPAR4: ${hardPar4Counts.join(' / ')}。` +
+      '各地形から3本以上あり、PAR3×2・PAR4×5・PAR5×2（合計36）を3セット作れる。',
+  );
   const complete = PAR_ORDER.every((par) =>
     TERRAIN_ORDER.every(
       (terrain) => candidates.filter((row) => row.par === par && row.terrain === terrain).length === 2,
@@ -277,12 +271,70 @@ function distributionSummary(
   return lines;
 }
 
+function tourSetSections(all: readonly SurveyRow[]): string[] {
+  const bySeed = new Map(all.map((row) => [row.seed, row]));
+  const used = new Set<number>();
+  const sections: string[] = [
+    '## 試遊用の3コース',
+    '',
+    '3コースともPAR3×2・PAR4×5・PAR5×2（合計PAR36）。PAR4はすべて「むずかしい」で、5種類の地形を1本ずつ使う。27ホールのシードは重複しない。',
+    '',
+    '| コース | 選出テーマ | 9ホールを開始 |',
+    '|---|---|---|',
+  ];
+
+  for (const tour of TOUR_SETS) {
+    const link = `https://hanagemaru.github.io/putt/?tour=${tour.id}`;
+    sections.push(`| ${tour.name} | ${tour.description} | [プレイする](${link}) |`);
+  }
+  sections.push('');
+
+  for (const tour of TOUR_SETS) {
+    const tourRows = tour.seeds.map((seed) => bySeed.get(seed) ?? survey(seed));
+    const parCounts = countBy(tourRows.map((row) => row.par));
+    const hardPar4 = tourRows.filter((row) => row.par === 4 && row.difficulty === 'hard');
+    const par4Terrains = new Set(hardPar4.map((row) => row.terrain));
+    if (
+      tourRows.length !== 9 ||
+      parCounts.get(3) !== 2 ||
+      parCounts.get(4) !== 5 ||
+      parCounts.get(5) !== 2 ||
+      hardPar4.length !== 5 ||
+      par4Terrains.size !== TERRAIN_ORDER.length
+    ) {
+      throw new Error(`${tour.name} がツアー構成の条件を満たしていません`);
+    }
+    for (const row of tourRows) {
+      if (used.has(row.seed)) throw new Error(`ツアー間でシード ${row.seed} が重複しています`);
+      used.add(row.seed);
+    }
+
+    const link = `https://hanagemaru.github.io/putt/?tour=${tour.id}`;
+    sections.push(`### [${tour.name}をプレイ](${link})`, '', tour.description, '');
+    sections.push(
+      '| H | シード | PAR | 難易度 | 形 | 地形 | 全長 | 遠回り率 | 池 |',
+      '|---:|---:|---:|---|---|---|---:|---:|---:|',
+    );
+    for (let i = 0; i < tourRows.length; i++) {
+      const row = tourRows[i];
+      const seedLink = `https://hanagemaru.github.io/putt/?seed=${row.seed}`;
+      sections.push(
+        `| ${i + 1} | [${row.seed}](${seedLink}) | ${row.par} | ${DIFFICULTY_LABEL[row.difficulty]} | ` +
+          `${SHAPE_LABEL[row.shape]} | ${TERRAIN_LABEL[row.terrain]} | ${row.routeLength.toFixed(2)}m | ` +
+          `${row.detourRatio.toFixed(2)} | ${row.hazardCount} |`,
+      );
+    }
+    sections.push('');
+  }
+  return sections;
+}
+
 function candidateTable(rows: readonly SurveyRow[]): string[] {
   const lines: string[] = [];
   for (const par of PAR_ORDER) {
-    lines.push(`## PAR ${par}`, '');
+    lines.push(`### PAR ${par}`, '');
     for (const terrain of TERRAIN_ORDER) {
-      lines.push(`### ${TERRAIN_LABEL[terrain]}（${terrain}）`, '');
+      lines.push(`#### ${TERRAIN_LABEL[terrain]}（${terrain}）`, '');
       lines.push(
         '| シード | 難易度 | 形 | 全長 | 直線 | 遠回り率 | 芝幅 | 池 | 枠（幅×長さ） | 通常芝 | ラフ | 2nd | 池面積 | OB | 試行 | fallback |',
         '|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|',
@@ -310,13 +362,18 @@ function buildMarkdown(all: readonly SurveyRow[], eligible: readonly SurveyRow[]
   return [
     '# 通常ツアー ホール候補表',
     '',
-    '固定9ホールを実際に遊んで選ぶための候補。数値は `generateCourseDetailed(seed)` と `validateCourse` の実測で、面白さの評価や9ホールの採用・並び順は含めない。',
+    '固定9ホールを実際に遊んで選ぶための調査結果。数値は `generateCourseDetailed(seed)` と `validateCourse` の実測。機械指標で試遊用3コースを仮選出したが、面白さ・最終採用・テーマ名は実機確認後に決める。',
     '',
     '## 走査結果',
     '',
     ...distributionSummary(all, eligible, candidates),
     '',
     '遠回り率は「ルート全長 ÷ ティー→カップ直線距離」。面積比は `validateCourse` の既定格子で測定。`2nd` はセカンドカット。',
+    '',
+    ...tourSetSections(all),
+    '## 初回の30候補',
+    '',
+    'PAR×地形ごとの比較用に残す。上の3コースは、新しい構成条件に合わせて同じシード1〜1000から選び直した。',
     '',
     ...candidateTable(candidates),
   ].join('\n').trimEnd();

@@ -14,6 +14,7 @@ import {
 } from '../src/challenge.ts';
 import { CHALLENGE_SEED_POOLS_V1 } from '../src/challenge-seeds-v1.ts';
 import { generateCourseDetailed } from '../src/course/course-generate.ts';
+import { TOUR_SETS } from '../src/course/tour-holes.ts';
 
 interface Args {
   fromYear: number;
@@ -55,12 +56,17 @@ const { fromYear, toYear } = parseArgs(process.argv.slice(2));
 const keys = weekKeys(fromYear, toYear);
 const failures: string[] = [];
 const poolSeeds = new Set<number>();
+const tourSeeds = new Set(TOUR_SETS.flatMap((tour) => [...tour.seeds]));
 
 // 方式v1の候補全体を確認する。週の走査でたまたま選ばれない候補も見落とさない。
 for (const par of CHALLENGE_PARS) {
+  if (CHALLENGE_SEED_POOLS_V1[par].length !== 128) {
+    failures.push(`PAR${par}の候補数が128ではない (${CHALLENGE_SEED_POOLS_V1[par].length})`);
+  }
   for (const seed of CHALLENGE_SEED_POOLS_V1[par]) {
     if (poolSeeds.has(seed)) failures.push(`候補シード${seed}がPAR間で重複している`);
     poolSeeds.add(seed);
+    if (tourSeeds.has(seed)) failures.push(`候補シード${seed}が固定ツアーでも使われている`);
     const generated = generateCourseDetailed(seed);
     if (generated.fallback) failures.push(`候補シード${seed}がfallbackになった`);
     if (generated.course.par !== par) {
@@ -81,6 +87,9 @@ for (const weekKey of keys) {
   }
   if (new Set(first.seeds).size !== first.seeds.length) {
     failures.push(`${weekKey}: シードが重複している (${first.seeds.join(', ')})`);
+  }
+  for (const seed of first.seeds) {
+    if (tourSeeds.has(seed)) failures.push(`${weekKey}: 固定ツアーとシード${seed}が重複している`);
   }
 
   // 日本時間の月曜0時の1ms前までは前週、0時ちょうどから新しい週になる。
@@ -106,8 +115,8 @@ for (const weekKey of keys) {
 }
 
 console.log(
-  `候補${poolSeeds.size}シードと、${fromYear}〜${toYear}年にかかる${keys.length}週を走査: ` +
-    '決定論 / PAR3・4・5 / シード重複なし / fallbackなし / 月曜0時境界',
+  `固定${tourSeeds.size}シード、候補${poolSeeds.size}シード、${fromYear}〜${toYear}年にかかる${keys.length}週を走査: ` +
+    '決定論 / PAR3・4・5 / シード重複なし / 固定ホールとの重複なし / fallbackなし / 月曜0時境界',
 );
 
 if (failures.length > 0) {
