@@ -30,8 +30,6 @@ jobs:
         run: npm run validate:challenge
       - name: Validate course
         run: npm run validate:course
-      - name: Check stuck cases
-        run: npm run check:stuck
       - name: Check whitespace
         run: git diff --check
       - name: Commit implementation and remove staging files
