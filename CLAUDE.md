@@ -43,6 +43,10 @@
 - **main への push で GitHub Pages に自動デプロイされる。** ブランチごとのプレビュー環境はない。実機で確認するにはマージが要る
   - ゲーム本体: `https://hanagemaru.github.io/putt/`
   - スワイプ計測: `https://hanagemaru.github.io/putt/swipe-test/`
+- **配信先は Cloudflare Workers（`putt.hanage.app`）へ移す予定。** 設定は入っているが、
+  リポジトリ変数 `CLOUDFLARE_DEPLOY` が `true` になるまで動かない。切り替えまでの本番は GitHub Pages。
+  ベースパスは配信先で変わる（Pages は `/putt/`、Cloudflare は `/`）ので、
+  ビルドは `npm run build` と `npm run build:cloudflare` を使い分ける。手順は `DEPLOY.md`
 
 ## やらないこと
 

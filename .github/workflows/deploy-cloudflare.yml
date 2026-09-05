@@ -1,0 +1,39 @@
+name: Deploy to Cloudflare Workers
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    # リポジトリ変数 CLOUDFLARE_DEPLOY を true にするまでスキップされる。
+    # 手順は DEPLOY.md を参照。
+    if: vars.CLOUDFLARE_DEPLOY == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # 独自ドメインの直下に置くので、ベースパスを / にしてビルドする
+      - run: npm run build:cloudflare
+      - name: Deploy to Cloudflare Workers
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # リポジトリ変数 PUTT_SMOKE_URL を設定すると、公開URLの生存確認を行う。
+      - name: Smoke test
+        if: vars.PUTT_SMOKE_URL != ''
+        run: |
+          node --input-type=module <<'NODE'
+          const url = process.env.PUTT_SMOKE_URL;
+          const response = await fetch(url);
+          if (!response.ok) throw new Error(`${url} returned ${response.status}`);
+          console.log(`Smoke test passed: ${url}`);
+          NODE
+        env:
+          PUTT_SMOKE_URL: ${{ vars.PUTT_SMOKE_URL }}

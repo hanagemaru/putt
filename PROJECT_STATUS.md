@@ -66,6 +66,14 @@ AdSense申請全体・ハブ側の準備は `hanage-hub` の正本に従う。
   - 長方形コース、生成器、コースマップ、ラウンド進行、保存・再開、カップ物理、ギブアップまで動作している
   - 開発用表示は `?debug=1` のときだけ露出する
 
+- **Cloudflare Workers への配信構成を追加済み・切り替えはまだ**
+  - `wrangler.jsonc` と `.github/workflows/deploy-cloudflare.yml` を追加した。
+    リポジトリ変数 `CLOUDFLARE_DEPLOY` が `true` になるまでスキップされる
+  - `vite.config.ts` のベースパスを環境変数で切り替えるようにした
+    （GitHub Pages は `/putt/`、Cloudflare は `PUTT_BASE=/`）
+  - 本番は当面 GitHub Pages のまま。手順とロールバックは `DEPLOY.md`
+  - 公開URLは `https://putt.hanage.app/` を予定。割り当て後に hanage-hub の `GAME_URLS.putt` を差し替える
+
 ## 今回記録した未確定改善
 
 詳細は `docs/PLAYTEST_BACKLOG.md` を正とする。
