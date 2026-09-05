@@ -3,6 +3,7 @@ import { TOUR_SETS, type TourDefinition } from './course/tour-holes';
 import { Round } from './round';
 import { RoundProgressStore } from './round-storage';
 
+const HOW_TO_URL = 'https://hanage.app/games/putt/how-to-play/';
 const PRIVACY_URL = 'https://hanage.app/privacy/';
 const params = new URLSearchParams(window.location.search);
 
@@ -52,67 +53,11 @@ function renderTopMenu(): void {
   secondary.className = 'menu-secondary';
   secondary.setAttribute('aria-label', '案内');
 
-  const howTo = document.createElement('button');
-  howTo.type = 'button';
-  howTo.className = 'menu-text-link';
-  howTo.textContent = '遊び方';
-  howTo.addEventListener('click', renderHowTo);
-
-  const privacy = document.createElement('a');
-  privacy.className = 'menu-text-link';
-  privacy.href = PRIVACY_URL;
-  privacy.target = '_blank';
-  privacy.rel = 'noopener noreferrer';
-  privacy.textContent = 'プライバシー';
+  const howTo = externalMenuLink('遊び方', HOW_TO_URL);
+  const privacy = externalMenuLink('プライバシー', PRIVACY_URL);
 
   secondary.append(howTo, privacy);
   panel.append(title, subtitle, actions, secondary);
-  root.append(panel);
-}
-
-function renderHowTo(): void {
-  const root = prepareMenuRoot();
-  root.replaceChildren();
-
-  const panel = document.createElement('main');
-  panel.className = 'menu-panel info-panel';
-
-  const heading = document.createElement('div');
-  heading.className = 'menu-heading';
-
-  const back = document.createElement('button');
-  back.type = 'button';
-  back.className = 'menu-back';
-  back.textContent = '← トップ';
-  back.addEventListener('click', renderTopMenu);
-
-  const title = document.createElement('h1');
-  title.className = 'course-title';
-  title.textContent = '遊び方';
-
-  heading.append(back, title);
-
-  const steps = document.createElement('ol');
-  steps.className = 'howto-list';
-  const items = [
-    ['コースを見る', '視点ボタンやコースマップで、傾斜とカップまでの形を確認します。'],
-    ['狙いを決める', 'ボール後方・低い視点では、左右スワイプで狙いを調整できます。'],
-    ['構える', '狙いが決まったら画面をタップして、パターを構えます。'],
-    ['打つ', 'パターを右へ引いてから、左へ振り抜いてボールを打ちます。'],
-    ['池・OB', '入った場合は1罰打を加え、直前のショット位置から打ち直します。'],
-  ] as const;
-
-  for (const [label, description] of items) {
-    const item = document.createElement('li');
-    const strong = document.createElement('strong');
-    strong.textContent = label;
-    const text = document.createElement('span');
-    text.textContent = description;
-    item.append(strong, text);
-    steps.append(item);
-  }
-
-  panel.append(heading, steps);
   root.append(panel);
 }
 
@@ -195,6 +140,16 @@ function menuButton(label: string, onClick: () => void): HTMLButtonElement {
   button.textContent = label;
   button.addEventListener('click', onClick);
   return button;
+}
+
+function externalMenuLink(label: string, href: string): HTMLAnchorElement {
+  const link = document.createElement('a');
+  link.className = 'menu-text-link';
+  link.href = href;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  link.textContent = label;
+  return link;
 }
 
 function navigateTo(nextParams: Record<string, string>): void {
@@ -372,51 +327,6 @@ function ensureMenuStyles(): void {
       font-size: 12px;
       font-weight: 700;
       color: #bdf0ad;
-    }
-    .info-panel {
-      padding-bottom: 12px;
-    }
-    .howto-list {
-      display: grid;
-      gap: 12px;
-      margin: 24px 0 0;
-      padding: 0;
-      list-style: none;
-      counter-reset: howto;
-    }
-    .howto-list li {
-      counter-increment: howto;
-      display: grid;
-      grid-template-columns: 30px 1fr;
-      column-gap: 10px;
-      row-gap: 3px;
-      border: 1px solid rgba(232, 240, 232, 0.24);
-      border-radius: 12px;
-      background: rgba(30, 45, 33, 0.72);
-      padding: 12px 14px;
-    }
-    .howto-list li::before {
-      content: counter(howto);
-      grid-row: 1 / span 2;
-      display: grid;
-      place-items: center;
-      align-self: start;
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      background: rgba(158, 222, 138, 0.16);
-      font-size: 13px;
-      font-weight: 800;
-      color: #bdf0ad;
-    }
-    .howto-list strong {
-      font-size: 14px;
-      color: #e8f0e8;
-    }
-    .howto-list span {
-      font-size: 12px;
-      line-height: 1.55;
-      color: #bcd0c0;
     }
   `;
   document.head.append(style);
