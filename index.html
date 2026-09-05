@@ -300,6 +300,87 @@
         display: none;
       }
 
+      /* プレイ中の出口。誤タップで離脱しないよう、押した後に確認画面を挟む */
+      #home-control {
+        position: fixed;
+        top: max(10px, env(safe-area-inset-top));
+        right: max(10px, env(safe-area-inset-right));
+        z-index: 34;
+        display: none;
+        font-family: system-ui, -apple-system, sans-serif;
+      }
+      #home-button {
+        appearance: none;
+        min-width: 62px;
+        min-height: 44px;
+        border: 1px solid rgba(232, 240, 232, 0.55);
+        border-radius: 999px;
+        background: rgba(12, 20, 14, 0.78);
+        color: #e8f0e8;
+        padding: 8px 13px;
+        font: inherit;
+        font-size: 12px;
+        font-weight: 700;
+        touch-action: manipulation;
+      }
+      #home-dialog {
+        position: fixed;
+        inset: 0;
+        z-index: 80;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        background: rgba(0, 0, 0, 0.58);
+        font-family: system-ui, -apple-system, sans-serif;
+        color: #e8f0e8;
+        touch-action: manipulation;
+      }
+      #home-dialog[hidden] {
+        display: none;
+      }
+      #home-dialog-card {
+        width: min(320px, calc(100vw - 40px));
+        padding: 20px;
+        border: 1px solid rgba(232, 240, 232, 0.55);
+        border-radius: 16px;
+        background: rgba(12, 20, 14, 0.96);
+        text-align: center;
+      }
+      #home-dialog-title {
+        font-size: 18px;
+        font-weight: 700;
+      }
+      #home-dialog-message {
+        margin-top: 10px;
+        color: #cfe0d2;
+        font-size: 13px;
+        line-height: 1.55;
+      }
+      #home-dialog-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-top: 18px;
+      }
+      .home-dialog-button {
+        appearance: none;
+        min-height: 44px;
+        border: 1px solid rgba(232, 240, 232, 0.55);
+        border-radius: 999px;
+        background: rgba(30, 45, 33, 0.92);
+        color: #e8f0e8;
+        padding: 9px 12px;
+        font: inherit;
+        font-size: 13px;
+        font-weight: 700;
+        touch-action: manipulation;
+      }
+      #home-confirm {
+        background: rgba(232, 240, 232, 0.92);
+        color: #162018;
+      }
+
       /*
        * スコア表示（spec §6）。ホール間はRESULTの俯瞰と軌跡を背景に残したままカードを重ね、
        * ラウンド終了時だけ9ホールの一覧表を出す。
@@ -392,23 +473,33 @@
       #score-hint[hidden] {
         display: none;
       }
-      #score-again {
+      #score-actions {
+        display: grid;
+        gap: 8px;
         margin-top: 14px;
         pointer-events: auto;
+      }
+      #score-actions[hidden],
+      .score-action[hidden] {
+        display: none;
+      }
+      .score-action {
         appearance: none;
         border: 1px solid rgba(232, 240, 232, 0.55);
         border-radius: 999px;
-        background: rgba(232, 240, 232, 0.92);
-        color: #162018;
-        min-height: 40px;
-        padding: 8px 22px;
+        background: rgba(30, 45, 33, 0.92);
+        color: #e8f0e8;
+        min-height: 44px;
+        padding: 9px 18px;
         font: inherit;
         font-size: 13px;
         font-weight: 700;
         touch-action: manipulation;
       }
-      #score-again[hidden] {
-        display: none;
+      #score-course,
+      #score-again {
+        background: rgba(232, 240, 232, 0.92);
+        color: #162018;
       }
 
       /* 横画面のときだけ出す「縦にしてください」オーバーレイ。縦画面専用（spec §0） */
@@ -475,6 +566,10 @@
       <button type="button" id="hud-adjust" style="display: none">強さ</button>
     </div>
 
+    <div id="home-control">
+      <button type="button" id="home-button" aria-label="トップへ戻る">トップ</button>
+    </div>
+
     <div id="tuning-panel" hidden>
       <div class="tuning-title">パターの強さ</div>
       <div class="tuning-value">
@@ -523,7 +618,28 @@
           <tbody id="score-rows"></tbody>
         </table>
         <div id="score-hint"></div>
-        <button type="button" id="score-again" hidden>もう一度</button>
+        <div id="score-actions" hidden>
+          <button type="button" class="score-action" id="score-course">コース選択へ</button>
+          <button type="button" class="score-action" id="score-again">もう一度</button>
+          <button type="button" class="score-action" id="score-home">トップへ</button>
+        </div>
+      </div>
+    </div>
+
+    <div
+      id="home-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="home-dialog-title"
+      hidden
+    >
+      <div id="home-dialog-card">
+        <div id="home-dialog-title">トップへ戻りますか？</div>
+        <div id="home-dialog-message"></div>
+        <div id="home-dialog-actions">
+          <button type="button" class="home-dialog-button" id="home-cancel">ゲームを続ける</button>
+          <button type="button" class="home-dialog-button" id="home-confirm">トップへ戻る</button>
+        </div>
       </div>
     </div>
 
