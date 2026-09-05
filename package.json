@@ -7,6 +7,8 @@
     "dev": "vite --host",
     "build": "tsc && vite build",
     "preview": "vite preview --host",
+    "build:cloudflare": "PUTT_BASE=/ npm run build",
+    "deploy": "wrangler deploy",
     "validate:course": "node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/validate-course.ts",
     "validate:challenge": "node --experimental-transform-types --import ./scripts/ts-resolve.mjs scripts/validate-challenge.ts",
     "check:stuck": "node --experimental-transform-types --import ./scripts/ts-resolve.mjs scripts/check-stuck.ts",
@@ -19,6 +21,7 @@
   "devDependencies": {
     "@types/three": "^0.169.0",
     "typescript": "^5.6.0",
-    "vite": "^5.4.0"
+    "vite": "^5.4.0",
+    "wrangler": "^4.129.0"
   }
 }

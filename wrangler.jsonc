@@ -1,0 +1,14 @@
+{
+  // Cloudflare Workers の Static Assets でゲームを配る。Workerのコードは持たない。
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "putt",
+  "compatibility_date": "2026-08-01",
+  "assets": {
+    // `PUTT_BASE=/ npm run build` の出力先
+    "directory": "./dist",
+    "not_found_handling": "none"
+  },
+  "observability": {
+    "enabled": true
+  }
+}
