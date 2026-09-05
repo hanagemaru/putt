@@ -5,15 +5,17 @@
 ## 最初に読む順番
 
 1. `PROJECT_STATUS.md` — 短い現在地、実機確認待ち、次の作業
-2. `CLAUDE.md` — 技術・設計上の恒久ルール。ChatGPT / Codexも同じルールに従う
-3. `TASKS.md` — 必要な場合だけ、実装履歴と長いタスク分割を確認
-4. `docs/spec.md` — 今回触る範囲の詳細仕様を確認
+2. `RELEASE_PLAN.md` — 初回公開までの工程、依存関係、完了条件
+3. `CLAUDE.md` — 技術・設計上の恒久ルール。ChatGPT / Codexも同じルールに従う
+4. `TASKS.md` — 必要な場合だけ、実装履歴と長いタスク分割を確認
+5. `docs/spec.md` — 今回触る範囲の詳細仕様を確認
 
 作業開始前に最新 `main` とオープン中のPRも確認すること。
 
 ## 各ファイルの役割
 
 - `PROJECT_STATUS.md`: 人・Claude・ChatGPT・Codex共通の「現在地の正本」
+- `RELEASE_PLAN.md`: 初回公開までの工程・依存関係・完了条件の正本
 - `CLAUDE.md`: 恒久的なプロジェクトルール
 - `AGENTS.md`: ChatGPT / Codexが迷わず同じ正本へ入るための案内
 - `TASKS.md`: 実装済み履歴、タスク分割、今後の大きな順序
@@ -33,6 +35,7 @@
 ## 作業終了時
 
 - 現在地・実機確認待ち・次の作業が変わったら `PROJECT_STATUS.md` を更新する
+- 残工程・依存関係・初回公開の完了条件が変わったら `RELEASE_PLAN.md` を更新する
 - ゲーム仕様・UXが変わったら `docs/spec.md` を同期する
 - タスク構成・履歴・実装順が変わったら `TASKS.md` を同期する
 - 恒久ルールが変わった場合だけ `CLAUDE.md` / `AGENTS.md` を更新する

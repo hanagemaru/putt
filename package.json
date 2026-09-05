@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview --host",
     "validate:course": "node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/validate-course.ts",
+    "validate:challenge": "node --experimental-transform-types --import ./scripts/ts-resolve.mjs scripts/validate-challenge.ts",
     "check:stuck": "node --experimental-transform-types --import ./scripts/ts-resolve.mjs scripts/check-stuck.ts",
     "survey:holes": "node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/survey-holes.ts"
   },
