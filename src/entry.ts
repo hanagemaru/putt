@@ -7,6 +7,8 @@ const params = new URLSearchParams(window.location.search);
 
 if (shouldStartGameDirectly(params)) {
   void import('./main');
+} else if (params.get('menu') === 'tour') {
+  renderTourSelection();
 } else {
   renderTopMenu();
 }
@@ -188,7 +190,9 @@ function ensureMenuStyles(): void {
     body.menu-active #giveup-control,
     body.menu-active #stroke-controls,
     body.menu-active #stroke-camera-controls,
-    body.menu-active #score-overlay {
+    body.menu-active #score-overlay,
+    body.menu-active #home-control,
+    body.menu-active #home-dialog {
       display: none !important;
     }
     #menu-root {

@@ -463,7 +463,7 @@ let lineMode: LineMode = 'SMOOTH';
 // --- 状態 -----------------------------------------------------------------
 
 /**
- * HOLE_OUT / ROUND_END はスコアを見せるだけの状態（spec §6）。
+ * HOLE_OUT / ROUND_END / PRACTICE_END は結果を見せるだけの状態（spec §6）。
  * カメラは RESULT の俯瞰のまま止め、DOM のカードを重ねる
  */
 type State =
@@ -473,7 +473,8 @@ type State =
   | 'CUP'
   | 'RESULT'
   | 'HOLE_OUT'
-  | 'ROUND_END';
+  | 'ROUND_END'
+  | 'PRACTICE_END';
 /** ADDRESS の中の視点。MAP はコース全体を真上から見渡すコースマップ */
 type AimView = 'AIM' | 'MAP' | ReadView;
 
@@ -504,6 +505,8 @@ let penaltyApplied = false;
 let lastResult = '';
 let notice = '';
 let lastSwing = '';
+/** トップへ戻る確認を出している間は、物理・カメラ遷移・入力状態を止める */
+let navigationPaused = false;
 
 /** FOLLOW のヨー・ピッチ。カメラは平行移動しない（§3） */
 let followYaw = 0;
@@ -537,7 +540,11 @@ function aimGuideShouldShow(): boolean {
 
 function trailShouldShow(): boolean {
   // ホールアウトのカードは俯瞰と軌跡を背景に残したまま重ねる（spec §6）
-  return (state === 'RESULT' || state === 'HOLE_OUT') && resultReady && trailPointCount > 1;
+  return (
+    (state === 'RESULT' || state === 'HOLE_OUT' || state === 'PRACTICE_END') &&
+    resultReady &&
+    trailPointCount > 1
+  );
 }
 
 function syncLineVisibility(): void {
@@ -947,15 +954,9 @@ function describeResult(): string {
   return `${head}${side}`;
 }
 
-/** RESULT でタップされた。次のパットへ */
+/** RESULT でタップされた。ホールが続いている場合だけ次のパットへ */
 function nextPutt(): void {
-  if (holeFinished()) {
-    // ツアーはホールアウトでカードへ移るので、ここへ来るのは練習モードだけ。
-    // 同じグリーン・同じカップでティーから打ち直す
-    ball.set(course.tee.x, course.tee.z);
-    shots = 0;
-    lastResult = '';
-  } else if (roller.status === 'water' || roller.status === 'outOfBounds') {
+  if (roller.status === 'water' || roller.status === 'outOfBounds') {
     // 打つ前の位置へ戻す。打数はそのまま
     ball.copy(shotStart);
   }
@@ -1018,6 +1019,11 @@ function holeOutPending(): boolean {
   return round !== null && holeFinished();
 }
 
+/** 練習で、この RESULT のあと終了カードへ移る場面か */
+function practiceEndPending(): boolean {
+  return round === null && holeFinished();
+}
+
 /** ホールアウト（spec §6）。俯瞰と軌跡を残したままスコアカードを重ねる */
 function enterHoleOut(): void {
   if (!round) return;
@@ -1055,6 +1061,14 @@ function enterRoundEnd(): void {
   roundStore?.clear();
   notice = '';
   showRoundEndCard(round);
+}
+
+/** 練習のカップイン後。結果を残したまま、打ち直すかトップへ戻るかを選ぶ */
+function enterPracticeEnd(): void {
+  if (round || !holeFinished()) return;
+  state = 'PRACTICE_END';
+  notice = '';
+  showPracticeEndCard();
 }
 
 /** 同じ9ホールを最初からやり直す */
@@ -1232,6 +1246,7 @@ function pointerEnd(e: PointerEvent): void {
     // ツアーのホールアウトは、待ちが明ける前にタップされたらカードを早出しする。
     // ここで打ち直しにしてしまうと、確定したはずのスコアを飛ばして同じホールが始まる
     if (holeOutPending()) enterHoleOut();
+    else if (practiceEndPending()) enterPracticeEnd();
     else nextPutt();
     return;
   }
@@ -1297,6 +1312,13 @@ renderer.setAnimationLoop((now) => {
   const dt = Math.min((now - lastTime) / 1000, 0.1);
   lastTime = now;
 
+  if (navigationPaused) {
+    updateHud();
+    renderFrame();
+    updateSmoothLines();
+    return;
+  }
+
   const transitioning = rig.update(dt);
 
   switch (state) {
@@ -1359,18 +1381,22 @@ renderer.setAnimationLoop((now) => {
           updateTrail();
           syncLineVisibility();
           rig.transition(resultPose(shotStart, ball, cup, visualGreen), G.result.transition);
-          // ツアーのホールアウトはカードへ移るので、次の一打の案内は出さない
-          notice = holeOutPending() ? '' : 'タップで次の一打';
+          // カップイン後は終了カードへ移るので、次の一打の案内は出さない
+          notice = holeOutPending() || practiceEndPending() ? '' : 'タップで次の一打';
         }
-      } else if (holeOutPending()) {
+      } else if (holeOutPending() || practiceEndPending()) {
         // 最後の一打の軌跡を見せてからカードを重ねる
         cardElapsed += dt;
-        if (cardElapsed >= G.round.cardDelay) enterHoleOut();
+        if (cardElapsed >= G.round.cardDelay) {
+          if (holeOutPending()) enterHoleOut();
+          else enterPracticeEnd();
+        }
       }
       break;
 
     case 'HOLE_OUT':
     case 'ROUND_END':
+    case 'PRACTICE_END':
       // カメラは俯瞰のまま。スコア表示はDOM側なので、ここでは何もしない
       break;
   }
@@ -1417,6 +1443,63 @@ const strokeBack = document.getElementById('stroke-back') as HTMLButtonElement;
 const strokeCameraControls = document.getElementById('stroke-camera-controls')!;
 const strokeCupCheck = document.getElementById('stroke-cup-check') as HTMLButtonElement;
 
+const homeControl = document.getElementById('home-control') as HTMLDivElement;
+const homeButton = document.getElementById('home-button') as HTMLButtonElement;
+const homeDialog = document.getElementById('home-dialog') as HTMLDivElement;
+const homeDialogMessage = document.getElementById('home-dialog-message')!;
+const homeCancel = document.getElementById('home-cancel') as HTMLButtonElement;
+const homeConfirm = document.getElementById('home-confirm') as HTMLButtonElement;
+
+homeControl.style.display = 'block';
+homeButton.addEventListener('click', openHomeDialog);
+homeCancel.addEventListener('click', closeHomeDialog);
+homeConfirm.addEventListener('click', () => navigateToMenu());
+homeDialog.addEventListener('click', (event) => {
+  if (event.target === homeDialog) closeHomeDialog();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && navigationPaused) closeHomeDialog();
+});
+
+function navigateToMenu(target?: 'tour'): void {
+  const url = new URL(location.href);
+  const search = new URLSearchParams();
+  if (target === 'tour') search.set('menu', 'tour');
+  url.search = search.toString();
+  url.hash = '';
+  location.assign(url.toString());
+}
+
+function openHomeDialog(): void {
+  if (navigationPaused) return;
+  if (state === 'ROUND_END' || state === 'PRACTICE_END') {
+    navigateToMenu();
+    return;
+  }
+
+  if (mode === 'tour') {
+    homeDialogMessage.textContent =
+      state === 'HOLE_OUT'
+        ? 'トップへ戻りますか？ ここまでの進行は保存されています。'
+        : 'トップへ戻りますか？ このホールの途中経過は保存されません。次回はこのホールの最初から再開します。';
+  } else {
+    homeDialogMessage.textContent =
+      'トップへ戻りますか？ 練習中の打数やボール位置は保存されません。';
+  }
+
+  navigationPaused = true;
+  homeDialog.hidden = false;
+  homeCancel.focus({ preventScroll: true });
+}
+
+function closeHomeDialog(): void {
+  if (!navigationPaused) return;
+  homeDialog.hidden = true;
+  navigationPaused = false;
+  lastTime = performance.now();
+  homeButton.focus({ preventScroll: true });
+}
+
 /**
  * スコア表示（spec §6）。ホール間は俯瞰と軌跡の上にカードを重ね、
  * ラウンド終了時だけ全ホールの一覧表に差し替える。
@@ -1429,12 +1512,24 @@ const scoreSub = document.getElementById('score-sub')!;
 const scoreTable = document.getElementById('score-table') as HTMLTableElement;
 const scoreRows = document.getElementById('score-rows')!;
 const scoreHint = document.getElementById('score-hint') as HTMLDivElement;
+const scoreActions = document.getElementById('score-actions') as HTMLDivElement;
+const scoreCourse = document.getElementById('score-course') as HTMLButtonElement;
 const scoreAgain = document.getElementById('score-again') as HTMLButtonElement;
+const scoreHome = document.getElementById('score-home') as HTMLButtonElement;
 
-scoreAgain.addEventListener('click', restartRound);
+scoreCourse.addEventListener('click', () => navigateToMenu('tour'));
+scoreAgain.addEventListener('click', () => {
+  if (state === 'ROUND_END') restartRound();
+  else if (state === 'PRACTICE_END') {
+    hideScoreOverlay();
+    restartPracticeHole();
+  }
+});
+scoreHome.addEventListener('click', () => navigateToMenu());
 
 function hideScoreOverlay(): void {
   scoreOverlay.hidden = true;
+  scoreActions.hidden = true;
 }
 
 /** 打数とパー差の見出し。「3 打 ±0」 */
@@ -1454,7 +1549,7 @@ function showHoleOutCard(current: Round): void {
   scoreRows.replaceChildren();
   scoreHint.hidden = false;
   scoreHint.textContent = current.hasNext ? 'タップで次のホールへ' : 'タップで結果へ';
-  scoreAgain.hidden = true;
+  scoreActions.hidden = true;
   scoreOverlay.hidden = false;
 }
 
@@ -1472,7 +1567,25 @@ function showRoundEndCard(current: Round): void {
   );
   scoreTable.hidden = false;
   scoreHint.hidden = true;
+  scoreCourse.hidden = false;
   scoreAgain.hidden = false;
+  scoreHome.hidden = false;
+  scoreActions.hidden = false;
+  scoreOverlay.hidden = false;
+}
+
+/** 練習のカップイン後。結果と、打ち直すかトップへ戻るかの選択を出す */
+function showPracticeEndCard(): void {
+  scoreTitle.textContent = '練習終了';
+  scoreHeadline.textContent = strokesHeadline(shots, course.par);
+  scoreSub.textContent = `PAR ${course.par}`;
+  scoreTable.hidden = true;
+  scoreRows.replaceChildren();
+  scoreHint.hidden = true;
+  scoreCourse.hidden = true;
+  scoreAgain.hidden = false;
+  scoreHome.hidden = false;
+  scoreActions.hidden = false;
   scoreOverlay.hidden = false;
 }
 
