@@ -277,6 +277,16 @@ function ensureBestScoreStyles(): void {
   document.head.append(style);
 }
 
+
+/**
+ * メニューの見た目はプレイ画面のドット感（config.pixel）に合わせる。
+ * 角丸・ぼかし影・アンチエイリアスの効いた装飾は使わず、
+ * 等幅フォント・太い枠・段差のはっきりした影・コースと同じ色だけで作る。
+ * 色は config のコース色に対応させている（fairway 0x74cf5c / rough 0x4f9844 /
+ * deepRough 0x3a7332 / ob 0x27431f / flag 0xd94f3d / trail 0xffe66d / ball 0xf6f8f4）。
+ * Webフォントは読み込まない（外部リクエストを増やさない）。日本語は端末のゴシックのまま、
+ * 等幅指定と広い字間でドットUI寄りに見せる
+ */
 function ensureMenuStyles(): void {
   if (document.getElementById('menu-styles')) return;
 
@@ -284,8 +294,8 @@ function ensureMenuStyles(): void {
   style.id = 'menu-styles';
   style.textContent = `
     body.menu-active {
-      background: #101410;
-      color: #e8f0e8;
+      background: #0f170f;
+      color: #eef7ec;
     }
     body.menu-active #app,
     body.menu-active #stroke,
@@ -309,77 +319,128 @@ function ensureMenuStyles(): void {
       align-items: center;
       justify-content: center;
       overflow-y: auto;
-      padding: max(24px, env(safe-area-inset-top)) 18px max(24px, env(safe-area-inset-bottom));
-      background: linear-gradient(180deg, #18231a 0%, #0d110e 100%);
-      font-family: system-ui, -apple-system, sans-serif;
+      padding: max(24px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+      /*
+       * プレイ画面は色数を段に丸めている（config.pixel.colorLevels）。
+       * メニューの背景も滑らかなグラデーションにせず、はっきりした帯に区切って
+       * その上へ8pxの市松を重ね、ドット絵の空と同じ作りにする
+       */
+      background-color: #1b2c1d;
+      background-image:
+        linear-gradient(180deg, #2f4a30 0 18%, #27431f 18% 38%, #1f3a1e 38% 58%, #19301a 58% 78%, #132515 78% 100%),
+        linear-gradient(45deg, rgba(116, 207, 92, 0.05) 25%, transparent 25%, transparent 75%, rgba(116, 207, 92, 0.05) 75%),
+        linear-gradient(45deg, rgba(116, 207, 92, 0.05) 25%, transparent 25%, transparent 75%, rgba(116, 207, 92, 0.05) 75%);
+      background-size: 100% 100%, 8px 8px, 8px 8px;
+      background-position: 0 0, 0 0, 4px 4px;
+      /* 等幅＋広い字間でドットUIの並びに寄せる。日本語は端末のゴシックへ落ちる */
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace;
+      letter-spacing: 0.08em;
+      image-rendering: pixelated;
       touch-action: manipulation;
     }
     .menu-panel {
       width: min(360px, 100%);
+      border: 3px solid #74cf5c;
+      /* 二重の枠でドット絵のウィンドウにする。ぼかさない */
+      box-shadow: 0 0 0 3px #0d140d, 8px 8px 0 rgba(0, 0, 0, 0.45);
+      background: rgba(15, 23, 15, 0.86);
+      padding: 22px 16px 24px;
     }
     .menu-title {
-      font-size: clamp(48px, 16vw, 72px);
+      font-size: clamp(46px, 15vw, 66px);
       line-height: 1;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.16em;
+      text-indent: 0.16em;
       text-align: center;
+      text-transform: uppercase;
       color: #9ede8a;
-      text-shadow: 0 3px 0 rgba(0, 0, 0, 0.28);
+      /* ぼかしのない段差だけで縁取りと落ち影を作る */
+      text-shadow:
+        3px 0 #0d140d,
+        -3px 0 #0d140d,
+        0 3px #0d140d,
+        0 -3px #0d140d,
+        6px 6px 0 #27431f;
     }
     .menu-subtitle {
-      margin-top: 14px;
+      margin-top: 18px;
       text-align: center;
-      font-size: 13px;
+      font-size: 12px;
+      letter-spacing: 0.18em;
       color: #bcd0c0;
     }
     .menu-actions,
     .course-list {
       display: grid;
-      gap: 12px;
-      margin-top: 32px;
+      gap: 14px;
+      margin-top: 28px;
     }
     .menu-button,
     .course-button,
     .menu-back,
     .menu-text-link {
       appearance: none;
-      color: #e8f0e8;
-      font: inherit;
+      border-radius: 0;
+      color: #eef7ec;
+      font-family: inherit;
+      letter-spacing: inherit;
       touch-action: manipulation;
     }
+    /*
+     * ドット絵のボタン。上と左を明るく、下と右を暗くしたベベルで盛り上げ、
+     * 押したぶんだけ下の影が消えて沈む
+     */
     .menu-button,
     .course-button,
     .menu-back {
-      border: 1px solid rgba(232, 240, 232, 0.46);
+      border-style: solid;
+      border-width: 3px;
+      border-color: #9ede8a #1b3318 #1b3318 #9ede8a;
+      box-shadow: 0 4px 0 #0d140d;
     }
     .menu-button {
-      min-height: 58px;
-      border-radius: 14px;
-      background: rgba(42, 62, 45, 0.9);
-      padding: 14px 18px;
-      font-size: 17px;
+      min-height: 60px;
+      background: #3a7332;
+      padding: 14px 16px;
+      font-size: 16px;
       font-weight: 700;
     }
     .menu-button:active,
     .course-button:active,
-    .menu-back:active,
+    .menu-back:active {
+      transform: translateY(4px);
+      border-color: #1b3318 #9ede8a #9ede8a #1b3318;
+      box-shadow: none;
+    }
     .menu-text-link:active {
-      transform: translateY(1px);
+      transform: translateY(2px);
+    }
+    .menu-button:focus-visible,
+    .course-button:focus-visible,
+    .menu-back:focus-visible,
+    .menu-text-link:focus-visible {
+      outline: 3px solid #ffe66d;
+      outline-offset: 2px;
     }
     .menu-secondary {
       display: flex;
       justify-content: center;
-      gap: 22px;
-      margin-top: 22px;
+      gap: 20px;
+      margin-top: 24px;
     }
     .menu-text-link {
       min-height: 44px;
       border: 0;
       background: transparent;
       padding: 12px 2px;
-      font-size: 13px;
+      font-size: 12px;
       line-height: 20px;
-      text-decoration: underline;
-      text-underline-offset: 3px;
+      /* 下線もドットに合わせて、4px刻みの破線を2pxの高さで敷く */
+      text-decoration: none;
+      background-image: repeating-linear-gradient(90deg, rgba(188, 208, 192, 0.7) 0 4px, transparent 4px 8px);
+      background-size: 100% 2px;
+      background-repeat: no-repeat;
+      background-position: 0 100%;
       color: #bcd0c0;
       cursor: pointer;
     }
@@ -390,47 +451,58 @@ function ensureMenuStyles(): void {
     .menu-back {
       justify-self: start;
       min-height: 44px;
-      border-radius: 999px;
-      background: rgba(12, 20, 14, 0.72);
+      background: #27431f;
       padding: 9px 14px;
-      font-size: 13px;
+      font-size: 12px;
+      font-weight: 700;
     }
     .course-title {
-      font-size: 30px;
+      font-size: 24px;
+      letter-spacing: 0.12em;
       color: #9ede8a;
+      text-shadow: 3px 3px 0 #0d140d;
     }
     .course-list {
-      margin-top: 22px;
+      margin-top: 20px;
     }
     .course-button {
       display: flex;
       min-height: 88px;
       flex-direction: column;
       align-items: flex-start;
-      border-radius: 14px;
-      background: rgba(30, 45, 33, 0.92);
-      padding: 14px 16px;
+      background: #27431f;
+      padding: 13px 14px;
       text-align: left;
     }
     .course-name {
-      font-size: 18px;
+      font-size: 17px;
       font-weight: 700;
+      color: #9ede8a;
     }
     .course-description {
-      margin-top: 5px;
-      font-size: 12px;
-      line-height: 1.45;
+      margin-top: 7px;
+      font-size: 11px;
+      line-height: 1.6;
+      letter-spacing: 0.06em;
       color: #bcd0c0;
     }
+    /* 自己ベストと再開はドット絵のラベル。角丸にせず枠で囲む */
     .course-best,
     .course-resume {
-      margin-top: 9px;
-      border-radius: 999px;
-      background: rgba(158, 222, 138, 0.14);
-      padding: 4px 8px;
-      font-size: 12px;
+      margin-top: 10px;
+      border: 2px solid #0d140d;
+      padding: 3px 7px;
+      font-size: 11px;
       font-weight: 700;
-      color: #bdf0ad;
+      letter-spacing: 0.1em;
+    }
+    .course-best {
+      background: #ffe66d;
+      color: #16210f;
+    }
+    .course-resume {
+      background: #d94f3d;
+      color: #fff2ee;
     }
   `;
   document.head.append(style);
