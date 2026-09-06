@@ -21,6 +21,7 @@ import {
   defaultShadeParams,
 } from './green';
 import { Roller } from './physics';
+import { audio } from './audio';
 import { surfaceAt } from './course/course-map';
 import { PROTOTYPE_COURSE } from './course/prototype-course';
 import { approachDirection, generateCourse } from './course/course-generate';
@@ -833,6 +834,9 @@ function launch(speedMs: number, launchAngle: number): void {
   penaltyApplied = false;
   cupViewUsed = false;
   roller.launch(ball.x, ball.y, speedMs, direction);
+  audio.impact(speedMs);
+  flagstickHitsHeard = 0;
+  lipOutsHeard = 0;
   shots++;
   enterFollow();
 }
@@ -1036,6 +1040,7 @@ function enterHoleOut(): void {
   if (round.hasNext) roundStore?.save(round.snapshot());
   else roundStore?.clear();
   notice = '';
+  audio.holeOutJingle();
   showHoleOutCard(round);
 }
 
@@ -1060,6 +1065,7 @@ function enterRoundEnd(): void {
   // 終わったラウンドを再開してしまわないように片付ける
   roundStore?.clear();
   notice = '';
+  audio.roundEndJingle();
   showRoundEndCard(round);
 }
 
@@ -1068,6 +1074,7 @@ function enterPracticeEnd(): void {
   if (round || !holeFinished()) return;
   state = 'PRACTICE_END';
   notice = '';
+  audio.roundEndJingle();
   showPracticeEndCard();
 }
 
@@ -1231,6 +1238,7 @@ function pointerEnd(e: PointerEvent): void {
     if (!isTap) return;
     // 「進む＝タップ」で統一する。読み用の4視点はどれからでもそのままSTROKEへ入れる。
     // マップだけは読み視点ではなく一時的な参照画面なので、タップで閉じて直前の視点へ戻す。
+    audio.tap();
     if (aimView === 'MAP') closeMap();
     else enterStroke();
     return;
@@ -1238,11 +1246,15 @@ function pointerEnd(e: PointerEvent): void {
   if (state === 'STROKE') {
     // 「進む＝タップ」で統一する。狙いを見る視点からはタップで手元へ戻る。
     // 真下視点のスワイプは stroke-view.ts が受け持つので、ここでは何もしない
-    if (isTap && strokeCameraView === 'CUP') returnToStrokeView();
+    if (isTap && strokeCameraView === 'CUP') {
+      audio.tap();
+      returnToStrokeView();
+    }
     return;
   }
   if (state === 'RESULT') {
     if (!isTap || !resultReady) return;
+    audio.tap();
     // ツアーのホールアウトは、待ちが明ける前にタップされたらカードを早出しする。
     // ここで打ち直しにしてしまうと、確定したはずのスコアを飛ばして同じホールが始まる
     if (holeOutPending()) enterHoleOut();
@@ -1252,7 +1264,10 @@ function pointerEnd(e: PointerEvent): void {
   }
   if (state === 'HOLE_OUT') {
     // カードは指を通す。「進む＝タップ」の規則どおり、画面のどこでも次へ進める
-    if (isTap) advanceFromHoleOut();
+    if (isTap) {
+      audio.tap();
+      advanceFromHoleOut();
+    }
     return;
   }
   // ROUND_END は「もう一度」ボタンだけ。誤タップでラウンドをやり直させない
@@ -1262,11 +1277,43 @@ surface.addEventListener('pointercancel', pointerEnd);
 
 // --- 毎フレーム -----------------------------------------------------------
 
+/** 音を鳴らし終えた回数。増えた分だけ鳴らす（1打ごとに launch でリセットする） */
+let flagstickHitsHeard = 0;
+let lipOutsHeard = 0;
+
 function stepPhysics(dt: number): void {
+  const wasRolling = roller.status === 'rolling';
   roller.advance(dt);
   ball.set(roller.x, roller.z);
   ballMesh.visible = roller.status !== 'holed';
   updateBallMesh();
+  updateRollAudio(wasRolling);
+}
+
+/**
+ * 転がっている間の音（§2 の判定に相乗り）。
+ * 竿・リップアウトは回数の増分で拾い、地面の音は現在地の種別と速度で毎フレーム更新する
+ */
+function updateRollAudio(wasRolling: boolean): void {
+  if (roller.flagstickHits > flagstickHitsHeard) {
+    flagstickHitsHeard = roller.flagstickHits;
+    audio.flagstick();
+  }
+  if (roller.lipOuts > lipOutsHeard) {
+    lipOutsHeard = roller.lipOuts;
+    audio.lipOut();
+  }
+
+  if (roller.status === 'rolling') {
+    audio.setRoll(green.surfaceAt(roller.x, roller.z), roller.speed);
+    return;
+  }
+
+  audio.stopRoll();
+  if (!wasRolling) return;
+  if (roller.status === 'holed') audio.holed();
+  else if (roller.status === 'water') audio.water();
+  else if (roller.status === 'outOfBounds') audio.outOfBounds();
 }
 
 /**
@@ -1313,6 +1360,8 @@ renderer.setAnimationLoop((now) => {
   lastTime = now;
 
   if (navigationPaused) {
+    // 確認画面の間は物理も止まる。転がり音だけ鳴り続けないようにする
+    audio.stopRoll();
     updateHud();
     renderFrame();
     updateSmoothLines();
@@ -1449,8 +1498,14 @@ const homeDialog = document.getElementById('home-dialog') as HTMLDivElement;
 const homeDialogMessage = document.getElementById('home-dialog-message')!;
 const homeCancel = document.getElementById('home-cancel') as HTMLButtonElement;
 const homeConfirm = document.getElementById('home-confirm') as HTMLButtonElement;
+const soundToggle = document.getElementById('sound-toggle') as HTMLButtonElement;
 
-homeControl.style.display = 'block';
+homeControl.style.display = 'flex';
+updateSoundToggleLabel();
+soundToggle.addEventListener('click', () => {
+  audio.toggleMuted();
+  updateSoundToggleLabel();
+});
 homeButton.addEventListener('click', openHomeDialog);
 homeCancel.addEventListener('click', closeHomeDialog);
 homeConfirm.addEventListener('click', () => navigateToMenu());
@@ -1460,6 +1515,12 @@ homeDialog.addEventListener('click', (event) => {
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && navigationPaused) closeHomeDialog();
 });
+
+/** 効果音のON/OFF表示を現在の設定へ揃える */
+function updateSoundToggleLabel(): void {
+  soundToggle.textContent = audio.enabled ? '音 ON' : '音 OFF';
+  soundToggle.setAttribute('aria-pressed', audio.enabled ? 'true' : 'false');
+}
 
 function navigateToMenu(target?: 'tour'): void {
   const url = new URL(location.href);

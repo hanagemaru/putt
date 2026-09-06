@@ -1,3 +1,4 @@
+import { audio } from './audio';
 import { CONFIG } from './config';
 import { TOUR_SETS, tourById, type TourDefinition } from './course/tour-holes';
 import { TourBestScoreStore, type BestScoreUpdate } from './best-score-storage';
@@ -7,6 +8,9 @@ import { RoundProgressStore } from './round-storage';
 const HOW_TO_URL = 'https://hanage.app/games/putt/how-to-play/';
 const PRIVACY_URL = 'https://hanage.app/privacy/';
 const params = new URLSearchParams(window.location.search);
+
+// 効果音の解錠とボタン音は1か所で配線する（トップメニューもゲーム本体も同じ）
+audio.install();
 
 if (shouldStartGameDirectly(params)) {
   const tour = directTourFromParams(params);
@@ -130,7 +134,7 @@ function renderTopMenu(): void {
   const howTo = externalMenuLink('遊び方', HOW_TO_URL);
   const privacy = externalMenuLink('プライバシー', PRIVACY_URL);
 
-  secondary.append(howTo, privacy);
+  secondary.append(soundToggleButton(), howTo, privacy);
   panel.append(title, subtitle, actions, secondary);
   root.append(panel);
 }
@@ -219,6 +223,23 @@ function resumeLabel(tour: TourDefinition): string | null {
   if (!round.restore(saved) || round.holeNumber <= 1) return null;
 
   return `HOLE ${round.holeNumber}から再開`;
+}
+
+/** 効果音のON/OFF。設定は localStorage に残るのでゲーム本体にも引き継がれる */
+function soundToggleButton(): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'menu-text-link';
+  const label = (): void => {
+    button.textContent = audio.enabled ? '音 ON' : '音 OFF';
+    button.setAttribute('aria-pressed', audio.enabled ? 'true' : 'false');
+  };
+  label();
+  button.addEventListener('click', () => {
+    audio.toggleMuted();
+    label();
+  });
+  return button;
 }
 
 function menuButton(label: string, onClick: () => void): HTMLButtonElement {

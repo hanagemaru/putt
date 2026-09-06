@@ -1,0 +1,417 @@
+// 効果音。音源ファイルは持たず、WebAudio の発振器とノイズだけで合成する。
+// 数値は全て CONFIG.audio に置く（ここにマジックナンバーを書かない）。
+//
+// スマホのブラウザは最初のユーザー操作までAudioContextを動かさないので、
+// 最初の pointerdown / click / keydown で解錠する。ミュートは localStorage に残す。
+import { CONFIG } from './config';
+import type { SurfaceType } from './course/course-types';
+
+const A = CONFIG.audio;
+
+/** ミュート設定の保存先。localStorage が使えない環境でも落とさない */
+const STORAGE_KEY = 'putt-sound-muted';
+
+/** 転がり音のノイズ源に使う長さ [s]。継ぎ目が気にならない程度にとってある */
+const NOISE_SECONDS = 2;
+
+type AudioContextCtor = typeof AudioContext;
+
+function audioContextCtor(): AudioContextCtor | null {
+  const w = window as unknown as {
+    AudioContext?: AudioContextCtor;
+    webkitAudioContext?: AudioContextCtor;
+  };
+  return w.AudioContext ?? w.webkitAudioContext ?? null;
+}
+
+function loadMuted(): boolean {
+  try {
+    return window.localStorage.getItem(STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function saveMuted(muted: boolean): void {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, muted ? '1' : '0');
+  } catch {
+    // 保存できないだけなので無視する（音は鳴る）
+  }
+}
+
+interface ToneOptions {
+  freq: number;
+  /** 終わりの周波数。省略時は freq のまま */
+  endFreq?: number;
+  gain: number;
+  decay: number;
+  /** 呼び出しから鳴りはじめるまで [s] */
+  delay?: number;
+  type?: OscillatorType;
+}
+
+interface NoiseOptions {
+  gain: number;
+  decay: number;
+  freq: number;
+  endFreq?: number;
+  q?: number;
+  delay?: number;
+  filter?: BiquadFilterType;
+}
+
+/** 転がり音の地面別パラメータ。芝以外（池・OB）は転がらないので鳴らさない */
+function rollVoice(surface: SurfaceType | null) {
+  if (surface === 'green') return A.roll.green;
+  if (surface === 'rough') return A.roll.rough;
+  if (surface === 'deepRough') return A.roll.deepRough;
+  return null;
+}
+
+class GameAudio {
+  private ctx: AudioContext | null = null;
+  private master: GainNode | null = null;
+  private noiseBuffer: AudioBuffer | null = null;
+
+  /** 転がり音。1本のノイズ源を鳴らしっぱなしにして、音量と帯域だけ動かす */
+  private rollGain: GainNode | null = null;
+  private rollFilter: BiquadFilterNode | null = null;
+
+  private muted = loadMuted();
+  private unlockBound = false;
+
+  /** 効果音が有効か（＝ミュートしていないか） */
+  get enabled(): boolean {
+    return !this.muted;
+  }
+
+  /**
+   * 最初のユーザー操作で鳴らせるようにする。何度呼んでもよい。
+   * 音を鳴らす関数の入口からも呼ぶので、解錠を取りこぼさない
+   */
+  unlock(): void {
+    this.ensureContext();
+    if (this.ctx && this.ctx.state === 'suspended') void this.ctx.resume();
+  }
+
+  /** ページ内のボタンとタップで自動的に解錠する。エントリから一度だけ呼ぶ */
+  install(): void {
+    if (this.unlockBound) return;
+    this.unlockBound = true;
+    const unlock = (): void => this.unlock();
+    document.addEventListener('pointerdown', unlock, { capture: true, passive: true });
+    document.addEventListener('keydown', unlock, { capture: true });
+    // ボタンの操作音は1か所でまとめて鳴らす。画面ごとに配線しない
+    document.addEventListener(
+      'click',
+      (event) => {
+        const target = event.target as Element | null;
+        if (target?.closest('button')) this.button();
+      },
+      { capture: true },
+    );
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) this.stopRoll();
+    });
+  }
+
+  setMuted(muted: boolean): void {
+    this.muted = muted;
+    saveMuted(muted);
+    if (!this.ctx || !this.master) return;
+    const t = this.ctx.currentTime;
+    this.master.gain.cancelScheduledValues(t);
+    this.master.gain.setTargetAtTime(muted ? 0 : A.masterGain, t, A.muteFade);
+    if (muted) this.stopRoll();
+  }
+
+  /** ミュートを切り替えて、切り替え後の状態（true = 鳴る）を返す */
+  toggleMuted(): boolean {
+    this.unlock();
+    this.setMuted(!this.muted);
+    return !this.muted;
+  }
+
+  // --- 個別の音 -----------------------------------------------------------
+
+  /** ボタンを押した */
+  button(): void {
+    this.tone({ freq: A.ui.buttonFreq, gain: A.ui.buttonGain, decay: A.ui.buttonDecay });
+  }
+
+  /** 画面タップで次へ進んだ */
+  tap(): void {
+    this.tone({ freq: A.ui.tapFreq, gain: A.ui.tapGain, decay: A.ui.tapDecay });
+  }
+
+  /** インパクト。初速 [m/s] が速いほど大きく鳴る */
+  impact(speedMs: number): void {
+    const ratio = Math.min(1, Math.max(0, speedMs) / A.impact.fullSpeed);
+    const scale = A.impact.minGainRatio + (1 - A.impact.minGainRatio) * ratio;
+    this.tone({
+      freq: A.impact.startFreq,
+      endFreq: A.impact.endFreq,
+      gain: A.impact.gain * scale,
+      decay: A.impact.decay,
+      type: 'triangle',
+    });
+    this.noise({
+      gain: A.impact.noiseGain * scale,
+      decay: A.impact.noiseDecay,
+      freq: A.impact.noiseFreq,
+      filter: 'highpass',
+    });
+  }
+
+  /** 旗竿に当たった */
+  flagstick(): void {
+    this.tone({ freq: A.flagstick.freq, gain: A.flagstick.gain, decay: A.flagstick.decay });
+    this.tone({
+      freq: A.flagstick.freq * A.flagstick.overtoneRatio,
+      gain: A.flagstick.gain * 0.5,
+      decay: A.flagstick.decay * 0.6,
+    });
+  }
+
+  /** カップの縁をなめて出ていった */
+  lipOut(): void {
+    this.noise({
+      gain: A.lipOut.gain,
+      decay: A.lipOut.decay,
+      freq: A.lipOut.freq,
+      q: A.lipOut.q,
+      filter: 'bandpass',
+    });
+  }
+
+  /** カップイン */
+  holed(): void {
+    this.tone({
+      freq: A.holed.startFreq,
+      endFreq: A.holed.endFreq,
+      gain: A.holed.gain,
+      decay: A.holed.decay,
+      type: 'triangle',
+    });
+    this.tone({
+      freq: A.holed.startFreq * A.holed.bouncePitch,
+      endFreq: A.holed.endFreq,
+      gain: A.holed.bounceGain,
+      decay: A.holed.decay * 0.8,
+      delay: A.holed.bounceDelay,
+      type: 'triangle',
+    });
+    this.tone({
+      freq: A.holed.chimeFreq,
+      gain: A.holed.chimeGain,
+      decay: A.holed.chimeDecay,
+      delay: A.holed.chimeDelay,
+    });
+    this.tone({
+      freq: A.holed.chimeFreq * A.holed.chimeFifth,
+      gain: A.holed.chimeGain * 0.7,
+      decay: A.holed.chimeDecay,
+      delay: A.holed.chimeDelay,
+    });
+  }
+
+  /** 池へ入った */
+  water(): void {
+    this.noise({
+      gain: A.water.noiseGain,
+      decay: A.water.noiseDecay,
+      freq: A.water.startFreq,
+      endFreq: A.water.endFreq,
+      filter: 'lowpass',
+    });
+    this.tone({
+      freq: A.water.toneStartFreq,
+      endFreq: A.water.toneEndFreq,
+      gain: A.water.toneGain,
+      decay: A.water.toneDecay,
+      type: 'sine',
+    });
+  }
+
+  /** OBへ出た */
+  outOfBounds(): void {
+    this.tone({
+      freq: A.ob.firstFreq,
+      gain: A.ob.gain,
+      decay: A.ob.decay,
+      type: 'square',
+    });
+    this.tone({
+      freq: A.ob.secondFreq,
+      gain: A.ob.gain,
+      decay: A.ob.decay,
+      delay: A.ob.interval,
+      type: 'square',
+    });
+  }
+
+  /** ホールアウトのカード */
+  holeOutJingle(): void {
+    this.jingle(A.jingle.holeOut);
+  }
+
+  /** ラウンド終了・練習終了のカード */
+  roundEndJingle(): void {
+    this.jingle(A.jingle.roundEnd);
+  }
+
+  // --- 転がり音 -----------------------------------------------------------
+
+  /**
+   * 転がっている間、毎フレーム呼ぶ。地面と速度で音量と音色が変わる。
+   * ラフでは「ガサガサ」と鳴り、芝の上ではほとんど聞こえない
+   */
+  setRoll(surface: SurfaceType | null, speedMs: number): void {
+    const voice = rollVoice(surface);
+    if (!voice || this.muted) {
+      this.stopRoll();
+      return;
+    }
+    if (!this.ensureRoll()) return;
+    const ctx = this.ctx!;
+    const ratio = Math.min(1, Math.max(0, speedMs) / A.roll.fullSpeed);
+    const t = ctx.currentTime;
+    this.rollGain!.gain.setTargetAtTime(voice.gain * ratio, t, A.roll.tau);
+    this.rollFilter!.frequency.setTargetAtTime(voice.freq, t, A.roll.tau);
+    this.rollFilter!.Q.value = voice.q;
+  }
+
+  /** 転がり音を止める。ボールが止まった・画面を離れたときに呼ぶ */
+  stopRoll(): void {
+    if (!this.ctx || !this.rollGain) return;
+    this.rollGain.gain.setTargetAtTime(0, this.ctx.currentTime, A.roll.tau);
+  }
+
+  // --- 合成の下ごしらえ ---------------------------------------------------
+
+  private jingle(notes: readonly number[]): void {
+    notes.forEach((ratio, i) => {
+      this.tone({
+        freq: A.jingle.baseFreq * ratio,
+        gain: A.jingle.gain,
+        decay: A.jingle.decay,
+        delay: A.jingle.noteInterval * i,
+      });
+    });
+  }
+
+  private ensureContext(): AudioContext | null {
+    if (this.ctx) return this.ctx;
+    const Ctor = audioContextCtor();
+    if (!Ctor) return null;
+    try {
+      this.ctx = new Ctor();
+    } catch {
+      return null;
+    }
+    this.master = this.ctx.createGain();
+    this.master.gain.value = this.muted ? 0 : A.masterGain;
+    // コンプレッサは挟まない。Chrome の DynamicsCompressor は閾値以下でも
+    // 全体を約 10dB 削り、インパクトの立ち上がりまで鈍らせる。
+    // 音量は個々の gain の合計が 1 を超えないように配分してある
+    this.master.connect(this.ctx.destination);
+    return this.ctx;
+  }
+
+  /** ホワイトノイズ。生成は一度だけで、以後は使い回す */
+  private ensureNoise(ctx: AudioContext): AudioBuffer {
+    if (this.noiseBuffer) return this.noiseBuffer;
+    const length = Math.floor(ctx.sampleRate * NOISE_SECONDS);
+    const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+    this.noiseBuffer = buffer;
+    return buffer;
+  }
+
+  /** 転がり音の常時ノイズ源。初回だけ作って鳴らしっぱなしにする */
+  private ensureRoll(): boolean {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.master) return false;
+    if (ctx.state === 'suspended') void ctx.resume();
+    if (this.rollGain) return true;
+
+    const source = ctx.createBufferSource();
+    source.buffer = this.ensureNoise(ctx);
+    source.loop = true;
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = A.roll.green.freq;
+    filter.Q.value = A.roll.green.q;
+
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+
+    source.connect(filter).connect(gain).connect(this.master);
+    source.start();
+
+    this.rollFilter = filter;
+    this.rollGain = gain;
+    return true;
+  }
+
+  /** 単音。周波数は始めから終わりへ指数で動かす */
+  private tone(options: ToneOptions): void {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.master || this.muted) return;
+    if (ctx.state === 'suspended') void ctx.resume();
+
+    const t0 = ctx.currentTime + (options.delay ?? 0);
+    const osc = ctx.createOscillator();
+    osc.type = options.type ?? 'sine';
+    osc.frequency.setValueAtTime(options.freq, t0);
+    if (options.endFreq !== undefined) {
+      osc.frequency.exponentialRampToValueAtTime(Math.max(1, options.endFreq), t0 + options.decay);
+    }
+
+    const gain = ctx.createGain();
+    // 立ち上がりを一瞬だけなだらかにする（0 から始めないとプツッと鳴る）
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(options.gain, t0 + 0.005);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + options.decay);
+
+    osc.connect(gain).connect(this.master);
+    osc.start(t0);
+    osc.stop(t0 + options.decay + 0.02);
+  }
+
+  /** ノイズを1発。帯域を動かすと「シャッ」「ポチャン」になる */
+  private noise(options: NoiseOptions): void {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.master || this.muted) return;
+    if (ctx.state === 'suspended') void ctx.resume();
+
+    const t0 = ctx.currentTime + (options.delay ?? 0);
+    const source = ctx.createBufferSource();
+    source.buffer = this.ensureNoise(ctx);
+    // 同じ波形が続けて鳴っても同じに聞こえないよう、読み出し位置をずらす
+    const offset = Math.random() * (NOISE_SECONDS - options.decay - 0.05);
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = options.filter ?? 'bandpass';
+    filter.frequency.setValueAtTime(options.freq, t0);
+    if (options.endFreq !== undefined) {
+      filter.frequency.exponentialRampToValueAtTime(
+        Math.max(1, options.endFreq),
+        t0 + options.decay,
+      );
+    }
+    if (options.q !== undefined) filter.Q.value = options.q;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(options.gain, t0);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + options.decay);
+
+    source.connect(filter).connect(gain).connect(this.master);
+    source.start(t0, Math.max(0, offset), options.decay + 0.05);
+  }
+}
+
+export const audio = new GameAudio();

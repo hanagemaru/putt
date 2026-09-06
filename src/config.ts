@@ -469,6 +469,130 @@ export const CONFIG = {
     maxPixelRatio: 2,
   },
 
+  /**
+   * 効果音。音源ファイルは持たず、WebAudio の発振器とノイズだけで作る（依存を増やさない）。
+   * 時間は秒、周波数は Hz、gain は 0〜1 のリニア値。
+   */
+  audio: {
+    /** 全体の音量。ここを 0 にすると無音になる */
+    masterGain: 0.6,
+    /** ミュート切り替えのフェード時間 [s]。切り替わりでプツッと鳴らないだけの短さ */
+    muteFade: 0.05,
+
+
+    /** ボタン・タップの操作音 */
+    ui: {
+      /** ボタンを押したときの音 */
+      buttonFreq: 660,
+      buttonGain: 0.26,
+      buttonDecay: 0.07,
+      /** 画面タップで進むときの音。ボタンより低く小さく */
+      tapFreq: 440,
+      tapGain: 0.18,
+      tapDecay: 0.06,
+    },
+
+    /** インパクト（§4.6）。「コツン」＝低い打撃音＋ごく短いノイズ */
+    impact: {
+      /** 打撃音の始まりと終わりの周波数 */
+      startFreq: 210,
+      endFreq: 90,
+      decay: 0.09,
+      /** 音量の基準値。初速で 0〜1 に補間した値を掛ける */
+      gain: 0.5,
+      /** この初速 [m/s] で音量が最大になる */
+      fullSpeed: 3,
+      /** 弱いタッチでも聞こえるように、音量の下限を残す */
+      minGainRatio: 0.35,
+      /** 重ねるノイズ */
+      noiseGain: 0.22,
+      noiseFreq: 2600,
+      noiseDecay: 0.03,
+    },
+
+    /** 転がり音。ノイズを帯域で削って地面ごとに音色を変える（毎フレーム更新） */
+    roll: {
+      /** 音量が最大になる速度 [m/s] */
+      fullSpeed: 2.2,
+      /** 音量・音色の追従時定数 [s]。地面をまたぐときに段差を作らない */
+      tau: 0.05,
+      /** 芝の上。かすかに聞こえる程度でよい */
+      green: { gain: 0.07, freq: 900, q: 0.8 },
+      /** ラフの「ガサガサ」 */
+      rough: { gain: 0.3, freq: 1900, q: 0.7 },
+      /** 深いラフ。より低く重い */
+      deepRough: { gain: 0.42, freq: 1300, q: 0.6 },
+    },
+
+    /** 旗竿に当たる「カツン」。金属質に聞こえるよう倍音を重ねる */
+    flagstick: {
+      freq: 1500,
+      overtoneRatio: 2.7,
+      gain: 0.26,
+      decay: 0.3,
+    },
+
+    /** カップの縁をなめて出ていく（リップアウト） */
+    lipOut: {
+      freq: 700,
+      /** 帯域を絞りすぎるとノイズの音量が落ちて聞こえない。gain とセットで調整する */
+      q: 1.6,
+      gain: 1.1,
+      decay: 0.16,
+    },
+
+    /** カップイン。底で跳ねる音を 2 度鳴らしてから、短い余韻を足す */
+    holed: {
+      startFreq: 300,
+      endFreq: 120,
+      gain: 0.5,
+      decay: 0.18,
+      /** 2 度目の跳ね */
+      bounceDelay: 0.13,
+      bounceGain: 0.28,
+      bouncePitch: 1.25,
+      /** 余韻の和音 */
+      chimeDelay: 0.1,
+      chimeFreq: 880,
+      chimeFifth: 1.5,
+      chimeGain: 0.14,
+      chimeDecay: 0.7,
+    },
+
+    /** 池。低く落ちるノイズと、沈むトーン */
+    water: {
+      noiseGain: 0.36,
+      startFreq: 2200,
+      endFreq: 300,
+      noiseDecay: 0.35,
+      toneStartFreq: 520,
+      toneEndFreq: 150,
+      toneGain: 0.18,
+      toneDecay: 0.3,
+    },
+
+    /** OB。下がる 2 音で「外した」と分かればよい */
+    ob: {
+      firstFreq: 400,
+      secondFreq: 300,
+      interval: 0.14,
+      gain: 0.22,
+      decay: 0.22,
+    },
+
+    /** ホールアウト・ラウンド終了のジングル。周波数比は基準音に対する倍率 */
+    jingle: {
+      baseFreq: 523.25,
+      gain: 0.2,
+      decay: 0.3,
+      noteInterval: 0.11,
+      /** ホールアウト（短い） */
+      holeOut: [1, 1.26, 1.5],
+      /** ラウンド終了・練習終了（長い） */
+      roundEnd: [1, 1.26, 1.5, 2, 1.5, 2],
+    },
+  },
+
   /** ゲーム本体（状態機械とカメラ、spec §3）。検証ページとは共有しない */
   game: {
     /** ボールの開始位置 [m]。カップ (0.6, -5.5) まで約 4.5m */

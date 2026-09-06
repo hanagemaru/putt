@@ -307,9 +307,11 @@
         right: max(10px, env(safe-area-inset-right));
         z-index: 34;
         display: none;
+        gap: 8px;
         font-family: system-ui, -apple-system, sans-serif;
       }
-      #home-button {
+      #home-button,
+      #sound-toggle {
         appearance: none;
         min-width: 62px;
         min-height: 44px;
@@ -322,6 +324,9 @@
         font-size: 12px;
         font-weight: 700;
         touch-action: manipulation;
+      }
+      #sound-toggle {
+        min-width: 56px;
       }
       #home-dialog {
         position: fixed;
@@ -567,6 +572,7 @@
     </div>
 
     <div id="home-control">
+      <button type="button" id="sound-toggle" aria-label="効果音の切り替え">音 ON</button>
       <button type="button" id="home-button" aria-label="トップへ戻る">トップ</button>
     </div>
 
