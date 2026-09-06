@@ -1,6 +1,7 @@
 import { CONFIG } from './config';
-import { TOUR_SETS, type TourDefinition } from './course/tour-holes';
-import { Round } from './round';
+import { TOUR_SETS, tourById, type TourDefinition } from './course/tour-holes';
+import { TourBestScoreStore, type BestScoreUpdate } from './best-score-storage';
+import { Round, formatToPar, onRoundComplete, type RoundResult } from './round';
 import { RoundProgressStore } from './round-storage';
 
 const HOW_TO_URL = 'https://hanage.app/games/putt/how-to-play/';
@@ -8,6 +9,8 @@ const PRIVACY_URL = 'https://hanage.app/privacy/';
 const params = new URLSearchParams(window.location.search);
 
 if (shouldStartGameDirectly(params)) {
+  const tour = directTourFromParams(params);
+  if (tour) setupTourBestTracking(tour);
   void import('./main');
 } else if (params.get('menu') === 'tour') {
   renderTourSelection();
@@ -25,6 +28,77 @@ function shouldStartGameDirectly(search: URLSearchParams): boolean {
   if (search.get('course') === 'prototype') return true;
 
   return false;
+}
+
+/** main.ts の modeFromUrl と同じ優先順で、自己ベスト対象の通常ツアーだけを返す。 */
+function directTourFromParams(search: URLSearchParams): TourDefinition | null {
+  const mode = search.get('mode');
+  if (mode === 'practice') return null;
+  if (mode === 'tour') return tourById(search.get('tour'));
+  if (search.get('seed') !== null || search.get('course') === 'prototype') return null;
+  if (search.get('tour') !== null) return tourById(search.get('tour'));
+  return null;
+}
+
+/**
+ * 通常ツアー完走時に自己ベストを保存し、ラウンド終了カードへ表示する。
+ * Round はツアー名を知らないため、完走したシード列が選択中ツアーと一致することも確認する。
+ */
+function setupTourBestTracking(tour: TourDefinition): void {
+  const store = new TourBestScoreStore(tour.id, tour.seeds);
+  let latest: BestScoreUpdate | null = null;
+
+  const scoreTitle = document.getElementById('score-title');
+  const scoreSub = document.getElementById('score-sub');
+  let bestResult: HTMLParagraphElement | null = null;
+
+  if (scoreTitle && scoreSub) {
+    bestResult = document.createElement('p');
+    bestResult.id = 'tour-best-result';
+    bestResult.hidden = true;
+    scoreSub.insertAdjacentElement('afterend', bestResult);
+    ensureBestScoreStyles();
+  }
+
+  const renderBest = (): void => {
+    if (!scoreTitle || !bestResult) return;
+    if (scoreTitle.textContent !== `${tour.name}・ラウンド終了`) {
+      bestResult.hidden = true;
+      return;
+    }
+
+    const update = latest ?? (() => {
+      const score = store.load();
+      return score ? { score, isNewBest: false } : null;
+    })();
+    if (!update) {
+      bestResult.hidden = true;
+      return;
+    }
+
+    const { score, isNewBest } = update;
+    const best = `BEST ${score.strokes} (${formatToPar(score.strokes - score.par)})`;
+    bestResult.textContent = isNewBest ? `NEW BEST!　${best}` : best;
+    bestResult.hidden = false;
+  };
+
+  if (scoreTitle) {
+    const observer = new MutationObserver(renderBest);
+    observer.observe(scoreTitle, { childList: true, characterData: true, subtree: true });
+  }
+
+  onRoundComplete((result) => {
+    if (!matchesTour(result, tour)) return;
+    latest = store.record(result.totalStrokes, result.totalPar);
+    renderBest();
+  });
+}
+
+function matchesTour(result: RoundResult, tour: TourDefinition): boolean {
+  return (
+    result.scores.length === tour.seeds.length &&
+    result.scores.every((score, index) => score.seed === tour.seeds[index])
+  );
 }
 
 function renderTopMenu(): void {
@@ -106,6 +180,14 @@ function courseButton(tour: TourDefinition): HTMLButtonElement {
 
   button.append(name, description);
 
+  const best = bestLabel(tour);
+  if (best) {
+    const status = document.createElement('span');
+    status.className = 'course-best';
+    status.textContent = best;
+    button.append(status);
+  }
+
   const resume = resumeLabel(tour);
   if (resume) {
     const status = document.createElement('span');
@@ -116,6 +198,12 @@ function courseButton(tour: TourDefinition): HTMLButtonElement {
 
   button.addEventListener('click', () => navigateTo({ tour: tour.id }));
   return button;
+}
+
+function bestLabel(tour: TourDefinition): string | null {
+  const score = new TourBestScoreStore(tour.id, tour.seeds).load();
+  if (!score) return null;
+  return `BEST ${score.strokes} (${formatToPar(score.strokes - score.par)})`;
 }
 
 function resumeLabel(tour: TourDefinition): string | null {
@@ -172,6 +260,21 @@ function prepareMenuRoot(): HTMLElement {
     document.body.append(root);
   }
   return root;
+}
+
+function ensureBestScoreStyles(): void {
+  if (document.getElementById('best-score-styles')) return;
+  const style = document.createElement('style');
+  style.id = 'best-score-styles';
+  style.textContent = `
+    #tour-best-result {
+      margin: 10px 0 0;
+      font-size: 14px;
+      font-weight: 800;
+      text-align: center;
+    }
+  `;
+  document.head.append(style);
 }
 
 function ensureMenuStyles(): void {
@@ -319,6 +422,7 @@ function ensureMenuStyles(): void {
       line-height: 1.45;
       color: #bcd0c0;
     }
+    .course-best,
     .course-resume {
       margin-top: 9px;
       border-radius: 999px;
