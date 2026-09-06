@@ -471,8 +471,6 @@ export const CONFIG = {
 
   /**
    * 効果音。音源ファイルは持たず、WebAudio の発振器とノイズだけで作る（依存を増やさない）。
-   * **狙いはリアルさではなくコミカルさ。** 実物の打球音・水音に寄せず、
-   * ピッチの滑り・跳ね・チープな矩形波で「マンガの効果音」として気持ちよく鳴らす。
    * 時間は秒、周波数は Hz、gain は 0〜1 のリニア値。
    */
   audio: {
@@ -481,136 +479,117 @@ export const CONFIG = {
     /** ミュート切り替えのフェード時間 [s]。切り替わりでプツッと鳴らないだけの短さ */
     muteFade: 0.05,
 
-    /** ボタン・タップの操作音。チープな矩形波の「ピッ」 */
+
+    /** ボタン・タップの操作音 */
     ui: {
-      /** ボタンを押したとき。上へ跳ねる */
-      buttonFreq: 880,
-      buttonEndFreq: 1320,
-      buttonGain: 0.16,
-      buttonDecay: 0.06,
-      /** 画面タップで進むとき。ボタンより低く小さく */
-      tapFreq: 560,
-      tapEndFreq: 760,
-      tapGain: 0.11,
-      tapDecay: 0.05,
+      /** ボタンを押したときの音 */
+      buttonFreq: 660,
+      buttonGain: 0.26,
+      buttonDecay: 0.07,
+      /** 画面タップで進むときの音。ボタンより低く小さく */
+      tapFreq: 440,
+      tapGain: 0.18,
+      tapDecay: 0.06,
     },
 
-    /**
-     * インパクト（§4.6）。コルクを抜くような「ポンッ」。
-     * 実際の打球音（低い打撃＋ノイズ）ではなく、上へ跳ね上がるピッチで表す。
-     * 強く打つほど高く大きくなるので、音だけで強さが分かる
-     */
+    /** インパクト（§4.6）。「コツン」＝低い打撃音＋ごく短いノイズ */
     impact: {
-      startFreq: 190,
-      /** 弱いタッチと最速のときの跳ね上がり先 */
-      endFreqMin: 620,
-      endFreqMax: 1180,
-      decay: 0.11,
+      /** 打撃音の始まりと終わりの周波数 */
+      startFreq: 210,
+      endFreq: 90,
+      decay: 0.09,
+      /** 音量の基準値。初速で 0〜1 に補間した値を掛ける */
       gain: 0.5,
-      /** この初速 [m/s] で音量とピッチが最大になる */
+      /** この初速 [m/s] で音量が最大になる */
       fullSpeed: 3,
       /** 弱いタッチでも聞こえるように、音量の下限を残す */
-      minGainRatio: 0.4,
-      /** 当たった瞬間の「コッ」。短いほどコミカルに寄る */
-      tickGain: 0.16,
-      tickFreq: 3800,
-      tickDecay: 0.02,
+      minGainRatio: 0.35,
+      /** 重ねるノイズ */
+      noiseGain: 0.22,
+      noiseFreq: 2600,
+      noiseDecay: 0.03,
     },
 
-    /**
-     * 転がり音。ノイズを帯域で削り、さらに音量を細かく揺らして
-     * 「ガサガサ」「ゴソゴソ」と鳴らす。揺れがないと単なる砂嵐になる
-     */
+    /** 転がり音。ノイズを帯域で削って地面ごとに音色を変える（毎フレーム更新） */
     roll: {
       /** 音量が最大になる速度 [m/s] */
       fullSpeed: 2.2,
       /** 音量・音色の追従時定数 [s]。地面をまたぐときに段差を作らない */
       tau: 0.05,
-      /** 揺れの深さ（0〜1）。1 で音が完全に途切れながら鳴る */
-      tremoloDepth: 0.85,
-      /** 芝の上。かすかに聞こえる程度でよいので揺らさない */
-      green: { gain: 0.07, freq: 900, q: 0.8, tremoloHz: 0 },
-      /** ラフの「ガサガサ」。速い揺れ */
-      rough: { gain: 0.44, freq: 1900, q: 0.7, tremoloHz: 19 },
-      /** 深いラフの「ゴソゴソ」。低く、揺れも遅い */
-      deepRough: { gain: 0.58, freq: 1200, q: 0.6, tremoloHz: 13 },
+      /** 芝の上。かすかに聞こえる程度でよい */
+      green: { gain: 0.07, freq: 900, q: 0.8 },
+      /** ラフの「ガサガサ」 */
+      rough: { gain: 0.3, freq: 1900, q: 0.7 },
+      /** 深いラフ。より低く重い */
+      deepRough: { gain: 0.42, freq: 1300, q: 0.6 },
     },
 
-    /** 旗竿に当たる。金属音ではなく、跳ね返る「ボヨン」 */
+    /** 旗竿に当たる「カツン」。金属質に聞こえるよう倍音を重ねる */
     flagstick: {
-      startFreq: 620,
-      endFreq: 260,
-      gain: 0.3,
-      decay: 0.32,
-      /** 揺らしの速さ [Hz] と深さ [cent]。これがバネの感じを作る */
-      wobbleHz: 24,
-      wobbleCents: 220,
+      freq: 1500,
+      overtoneRatio: 2.7,
+      gain: 0.26,
+      decay: 0.3,
     },
 
-    /** カップの縁をなめて出ていく。かすめる「ヒュッ」 */
+    /** カップの縁をなめて出ていく（リップアウト） */
     lipOut: {
-      startFreq: 620,
-      endFreq: 1500,
-      gain: 0.16,
-      decay: 0.13,
+      freq: 700,
+      /** 帯域を絞りすぎるとノイズの音量が落ちて聞こえない。gain とセットで調整する */
+      q: 1.6,
+      gain: 1.1,
+      decay: 0.16,
     },
 
-    /** カップイン。「ポコン」＋ごほうびの3音（チープな矩形波） */
+    /** カップイン。底で跳ねる音を 2 度鳴らしてから、短い余韻を足す */
     holed: {
-      popStartFreq: 240,
-      popEndFreq: 880,
-      popGain: 0.42,
-      popDecay: 0.12,
-      /** 3音の基準音と音程比。鳴り始めるまでの間と、音の間隔 */
-      chimeBaseFreq: 659.25,
-      chimeRatios: [1, 1.26, 1.5],
-      chimeDelay: 0.09,
-      chimeInterval: 0.08,
-      chimeGain: 0.2,
-      chimeDecay: 0.22,
-    },
-
-    /** 池。落ちていく「ヒュ〜」から「ポチャン」。最後に泡を1つ */
-    water: {
-      slideStartFreq: 1500,
-      slideEndFreq: 240,
-      slideGain: 0.2,
-      slideDecay: 0.32,
-      plopDelay: 0.28,
-      plopStartFreq: 360,
-      plopEndFreq: 90,
-      plopGain: 0.34,
-      plopDecay: 0.16,
-      bubbleDelay: 0.46,
-      bubbleStartFreq: 200,
-      bubbleEndFreq: 520,
-      bubbleGain: 0.12,
-      bubbleDecay: 0.1,
-    },
-
-    /** OB。ずっこける「ブブー」。下がりながら揺れる */
-    ob: {
-      firstFreq: 320,
-      secondFreq: 240,
-      /** 2音目が最後に滑り落ちる先 */
+      startFreq: 300,
       endFreq: 120,
-      interval: 0.16,
-      gain: 0.2,
-      decay: 0.26,
-      wobbleHz: 14,
-      wobbleCents: 120,
+      gain: 0.5,
+      decay: 0.18,
+      /** 2 度目の跳ね */
+      bounceDelay: 0.13,
+      bounceGain: 0.28,
+      bouncePitch: 1.25,
+      /** 余韻の和音 */
+      chimeDelay: 0.1,
+      chimeFreq: 880,
+      chimeFifth: 1.5,
+      chimeGain: 0.14,
+      chimeDecay: 0.7,
+    },
+
+    /** 池。低く落ちるノイズと、沈むトーン */
+    water: {
+      noiseGain: 0.36,
+      startFreq: 2200,
+      endFreq: 300,
+      noiseDecay: 0.35,
+      toneStartFreq: 520,
+      toneEndFreq: 150,
+      toneGain: 0.18,
+      toneDecay: 0.3,
+    },
+
+    /** OB。下がる 2 音で「外した」と分かればよい */
+    ob: {
+      firstFreq: 400,
+      secondFreq: 300,
+      interval: 0.14,
+      gain: 0.22,
+      decay: 0.22,
     },
 
     /** ホールアウト・ラウンド終了のジングル。周波数比は基準音に対する倍率 */
     jingle: {
       baseFreq: 523.25,
-      gain: 0.19,
-      decay: 0.24,
-      noteInterval: 0.1,
+      gain: 0.2,
+      decay: 0.3,
+      noteInterval: 0.11,
       /** ホールアウト（短い） */
       holeOut: [1, 1.26, 1.5],
-      /** ラウンド終了・練習終了（長い。最後を跳ね上げる） */
-      roundEnd: [1, 1.26, 1.5, 2, 1.68, 2.52],
+      /** ラウンド終了・練習終了（長い） */
+      roundEnd: [1, 1.26, 1.5, 2, 1.5, 2],
     },
   },
 
