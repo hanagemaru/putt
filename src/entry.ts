@@ -279,13 +279,21 @@ function ensureBestScoreStyles(): void {
 
 
 /**
+ * メニューで使うドット絵フォント（DotGothic16 / SIL OFL 1.1）。
+ * メニューに出る文字だけへ絞ったサブセットを自分たちで配る。外部への読み込みはしない。
+ * 文言やコース名を変えたら `npm run font:menu` で作り直す。
+ * 収録外の字は端末のゴシックへ落ちるだけで、表示は崩れない
+ */
+function menuFontUrl(): string {
+  return new URL('./fonts/dotgothic16-menu-subset.woff2', import.meta.url).href;
+}
+
+/**
  * メニューの見た目はプレイ画面のドット感（config.pixel）に合わせる。
  * 角丸・ぼかし影・アンチエイリアスの効いた装飾は使わず、
- * 等幅フォント・太い枠・段差のはっきりした影・コースと同じ色だけで作る。
+ * ドット絵フォント・太い枠・段差のはっきりした影・コースと同じ色だけで作る。
  * 色は config のコース色に対応させている（fairway 0x74cf5c / rough 0x4f9844 /
  * deepRough 0x3a7332 / ob 0x27431f / flag 0xd94f3d / trail 0xffe66d / ball 0xf6f8f4）。
- * Webフォントは読み込まない（外部リクエストを増やさない）。日本語は端末のゴシックのまま、
- * 等幅指定と広い字間でドットUI寄りに見せる
  */
 function ensureMenuStyles(): void {
   if (document.getElementById('menu-styles')) return;
@@ -293,6 +301,14 @@ function ensureMenuStyles(): void {
   const style = document.createElement('style');
   style.id = 'menu-styles';
   style.textContent = `
+    @font-face {
+      font-family: 'DotGothic16 Menu';
+      src: url('${menuFontUrl()}') format('woff2');
+      font-weight: 400;
+      font-style: normal;
+      /* 読み込み前に別のフォントで出てから入れ替わらないよう、少しだけ待たせる */
+      font-display: block;
+    }
     body.menu-active {
       background: #0f170f;
       color: #eef7ec;
@@ -332,8 +348,8 @@ function ensureMenuStyles(): void {
         linear-gradient(45deg, rgba(116, 207, 92, 0.05) 25%, transparent 25%, transparent 75%, rgba(116, 207, 92, 0.05) 75%);
       background-size: 100% 100%, 8px 8px, 8px 8px;
       background-position: 0 0, 0 0, 4px 4px;
-      /* 等幅＋広い字間でドットUIの並びに寄せる。日本語は端末のゴシックへ落ちる */
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace;
+      /* サブセットに無い字だけ端末のフォントへ落ちる。等幅を後ろに置いて字面を近づける */
+      font-family: 'DotGothic16 Menu', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       letter-spacing: 0.08em;
       image-rendering: pixelated;
       touch-action: manipulation;
@@ -346,8 +362,12 @@ function ensureMenuStyles(): void {
       background: rgba(15, 23, 15, 0.86);
       padding: 22px 16px 24px;
     }
+    /*
+     * DotGothic16 は16px方眼で描かれているので、字の大きさは16の倍数に寄せる。
+     * 中途半端な大きさにすると点がにじんでドットに見えなくなる
+     */
     .menu-title {
-      font-size: clamp(46px, 15vw, 66px);
+      font-size: 48px;
       line-height: 1;
       letter-spacing: 0.16em;
       text-indent: 0.16em;
@@ -362,11 +382,16 @@ function ensureMenuStyles(): void {
         0 -3px #0d140d,
         6px 6px 0 #27431f;
     }
+    @media (min-width: 360px) {
+      .menu-title {
+        font-size: 64px;
+      }
+    }
     .menu-subtitle {
       margin-top: 18px;
       text-align: center;
-      font-size: 12px;
-      letter-spacing: 0.18em;
+      font-size: 16px;
+      letter-spacing: 0.12em;
       color: #bcd0c0;
     }
     .menu-actions,
@@ -403,7 +428,7 @@ function ensureMenuStyles(): void {
       background: #3a7332;
       padding: 14px 16px;
       font-size: 16px;
-      font-weight: 700;
+      font-weight: 400;
     }
     .menu-button:active,
     .course-button:active,
@@ -433,7 +458,7 @@ function ensureMenuStyles(): void {
       border: 0;
       background: transparent;
       padding: 12px 2px;
-      font-size: 12px;
+      font-size: 16px;
       line-height: 20px;
       /* 下線もドットに合わせて、4px刻みの破線を2pxの高さで敷く */
       text-decoration: none;
@@ -453,11 +478,10 @@ function ensureMenuStyles(): void {
       min-height: 44px;
       background: #27431f;
       padding: 9px 14px;
-      font-size: 12px;
-      font-weight: 700;
+      font-size: 16px;
     }
     .course-title {
-      font-size: 24px;
+      font-size: 32px;
       letter-spacing: 0.12em;
       color: #9ede8a;
       text-shadow: 3px 3px 0 #0d140d;
@@ -475,15 +499,14 @@ function ensureMenuStyles(): void {
       text-align: left;
     }
     .course-name {
-      font-size: 17px;
-      font-weight: 700;
+      font-size: 16px;
       color: #9ede8a;
     }
     .course-description {
       margin-top: 7px;
-      font-size: 11px;
-      line-height: 1.6;
-      letter-spacing: 0.06em;
+      font-size: 16px;
+      line-height: 1.5;
+      letter-spacing: 0.02em;
       color: #bcd0c0;
     }
     /* 自己ベストと再開はドット絵のラベル。角丸にせず枠で囲む */
@@ -492,9 +515,8 @@ function ensureMenuStyles(): void {
       margin-top: 10px;
       border: 2px solid #0d140d;
       padding: 3px 7px;
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.1em;
+      font-size: 16px;
+      letter-spacing: 0.06em;
     }
     .course-best {
       background: #ffe66d;
