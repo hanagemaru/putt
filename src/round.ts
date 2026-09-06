@@ -15,6 +15,22 @@ export interface HoleScore {
   holedOut: boolean;
 }
 
+/** 完走した1ラウンドの結果。保存やランキング側へ渡すための読み取り専用スナップショット */
+export interface RoundResult {
+  scores: readonly HoleScore[];
+  totalStrokes: number;
+  totalPar: number;
+}
+
+type RoundCompleteListener = (result: RoundResult) => void;
+const roundCompleteListeners = new Set<RoundCompleteListener>();
+
+/** ラウンド完走時だけ結果を受け取る。解除関数を返す。 */
+export function onRoundComplete(listener: RoundCompleteListener): () => void {
+  roundCompleteListeners.add(listener);
+  return () => roundCompleteListeners.delete(listener);
+}
+
 /**
  * 保存・復元でやりとりする進行の中身（spec §6）。
  * **現在のホールの頭から再開する**方式なので、進行中のホールの打数や
@@ -90,6 +106,15 @@ export class Round {
       strokes,
       holedOut,
     });
+
+    if (this.played.length === this.seeds.length) {
+      const result: RoundResult = {
+        scores: this.played.map((hole) => ({ ...hole })),
+        totalStrokes: this.totalStrokes,
+        totalPar: this.totalPar,
+      };
+      for (const listener of roundCompleteListeners) listener(result);
+    }
   }
 
   /** 次のホールへ進む。最終ホールでは何もしない */
