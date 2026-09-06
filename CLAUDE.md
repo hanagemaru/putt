@@ -1,6 +1,6 @@
 # パッティングゲーム
 
-スマホ縦画面・ブラウザで動く一人称パッティングゲーム。hanage.app で公開予定。
+スマホ縦画面・ブラウザで動く一人称パッティングゲーム。`https://putt.hanage.app/` で公開中。
 
 **作業開始時はまず `PROJECT_STATUS.md` で現在地・実機確認待ち・次の作業を確認する。** 初回公開までの工程・依存関係・完了条件は `RELEASE_PLAN.md`、詳細仕様は `docs/spec.md`、実装履歴と長いタスク分割は `TASKS.md`。このファイルには恒久的な前提だけを書く。作業中のメモは書かない。
 
@@ -40,13 +40,12 @@
 
 - 変更したら `npm run dev` が通ることを確認
 - **操作感に関わる変更は実機確認が必要。** その場合は「実機で確認してください」と明示して止まること。自分で「良くなった」と判断しない
-- **main への push で GitHub Pages に自動デプロイされる。** ブランチごとのプレビュー環境はない。実機で確認するにはマージが要る
-  - ゲーム本体: `https://hanagemaru.github.io/putt/`
-  - スワイプ計測: `https://hanagemaru.github.io/putt/swipe-test/`
-- **配信先は Cloudflare Workers（`putt.hanage.app`）へ移す予定。** 設定は入っているが、
-  リポジトリ変数 `CLOUDFLARE_DEPLOY` が `true` になるまで動かない。切り替えまでの本番は GitHub Pages。
-  ベースパスは配信先で変わる（Pages は `/putt/`、Cloudflare は `/`）ので、
-  ビルドは `npm run build` と `npm run build:cloudflare` を使い分ける。手順は `DEPLOY.md`
+- **main への push で自動デプロイされる。** ブランチごとのプレビュー環境はない。実機で確認するにはマージが要る
+  - 本番（Cloudflare Workers）: `https://putt.hanage.app/`
+  - 退避先（GitHub Pages、当面併走）: `https://hanagemaru.github.io/putt/`
+  - スワイプ計測: `https://putt.hanage.app/swipe-test/`
+- **配信先はベースパスが変わる。** Cloudflare は `/`、GitHub Pages は `/putt/`。
+  ビルドは `npm run build:cloudflare` と `npm run build` を使い分ける。詳細は `DEPLOY.md`
 
 ## やらないこと
 
