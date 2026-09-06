@@ -1,6 +1,6 @@
 # 現在地 / Project Status
 
-最終更新: 2026-09-05（**P0-1 審査掲載用メニュー情報を実装。実機確認待ち**）
+最終更新: 2026-09-06（**配信先を `putt.hanage.app` へ切り替え。P0-1 は実機確認待ちのまま**）
 
 このファイルは **Claude / ChatGPT / Codex 共通の短い引き継ぎ用「現在地」**です。
 新しいセッションでは、長い履歴を最初から読み直す前にまずここを確認します。
@@ -66,13 +66,13 @@ AdSense申請全体・ハブ側の準備は `hanage-hub` の正本に従う。
   - 長方形コース、生成器、コースマップ、ラウンド進行、保存・再開、カップ物理、ギブアップまで動作している
   - 開発用表示は `?debug=1` のときだけ露出する
 
-- **Cloudflare Workers への配信構成を追加済み・切り替えはまだ**
-  - `wrangler.jsonc` と `.github/workflows/deploy-cloudflare.yml` を追加した。
-    リポジトリ変数 `CLOUDFLARE_DEPLOY` が `true` になるまでスキップされる
-  - `vite.config.ts` のベースパスを環境変数で切り替えるようにした
-    （GitHub Pages は `/putt/`、Cloudflare は `PUTT_BASE=/`）
-  - 本番は当面 GitHub Pages のまま。手順とロールバックは `DEPLOY.md`
-  - 公開URLは `https://putt.hanage.app/` を予定。割り当て後に hanage-hub の `GAME_URLS.putt` を差し替える
+- **Cloudflare Workers へ切り替え済み（2026-09-06）**
+  - 本番は `https://putt.hanage.app/`。実機（iPhone）でトップメニューから
+    通常ツアー・遊び方・プライバシーまで確認済み
+  - GitHub Pages（`https://hanagemaru.github.io/putt/`）は退避先として当面併走する。
+    `main` への push で両方に配信される
+  - hanage-hub の `GAME_URLS.putt` も新URLへ差し替え済み
+  - 設定値・ロールバック・残作業（Pages の停止）は `DEPLOY.md`
 
 ## 今回記録した未確定改善
 
