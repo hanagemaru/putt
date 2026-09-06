@@ -1,4 +1,6 @@
 // 効果音。音源ファイルは持たず、WebAudio の発振器とノイズだけで合成する。
+// **狙いはリアルさではなくコミカルさ。** 打球音や水音を実物へ寄せず、
+// ピッチの滑り・跳ね・揺れで「マンガの効果音」を作る。
 // 数値は全て CONFIG.audio に置く（ここにマジックナンバーを書かない）。
 //
 // スマホのブラウザは最初のユーザー操作までAudioContextを動かさないので、
@@ -49,6 +51,9 @@ interface ToneOptions {
   /** 呼び出しから鳴りはじめるまで [s] */
   delay?: number;
   type?: OscillatorType;
+  /** 揺らし（ボヨン・ブブー）の速さ [Hz] と深さ [cent]。両方あるときだけ掛かる */
+  wobbleHz?: number;
+  wobbleCents?: number;
 }
 
 interface NoiseOptions {
@@ -74,9 +79,15 @@ class GameAudio {
   private master: GainNode | null = null;
   private noiseBuffer: AudioBuffer | null = null;
 
-  /** 転がり音。1本のノイズ源を鳴らしっぱなしにして、音量と帯域だけ動かす */
+  /**
+   * 転がり音。1本のノイズ源を鳴らしっぱなしにして、音量と帯域だけ動かす。
+   * さらに LFO で音量を刻んで「ガサガサ」にする
+   */
   private rollGain: GainNode | null = null;
   private rollFilter: BiquadFilterNode | null = null;
+  private rollTremoloOsc: OscillatorNode | null = null;
+  private rollTremoloDepth: GainNode | null = null;
+  private rollTremoloBase: GainNode | null = null;
 
   private muted = loadMuted();
   private unlockBound = false;
@@ -135,119 +146,143 @@ class GameAudio {
 
   // --- 個別の音 -----------------------------------------------------------
 
-  /** ボタンを押した */
+  /** ボタンを押した。上へ跳ねる「ピッ」 */
   button(): void {
-    this.tone({ freq: A.ui.buttonFreq, gain: A.ui.buttonGain, decay: A.ui.buttonDecay });
+    this.tone({
+      freq: A.ui.buttonFreq,
+      endFreq: A.ui.buttonEndFreq,
+      gain: A.ui.buttonGain,
+      decay: A.ui.buttonDecay,
+      type: 'square',
+    });
   }
 
-  /** 画面タップで次へ進んだ */
+  /** 画面タップで次へ進んだ。ボタンより低く小さい */
   tap(): void {
-    this.tone({ freq: A.ui.tapFreq, gain: A.ui.tapGain, decay: A.ui.tapDecay });
+    this.tone({
+      freq: A.ui.tapFreq,
+      endFreq: A.ui.tapEndFreq,
+      gain: A.ui.tapGain,
+      decay: A.ui.tapDecay,
+      type: 'square',
+    });
   }
 
-  /** インパクト。初速 [m/s] が速いほど大きく鳴る */
+  /**
+   * インパクト。栓を抜くような「ポンッ」。
+   * 強く打つほど高く大きくなるので、音だけで強さが分かる
+   */
   impact(speedMs: number): void {
     const ratio = Math.min(1, Math.max(0, speedMs) / A.impact.fullSpeed);
     const scale = A.impact.minGainRatio + (1 - A.impact.minGainRatio) * ratio;
+    const endFreq = A.impact.endFreqMin + (A.impact.endFreqMax - A.impact.endFreqMin) * ratio;
     this.tone({
       freq: A.impact.startFreq,
-      endFreq: A.impact.endFreq,
+      endFreq,
       gain: A.impact.gain * scale,
       decay: A.impact.decay,
-      type: 'triangle',
+      type: 'sine',
     });
+    // 当たった瞬間の「コッ」だけノイズで足す。長く鳴らすと現実の打球音に寄る
     this.noise({
-      gain: A.impact.noiseGain * scale,
-      decay: A.impact.noiseDecay,
-      freq: A.impact.noiseFreq,
+      gain: A.impact.tickGain * scale,
+      decay: A.impact.tickDecay,
+      freq: A.impact.tickFreq,
       filter: 'highpass',
     });
   }
 
-  /** 旗竿に当たった */
+  /** 旗竿に当たった。金属音ではなく跳ね返る「ボヨン」 */
   flagstick(): void {
-    this.tone({ freq: A.flagstick.freq, gain: A.flagstick.gain, decay: A.flagstick.decay });
     this.tone({
-      freq: A.flagstick.freq * A.flagstick.overtoneRatio,
-      gain: A.flagstick.gain * 0.5,
-      decay: A.flagstick.decay * 0.6,
+      freq: A.flagstick.startFreq,
+      endFreq: A.flagstick.endFreq,
+      gain: A.flagstick.gain,
+      decay: A.flagstick.decay,
+      type: 'square',
+      wobbleHz: A.flagstick.wobbleHz,
+      wobbleCents: A.flagstick.wobbleCents,
     });
   }
 
-  /** カップの縁をなめて出ていった */
+  /** カップの縁をなめて出ていった。かすめる「ヒュッ」 */
   lipOut(): void {
-    this.noise({
+    this.tone({
+      freq: A.lipOut.startFreq,
+      endFreq: A.lipOut.endFreq,
       gain: A.lipOut.gain,
       decay: A.lipOut.decay,
-      freq: A.lipOut.freq,
-      q: A.lipOut.q,
-      filter: 'bandpass',
-    });
-  }
-
-  /** カップイン */
-  holed(): void {
-    this.tone({
-      freq: A.holed.startFreq,
-      endFreq: A.holed.endFreq,
-      gain: A.holed.gain,
-      decay: A.holed.decay,
-      type: 'triangle',
-    });
-    this.tone({
-      freq: A.holed.startFreq * A.holed.bouncePitch,
-      endFreq: A.holed.endFreq,
-      gain: A.holed.bounceGain,
-      decay: A.holed.decay * 0.8,
-      delay: A.holed.bounceDelay,
-      type: 'triangle',
-    });
-    this.tone({
-      freq: A.holed.chimeFreq,
-      gain: A.holed.chimeGain,
-      decay: A.holed.chimeDecay,
-      delay: A.holed.chimeDelay,
-    });
-    this.tone({
-      freq: A.holed.chimeFreq * A.holed.chimeFifth,
-      gain: A.holed.chimeGain * 0.7,
-      decay: A.holed.chimeDecay,
-      delay: A.holed.chimeDelay,
-    });
-  }
-
-  /** 池へ入った */
-  water(): void {
-    this.noise({
-      gain: A.water.noiseGain,
-      decay: A.water.noiseDecay,
-      freq: A.water.startFreq,
-      endFreq: A.water.endFreq,
-      filter: 'lowpass',
-    });
-    this.tone({
-      freq: A.water.toneStartFreq,
-      endFreq: A.water.toneEndFreq,
-      gain: A.water.toneGain,
-      decay: A.water.toneDecay,
       type: 'sine',
     });
   }
 
-  /** OBへ出た */
+  /** カップイン。「ポコン」のあとにごほうびの3音 */
+  holed(): void {
+    this.tone({
+      freq: A.holed.popStartFreq,
+      endFreq: A.holed.popEndFreq,
+      gain: A.holed.popGain,
+      decay: A.holed.popDecay,
+      type: 'sine',
+    });
+    A.holed.chimeRatios.forEach((ratio, i) => {
+      this.tone({
+        freq: A.holed.chimeBaseFreq * ratio,
+        gain: A.holed.chimeGain,
+        decay: A.holed.chimeDecay,
+        delay: A.holed.chimeDelay + A.holed.chimeInterval * i,
+        type: 'square',
+      });
+    });
+  }
+
+  /** 池へ入った。落ちる「ヒュ〜」→「ポチャン」→泡 */
+  water(): void {
+    this.tone({
+      freq: A.water.slideStartFreq,
+      endFreq: A.water.slideEndFreq,
+      gain: A.water.slideGain,
+      decay: A.water.slideDecay,
+      type: 'sine',
+    });
+    this.tone({
+      freq: A.water.plopStartFreq,
+      endFreq: A.water.plopEndFreq,
+      gain: A.water.plopGain,
+      decay: A.water.plopDecay,
+      delay: A.water.plopDelay,
+      type: 'sine',
+    });
+    this.tone({
+      freq: A.water.bubbleStartFreq,
+      endFreq: A.water.bubbleEndFreq,
+      gain: A.water.bubbleGain,
+      decay: A.water.bubbleDecay,
+      delay: A.water.bubbleDelay,
+      type: 'sine',
+    });
+  }
+
+  /** OBへ出た。ずっこける「ブブー」 */
   outOfBounds(): void {
     this.tone({
       freq: A.ob.firstFreq,
       gain: A.ob.gain,
       decay: A.ob.decay,
-      type: 'square',
+      type: 'sawtooth',
+      wobbleHz: A.ob.wobbleHz,
+      wobbleCents: A.ob.wobbleCents,
     });
+    // 2音目は最後に滑り落ちる。ここが「ずっこけ」の芯
     this.tone({
       freq: A.ob.secondFreq,
+      endFreq: A.ob.endFreq,
       gain: A.ob.gain,
-      decay: A.ob.decay,
+      decay: A.ob.decay * 1.6,
       delay: A.ob.interval,
-      type: 'square',
+      type: 'sawtooth',
+      wobbleHz: A.ob.wobbleHz,
+      wobbleCents: A.ob.wobbleCents,
     });
   }
 
@@ -280,6 +315,12 @@ class GameAudio {
     this.rollGain!.gain.setTargetAtTime(voice.gain * ratio, t, A.roll.tau);
     this.rollFilter!.frequency.setTargetAtTime(voice.freq, t, A.roll.tau);
     this.rollFilter!.Q.value = voice.q;
+    // 芝の上（tremoloHz = 0）は刻まない。ラフだけ「ガサガサ」と途切れて鳴る。
+    // 刻みは音量の**上限を 1 に保ったまま**下へ掘るので、揺らしても音量は上がらない
+    const swing = voice.tremoloHz > 0 ? A.roll.tremoloDepth / 2 : 0;
+    this.rollTremoloOsc!.frequency.setTargetAtTime(voice.tremoloHz, t, A.roll.tau);
+    this.rollTremoloDepth!.gain.setTargetAtTime(swing, t, A.roll.tau);
+    this.rollTremoloBase!.gain.setTargetAtTime(1 - swing, t, A.roll.tau);
   }
 
   /** 転がり音を止める。ボールが止まった・画面を離れたときに呼ぶ */
@@ -297,6 +338,7 @@ class GameAudio {
         gain: A.jingle.gain,
         decay: A.jingle.decay,
         delay: A.jingle.noteInterval * i,
+        type: 'square',
       });
     });
   }
@@ -349,11 +391,25 @@ class GameAudio {
     const gain = ctx.createGain();
     gain.gain.value = 0;
 
-    source.connect(filter).connect(gain).connect(this.master);
+    // 音量を刻む LFO。深さぶんだけ音量を上下させる（深さ 0 なら素通し）
+    const tremolo = ctx.createGain();
+    tremolo.gain.value = 1;
+    this.rollTremoloBase = tremolo;
+    const lfo = ctx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = A.roll.rough.tremoloHz;
+    const depth = ctx.createGain();
+    depth.gain.value = 0;
+    lfo.connect(depth).connect(tremolo.gain);
+    lfo.start();
+
+    source.connect(filter).connect(gain).connect(tremolo).connect(this.master);
     source.start();
 
     this.rollFilter = filter;
     this.rollGain = gain;
+    this.rollTremoloOsc = lfo;
+    this.rollTremoloDepth = depth;
     return true;
   }
 
@@ -376,6 +432,18 @@ class GameAudio {
     gain.gain.setValueAtTime(0.0001, t0);
     gain.gain.exponentialRampToValueAtTime(options.gain, t0 + 0.005);
     gain.gain.exponentialRampToValueAtTime(0.0001, t0 + options.decay);
+
+    if (options.wobbleHz && options.wobbleCents) {
+      // 音程を細かく揺らす。バネの「ボヨン」やずっこけの「ブブー」はこれで出る
+      const lfo = ctx.createOscillator();
+      lfo.type = 'sine';
+      lfo.frequency.setValueAtTime(options.wobbleHz, t0);
+      const depth = ctx.createGain();
+      depth.gain.setValueAtTime(options.wobbleCents, t0);
+      lfo.connect(depth).connect(osc.detune);
+      lfo.start(t0);
+      lfo.stop(t0 + options.decay + 0.02);
+    }
 
     osc.connect(gain).connect(this.master);
     osc.start(t0);
