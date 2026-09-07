@@ -39,12 +39,13 @@ jobs:
           # コミット件名はそのまま渡すと引用符で壊れるので、変数に入れてから渡す
           subject=$(git log -1 --pretty=%s)
           message="${GITHUB_REF_NAME}: ${subject}"
+          # プレビューURLを含む案内は stderr に出るので、stdout へ寄せてから拾う
           npx wrangler versions upload \
             --tag "${GITHUB_SHA::8}" \
             --message "${message:0:100}" \
-            | tee upload.log
-          # 出力からプレビューURLを拾う。形式が変わって拾えなくてもジョブは失敗させない
-          url=$(grep -Eo 'https://[a-z0-9-]+\.workers\.dev[^ ]*' upload.log | tail -1)
+            2>&1 | tee upload.log
+          # 形式が変わって拾えなくても、バージョン自体は上がっているのでジョブは失敗させない
+          url=$(grep -Eo 'https://[a-z0-9-]+\.workers\.dev[^ ]*' upload.log | tail -1 || true)
           echo "url=$url" >> "$GITHUB_OUTPUT"
       - name: Show preview URL
         run: |
