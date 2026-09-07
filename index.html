@@ -19,6 +19,9 @@
         height: 100%;
         overflow: hidden;
         background: #000;
+        /* 文字はメニューと同じドット絵フォント（src/pixel-font.ts が入れる） */
+        font-family: var(--pixel-font);
+        letter-spacing: 0.04em;
         /* スワイプ操作でブラウザのスクロール・引っ張り更新を起こさない */
         overscroll-behavior: none;
         touch-action: none;
@@ -46,53 +49,65 @@
       }
 
       /* デバッグ表示（spec §5 の一部。全項目と lil-gui は T4） */
+      /*
+       * 空（薄い水色）の上でもドットの細い線が読めるよう、HUDの後ろへ暗い帯を敷く。
+       * 帯の下辺はぼかさず1本の線で切る。カードを出している間は文字ごと引っ込める
+       */
       #hud {
         position: fixed;
         top: 0;
         left: 0;
         right: 0;
         z-index: 20;
-        padding: 8px 12px calc(8px + 6px);
+        padding: max(8px, env(safe-area-inset-top)) 12px 10px;
         pointer-events: none;
-        font-family: system-ui, -apple-system, sans-serif;
-        color: #e8f0e8;
-        font-variant-numeric: tabular-nums;
-        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+        font-family: var(--pixel-font);
+        color: #eef7ec;
+        background: rgba(12, 20, 14, 0.72);
+        border-bottom: 3px solid #16210f;
+        text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.85);
+      }
+      #hud.quiet {
+        background: transparent;
+        border-bottom-color: transparent;
       }
       #hud .row {
         display: flex;
         flex-wrap: wrap;
         gap: 2px 14px;
-        font-size: 12px;
-        color: #cfe0d2;
+        font-size: 16px;
+        line-height: 1.5;
+        color: #dfeade;
+      }
+      /* 1行目の右上には「トップ」が乗る。文字が下へ潜らないよう場所を空ける */
+      #hud .row:first-child {
+        padding-right: 76px;
       }
       #hud .state {
-        font-size: 13px;
-        font-weight: 700;
-        letter-spacing: 0.1em;
+        font-size: 16px;
         color: #9ede8a;
       }
       #hud .result {
-        margin-top: 2px;
-        font-size: 15px;
-        font-weight: 600;
+        margin-top: 4px;
+        font-size: 16px;
+        line-height: 1.5;
       }
       #hud-seed,
       #hud-pixel,
       #hud-line,
       #hud-undulation,
       #hud-adjust {
-        margin-top: 4px;
+        margin-top: 6px;
         pointer-events: auto;
         appearance: none;
-        border: 1px solid rgba(232, 240, 232, 0.45);
-        border-radius: 999px;
-        background: rgba(0, 0, 0, 0.35);
-        color: #e8f0e8;
+        border: 2px solid;
+        border-color: #9ede8a #1b3318 #1b3318 #9ede8a;
+        border-radius: 0;
+        background: rgba(12, 20, 14, 0.82);
+        color: #eef7ec;
         font: inherit;
-        font-size: 12px;
-        padding: 4px 10px;
-        font-variant-numeric: tabular-nums;
+        font-size: 16px;
+        padding: 6px 10px;
       }
       #hud-pixel,
       #hud-line,
@@ -106,9 +121,11 @@
       }
       #hud .notice {
         margin-top: 2px;
-        font-size: 12px;
+        font-size: 16px;
+        line-height: 1.5;
         color: #ffd08a;
-        min-height: 15px;
+        /* 出たり消えたりで帯の高さが動かないよう、1行ぶん空けておく */
+        min-height: 24px;
       }
 
       /* 練習用のパター反発調整。入口はSTROKE中だけ表示する */
@@ -119,21 +136,21 @@
         z-index: 40;
         width: min(280px, calc(100vw - 20px));
         padding: 12px 14px;
-        border: 1px solid rgba(232, 240, 232, 0.55);
-        border-radius: 14px;
-        background: rgba(12, 20, 14, 0.9);
-        color: #e8f0e8;
-        font-family: system-ui, -apple-system, sans-serif;
-        font-size: 12px;
-        line-height: 1.45;
+        border: 3px solid #74cf5c;
+        box-shadow: 0 0 0 3px #0d140d;
+        background: rgba(15, 23, 15, 0.94);
+        color: #eef7ec;
+        font-family: var(--pixel-font);
+        font-size: 16px;
+        line-height: 1.5;
         pointer-events: auto;
       }
       #tuning-panel[hidden] {
         display: none;
       }
       #tuning-panel .tuning-title {
-        font-size: 13px;
-        font-weight: 700;
+        font-size: 16px;
+        color: #9ede8a;
         margin-bottom: 8px;
       }
       #tuning-panel .tuning-value {
@@ -147,12 +164,15 @@
         touch-action: manipulation;
       }
       #putter-power-detail {
-        margin-top: 4px;
+        margin-top: 6px;
         color: #bcd0c0;
-        font-variant-numeric: tabular-nums;
       }
 
       /* 読みと方向調整を同じ段階に置く。視点切替はスワイプではなく明示的なボタンで行う */
+      /*
+       * ドット絵フォントだと「ボール後方」などの札は1行に4つ並ばない。
+       * 折り返しに任せず 2×2 に固定して、押す場所が毎回同じ位置に来るようにする
+       */
       #camera-controls {
         position: fixed;
         left: 50%;
@@ -160,13 +180,11 @@
         transform: translateX(-50%);
         z-index: 30;
         display: none;
-        align-items: center;
-        justify-content: center;
-        flex-wrap: wrap;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 6px;
         width: max-content;
         max-width: calc(100vw - 16px);
-        font-family: system-ui, -apple-system, sans-serif;
+        font-family: var(--pixel-font);
       }
       /*
        * STROKE中のボタンは画面下の左右の角へ置く。
@@ -182,7 +200,7 @@
         display: none;
         flex-direction: column;
         gap: 6px;
-        font-family: system-ui, -apple-system, sans-serif;
+        font-family: var(--pixel-font);
       }
       /* 打つのをやめて戻る側は右下 */
       #stroke-controls {
@@ -194,63 +212,69 @@
         left: max(10px, env(safe-area-inset-left));
         align-items: flex-start;
       }
+      /*
+       * 画面の上に乗るボタンは、メニューと同じドット絵のベベルにする。
+       * 角丸とぼかし影は使わず、上と左を明るく・下と右を暗くして盛り上げ、
+       * 押したぶんだけ下の影が消えて沈む
+       */
       .camera-button,
       #stroke-back,
-      .stroke-camera-button {
+      .stroke-camera-button,
+      #map-toggle,
+      #giveup,
+      #home-button,
+      .home-dialog-button,
+      .score-action {
         appearance: none;
-        border: 1px solid rgba(232, 240, 232, 0.55);
-        border-radius: 999px;
-        background: rgba(12, 20, 14, 0.72);
-        color: #e8f0e8;
-        min-height: 36px;
-        padding: 7px 11px;
+        border-style: solid;
+        border-width: 2px;
+        border-color: #9ede8a #1b3318 #1b3318 #9ede8a;
+        border-radius: 0;
+        background: rgba(12, 20, 14, 0.82);
+        box-shadow: 0 3px 0 rgba(0, 0, 0, 0.5);
+        color: #eef7ec;
+        min-height: 40px;
+        padding: 9px 11px;
         font: inherit;
-        font-size: 11px;
+        font-size: 16px;
         line-height: 1;
         white-space: nowrap;
         touch-action: manipulation;
       }
-      .camera-button.active {
-        background: rgba(232, 240, 232, 0.92);
-        border-color: rgba(255, 255, 255, 0.95);
-        color: #162018;
-        font-weight: 700;
+      .camera-button:active,
+      #stroke-back:active,
+      .stroke-camera-button:active,
+      #map-toggle:active,
+      #giveup:active,
+      #home-button:active,
+      .home-dialog-button:active,
+      .score-action:active {
+        transform: translateY(3px);
+        border-color: #1b3318 #9ede8a #9ede8a #1b3318;
+        box-shadow: none;
+      }
+      /* 今そこにいることを示す側は白地。反転して見せる */
+      .camera-button.active,
+      #map-toggle.active {
+        background: #eef7ec;
+        border-color: #ffffff #4f9844 #4f9844 #ffffff;
+        color: #16210f;
       }
       #stroke-back {
-        min-height: 40px;
         padding-inline: 16px;
-        font-size: 12px;
       }
 
       /* マップは視点バーに並べない。右下へ単独で置き、視点の切り替えと区別する */
       #map-control {
         position: fixed;
         right: max(10px, env(safe-area-inset-right));
-        bottom: max(58px, calc(env(safe-area-inset-bottom) + 58px));
+        /* 視点バーが2行になったぶん、重ならない高さへ上げる */
+        bottom: max(108px, calc(env(safe-area-inset-bottom) + 108px));
         z-index: 30;
         display: none;
-        font-family: system-ui, -apple-system, sans-serif;
+        font-family: var(--pixel-font);
       }
-      #map-toggle {
-        appearance: none;
-        border: 1px solid rgba(232, 240, 232, 0.55);
-        border-radius: 999px;
-        background: rgba(12, 20, 14, 0.72);
-        color: #e8f0e8;
-        min-height: 36px;
-        padding: 7px 13px;
-        font: inherit;
-        font-size: 11px;
-        line-height: 1;
-        white-space: nowrap;
-        touch-action: manipulation;
-      }
-      #map-toggle.active {
-        background: rgba(232, 240, 232, 0.92);
-        border-color: rgba(255, 255, 255, 0.95);
-        color: #162018;
-        font-weight: 700;
-      }
+
 
       /*
        * ギブアップ（spec §3）。ダブルパーに達したときだけ出す出口。
@@ -261,26 +285,17 @@
       #giveup-control {
         position: fixed;
         left: max(10px, env(safe-area-inset-left));
-        bottom: max(58px, calc(env(safe-area-inset-bottom) + 58px));
+        bottom: max(108px, calc(env(safe-area-inset-bottom) + 108px));
         z-index: 30;
         display: none;
-        font-family: system-ui, -apple-system, sans-serif;
+        font-family: var(--pixel-font);
       }
+      /* ラウンドを1ホール捨てる側は赤い縁で他のボタンと分ける */
       #giveup {
         position: relative;
         overflow: hidden;
-        appearance: none;
-        border: 1px solid rgba(255, 176, 176, 0.5);
-        border-radius: 999px;
-        background: rgba(12, 20, 14, 0.72);
+        border-color: #ffb0b0 #5a2020 #5a2020 #ffb0b0;
         color: #f0d8d8;
-        min-height: 36px;
-        padding: 7px 13px;
-        font: inherit;
-        font-size: 11px;
-        line-height: 1;
-        white-space: nowrap;
-        touch-action: manipulation;
       }
       /* 押し続けている間だけ伸びる帯。どれだけ押せば決まるかを指に見せる */
       #giveup-fill {
@@ -307,21 +322,12 @@
         right: max(10px, env(safe-area-inset-right));
         z-index: 34;
         display: none;
-        font-family: system-ui, -apple-system, sans-serif;
+        font-family: var(--pixel-font);
       }
       #home-button {
-        appearance: none;
         min-width: 62px;
         min-height: 44px;
-        border: 1px solid rgba(232, 240, 232, 0.55);
-        border-radius: 999px;
-        background: rgba(12, 20, 14, 0.78);
-        color: #e8f0e8;
-        padding: 8px 13px;
-        font: inherit;
-        font-size: 12px;
-        font-weight: 700;
-        touch-action: manipulation;
+        padding: 12px 13px;
       }
       #home-dialog {
         position: fixed;
@@ -332,30 +338,31 @@
         justify-content: center;
         padding: 20px;
         background: rgba(0, 0, 0, 0.58);
-        font-family: system-ui, -apple-system, sans-serif;
+        font-family: var(--pixel-font);
         color: #e8f0e8;
         touch-action: manipulation;
       }
       #home-dialog[hidden] {
         display: none;
       }
+      /* カードはメニューのパネルと同じ二重枠。角丸とぼかし影は使わない */
       #home-dialog-card {
-        width: min(320px, calc(100vw - 40px));
-        padding: 20px;
-        border: 1px solid rgba(232, 240, 232, 0.55);
-        border-radius: 16px;
-        background: rgba(12, 20, 14, 0.96);
+        width: min(340px, calc(100vw - 32px));
+        padding: 20px 16px;
+        border: 3px solid #74cf5c;
+        box-shadow: 0 0 0 3px #0d140d, 8px 8px 0 rgba(0, 0, 0, 0.5);
+        background: rgba(15, 23, 15, 0.96);
         text-align: center;
       }
       #home-dialog-title {
-        font-size: 18px;
-        font-weight: 700;
+        font-size: 16px;
+        color: #9ede8a;
       }
       #home-dialog-message {
-        margin-top: 10px;
-        color: #cfe0d2;
-        font-size: 13px;
-        line-height: 1.55;
+        margin-top: 12px;
+        color: #bcd0c0;
+        font-size: 16px;
+        line-height: 1.5;
       }
       #home-dialog-actions {
         display: grid;
@@ -364,21 +371,17 @@
         margin-top: 18px;
       }
       .home-dialog-button {
-        appearance: none;
         min-height: 44px;
-        border: 1px solid rgba(232, 240, 232, 0.55);
-        border-radius: 999px;
-        background: rgba(30, 45, 33, 0.92);
-        color: #e8f0e8;
-        padding: 9px 12px;
-        font: inherit;
-        font-size: 13px;
-        font-weight: 700;
-        touch-action: manipulation;
+        background: #3a7332;
+        /* 2つ並べても「ゲームを続ける」が折り返さない詰め方にする */
+        padding: 12px 6px;
+        white-space: nowrap;
       }
+      /* 進む側は白地。押した後に戻れない操作なので、続ける側と見た目で分ける */
       #home-confirm {
-        background: rgba(232, 240, 232, 0.92);
-        color: #162018;
+        background: #eef7ec;
+        border-color: #ffffff #4f9844 #4f9844 #ffffff;
+        color: #16210f;
       }
 
       /*
@@ -396,54 +399,52 @@
         justify-content: center;
         padding: 20px;
         pointer-events: none;
-        font-family: system-ui, -apple-system, sans-serif;
+        font-family: var(--pixel-font);
         color: #e8f0e8;
       }
       #score-overlay[hidden] {
         display: none;
       }
       #score-card {
-        width: min(320px, calc(100vw - 40px));
-        padding: 18px 20px;
-        border: 1px solid rgba(232, 240, 232, 0.55);
-        border-radius: 16px;
-        background: rgba(12, 20, 14, 0.86);
+        width: min(330px, calc(100vw - 36px));
+        padding: 18px 16px;
+        border: 3px solid #74cf5c;
+        box-shadow: 0 0 0 3px #0d140d, 8px 8px 0 rgba(0, 0, 0, 0.5);
+        background: rgba(15, 23, 15, 0.92);
         text-align: center;
-        font-variant-numeric: tabular-nums;
       }
       #score-title {
-        font-size: 13px;
-        font-weight: 700;
-        letter-spacing: 0.16em;
+        font-size: 16px;
+        letter-spacing: 0.08em;
         color: #9ede8a;
       }
       /* ホール間はこの1行が主役。打数とパー差を大きく出す */
       #score-headline {
-        margin-top: 10px;
-        font-size: 30px;
-        font-weight: 700;
+        margin-top: 12px;
+        font-size: 32px;
         line-height: 1.1;
+        text-shadow: 3px 3px 0 #0d140d;
       }
       #score-sub {
-        margin-top: 6px;
-        font-size: 13px;
-        color: #cfe0d2;
+        margin-top: 10px;
+        font-size: 16px;
+        line-height: 1.5;
+        color: #bcd0c0;
       }
       /* ラウンド終了の一覧表 */
       #score-table {
         margin-top: 12px;
         width: 100%;
         border-collapse: collapse;
-        font-size: 13px;
+        font-size: 16px;
+        line-height: 1.45;
       }
       #score-table[hidden] {
         display: none;
       }
       #score-table th {
-        font-weight: 600;
         color: #a8bfae;
-        font-size: 11px;
-        letter-spacing: 0.08em;
+        font-weight: 400;
         padding-bottom: 4px;
       }
       #score-table th,
@@ -461,14 +462,14 @@
       }
       #score-table tr.total td,
       #score-table tr.total th {
-        border-top: 1px solid rgba(232, 240, 232, 0.35);
+        border-top: 2px solid rgba(232, 240, 232, 0.4);
         padding-top: 6px;
-        font-weight: 700;
+        color: #eef7ec;
       }
       #score-hint {
-        margin-top: 12px;
-        font-size: 12px;
-        color: #ffd08a;
+        margin-top: 14px;
+        font-size: 16px;
+        color: #ffe66d;
       }
       #score-hint[hidden] {
         display: none;
@@ -484,22 +485,16 @@
         display: none;
       }
       .score-action {
-        appearance: none;
-        border: 1px solid rgba(232, 240, 232, 0.55);
-        border-radius: 999px;
-        background: rgba(30, 45, 33, 0.92);
-        color: #e8f0e8;
         min-height: 44px;
-        padding: 9px 18px;
-        font: inherit;
-        font-size: 13px;
-        font-weight: 700;
-        touch-action: manipulation;
+        background: #3a7332;
+        padding: 12px 18px;
       }
+      /* 遊び続ける側は白地。トップへ戻る側と見た目で分ける */
       #score-course,
       #score-again {
-        background: rgba(232, 240, 232, 0.92);
-        color: #162018;
+        background: #eef7ec;
+        border-color: #ffffff #4f9844 #4f9844 #ffffff;
+        color: #16210f;
       }
 
       /* 横画面のときだけ出す「縦にしてください」オーバーレイ。縦画面専用（spec §0） */
@@ -513,10 +508,10 @@
         justify-content: center;
         gap: 24px;
         background: #101410;
-        color: #e8f0e8;
-        font-family: system-ui, -apple-system, sans-serif;
-        font-size: 20px;
-        letter-spacing: 0.08em;
+        color: #eef7ec;
+        font-family: var(--pixel-font);
+        font-size: 16px;
+        letter-spacing: 0.12em;
         text-align: center;
       }
       #rotate-overlay .icon {

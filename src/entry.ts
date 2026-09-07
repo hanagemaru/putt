@@ -3,6 +3,7 @@ import { TOUR_SETS, tourById, type TourDefinition } from './course/tour-holes';
 import { TourBestScoreStore, type BestScoreUpdate } from './best-score-storage';
 import { Round, formatToPar, onRoundComplete, type RoundResult } from './round';
 import { RoundProgressStore } from './round-storage';
+import { ensurePixelFont } from './pixel-font';
 
 const HOW_TO_URL = 'https://hanage.app/games/putt/how-to-play/';
 const PRIVACY_URL = 'https://hanage.app/privacy/';
@@ -268,25 +269,18 @@ function ensureBestScoreStyles(): void {
   style.id = 'best-score-styles';
   style.textContent = `
     #tour-best-result {
-      margin: 10px 0 0;
-      font-size: 14px;
-      font-weight: 800;
-      text-align: center;
+      display: inline-block;
+      margin: 12px 0 0;
+      border: 2px solid #0d140d;
+      background: #ffe66d;
+      padding: 4px 8px;
+      font-size: 16px;
+      color: #16210f;
     }
   `;
   document.head.append(style);
 }
 
-
-/**
- * メニューで使うドット絵フォント（DotGothic16 / SIL OFL 1.1）。
- * メニューに出る文字だけへ絞ったサブセットを自分たちで配る。外部への読み込みはしない。
- * 文言やコース名を変えたら `npm run font:menu` で作り直す。
- * 収録外の字は端末のゴシックへ落ちるだけで、表示は崩れない
- */
-function menuFontUrl(): string {
-  return new URL('./fonts/dotgothic16-menu-subset.woff2', import.meta.url).href;
-}
 
 /**
  * メニューの見た目はプレイ画面のドット感（config.pixel）に合わせる。
@@ -296,19 +290,12 @@ function menuFontUrl(): string {
  * deepRough 0x3a7332 / ob 0x27431f / flag 0xd94f3d / trail 0xffe66d / ball 0xf6f8f4）。
  */
 function ensureMenuStyles(): void {
+  ensurePixelFont();
   if (document.getElementById('menu-styles')) return;
 
   const style = document.createElement('style');
   style.id = 'menu-styles';
   style.textContent = `
-    @font-face {
-      font-family: 'DotGothic16 Menu';
-      src: url('${menuFontUrl()}') format('woff2');
-      font-weight: 400;
-      font-style: normal;
-      /* 読み込み前に別のフォントで出てから入れ替わらないよう、少しだけ待たせる */
-      font-display: block;
-    }
     body.menu-active {
       background: #0f170f;
       color: #eef7ec;
@@ -348,8 +335,7 @@ function ensureMenuStyles(): void {
         linear-gradient(45deg, rgba(116, 207, 92, 0.05) 25%, transparent 25%, transparent 75%, rgba(116, 207, 92, 0.05) 75%);
       background-size: 100% 100%, 8px 8px, 8px 8px;
       background-position: 0 0, 0 0, 4px 4px;
-      /* サブセットに無い字だけ端末のフォントへ落ちる。等幅を後ろに置いて字面を近づける */
-      font-family: 'DotGothic16 Menu', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-family: var(--pixel-font);
       letter-spacing: 0.08em;
       image-rendering: pixelated;
       touch-action: manipulation;

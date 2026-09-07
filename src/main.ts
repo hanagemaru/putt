@@ -27,6 +27,7 @@ import { approachDirection, generateCourse } from './course/course-generate';
 import type { CourseDefinition, TerrainType } from './course/course-types';
 import { tourById } from './course/tour-holes';
 import { CourseMapMarker } from './course-map-marker';
+import { ensurePixelFont } from './pixel-font';
 import { Round, formatToPar, type HoleScore } from './round';
 import { RoundProgressStore } from './round-storage';
 import { SmoothLineOverlay, type BallOccluder } from './smooth-line-overlay';
@@ -1408,7 +1409,11 @@ renderer.setAnimationLoop((now) => {
 
 // --- デバッグ表示と画面操作 ------------------------------------------------
 
+// 画面の文字はメニューと同じドット絵フォントで出す（spec §0 の世界観をDOM側でも保つ）
+ensurePixelFont();
+
 const hud = {
+  root: document.getElementById('hud')!,
   state: document.getElementById('hud-state')!,
   view: document.getElementById('hud-view')!,
   aim: document.getElementById('hud-aim')!,
@@ -1778,7 +1783,8 @@ function updateControls(): void {
   giveUpFill.style.width = `${(giveUpHoldProgress() * 100).toFixed(1)}%`;
 
   const inAddress = state === 'ADDRESS';
-  cameraControls.style.display = inAddress ? 'flex' : 'none';
+  // 視点バーは 2×2 の格子（index.html）。出すときは grid で戻す
+  cameraControls.style.display = inAddress ? 'grid' : 'none';
   mapControl.style.display = inAddress ? 'block' : 'none';
   mapToggle.classList.toggle('active', inAddress && aimView === 'MAP');
   const inStroke = state === 'STROKE';
@@ -1811,6 +1817,8 @@ function progressText(): string {
 function updateHud(): void {
   // スコアカードを出している間は、同じことを言うHUDを引っ込めてカードだけ読ませる
   const showingScore = state === 'HOLE_OUT' || state === 'ROUND_END';
+  // 文字が消えるときは、後ろの帯も一緒に消す（空の帯だけが残らないように）
+  hud.root.classList.toggle('quiet', showingScore);
   // 状態名は英語の内部名なので、通常のプレイ画面には出さない
   // 開発用の表示だけ、地形の性格も出す。実機で「今どの型か」を見ながら確かめるため
   hud.state.textContent = debugEnabled
