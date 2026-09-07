@@ -167,62 +167,66 @@ function renderTourSelection(): void {
 }
 
 /**
- * コース1つぶんの選択肢。
+ * コース1つぶんの枠。
  *
- * 途中の保存があるときは「再開」と「最初から」を並べる。
- * 再開しかできないと、続きを捨てて新しく回りたい人が詰まる。
- * 最初からを選んだときは、押した時点で保存を消してから始める
+ * 枠そのものは押さない。**押すところはボタンだけ**にして、
+ * 「どこを押すと何が起きるか」を1段で分かるようにする。
+ * 途中の保存があるときだけ「最初から」と「HOLE nから再開」を並べ、
+ * 無ければ「最初から」だけを出す
  */
 function courseEntry(tour: TourDefinition): HTMLElement {
-  const entry = document.createElement('div');
-  entry.className = 'course-entry';
+  const card = document.createElement('div');
+  card.className = 'course-card';
 
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'course-button';
-
-  const name = document.createElement('span');
+  const name = document.createElement('div');
   name.className = 'course-name';
   name.textContent = tour.name;
 
-  const description = document.createElement('span');
+  const description = document.createElement('div');
   description.className = 'course-description';
   description.textContent = tour.description;
 
-  button.append(name, description);
+  card.append(name, description);
 
   const best = bestLabel(tour);
   if (best) {
-    const status = document.createElement('span');
-    status.className = 'course-best';
-    status.textContent = best;
-    button.append(status);
+    const status = document.createElement('div');
+    status.className = 'course-best-row';
+    const badge = document.createElement('span');
+    badge.className = 'course-best';
+    badge.textContent = best;
+    status.append(badge);
+    card.append(status);
   }
+
+  const actions = document.createElement('div');
+  actions.className = 'course-actions';
 
   const resume = resumeLabel(tour);
-  if (!resume) {
-    button.addEventListener('click', () => navigateTo({ tour: tour.id }));
-    entry.append(button);
-    return entry;
-  }
-
-  const status = document.createElement('span');
-  status.className = 'course-resume';
-  status.textContent = resume;
-  button.append(status);
-  button.addEventListener('click', () => navigateTo({ tour: tour.id }));
-
-  const restart = document.createElement('button');
-  restart.type = 'button';
-  restart.className = 'course-restart';
-  restart.textContent = '最初から';
-  restart.addEventListener('click', () => {
-    progressStore(tour).clear();
+  const restart = courseAction('最初から', !resume, () => {
+    // 続きを捨てて回り直す。始める前に保存を消しておく
+    if (resume) progressStore(tour).clear();
     navigateTo({ tour: tour.id });
   });
+  actions.append(restart);
 
-  entry.append(button, restart);
-  return entry;
+  if (resume) {
+    actions.classList.add('two');
+    actions.append(courseAction(resume, true, () => navigateTo({ tour: tour.id })));
+  }
+
+  card.append(actions);
+  return card;
+}
+
+/** コースの枠の中に置くボタン。`primary` は白地で、押してほしい側を示す */
+function courseAction(label: string, primary: boolean, onClick: () => void): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = primary ? 'course-action primary' : 'course-action';
+  button.textContent = label;
+  button.addEventListener('click', onClick);
+  return button;
 }
 
 function bestLabel(tour: TourDefinition): string | null {
@@ -422,8 +426,7 @@ function ensureMenuStyles(): void {
       margin-top: 28px;
     }
     .menu-button,
-    .course-button,
-    .course-restart,
+    .course-action,
     .menu-back,
     .menu-text-link {
       appearance: none;
@@ -438,8 +441,6 @@ function ensureMenuStyles(): void {
      * 押したぶんだけ下の影が消えて沈む
      */
     .menu-button,
-    .course-button,
-    .course-restart,
     .menu-back {
       border-style: solid;
       border-width: 3px;
@@ -454,8 +455,6 @@ function ensureMenuStyles(): void {
       font-weight: 400;
     }
     .menu-button:active,
-    .course-button:active,
-    .course-restart:active,
     .menu-back:active {
       transform: translateY(4px);
       border-color: #1b3318 #9ede8a #9ede8a #1b3318;
@@ -465,8 +464,6 @@ function ensureMenuStyles(): void {
       transform: translateY(2px);
     }
     .menu-button:focus-visible,
-    .course-button:focus-visible,
-    .course-restart:focus-visible,
     .menu-back:focus-visible,
     .menu-text-link:focus-visible {
       outline: 3px solid #ffe66d;
@@ -514,26 +511,57 @@ function ensureMenuStyles(): void {
     .course-list {
       margin-top: 20px;
     }
-    .course-entry {
-      display: grid;
-      gap: 8px;
-    }
-    .course-button {
-      display: flex;
-      min-height: 88px;
-      flex-direction: column;
-      align-items: flex-start;
+    /* コースの枠。押すのは中のボタンだけで、枠自体は押さない */
+    .course-card {
+      border-style: solid;
+      border-width: 3px;
+      border-color: #9ede8a #1b3318 #1b3318 #9ede8a;
       background: #27431f;
-      padding: 13px 14px;
+      padding: 13px 14px 14px;
       text-align: left;
     }
-    /* 続きを捨てて回り直す側。押し間違えないよう、再開のボタンより控えめにする */
-    .course-restart {
-      justify-self: start;
+    .course-actions {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .course-actions.two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .course-action {
       min-height: 44px;
-      background: #1b2c1d;
-      padding: 12px 14px;
+      border-style: solid;
+      border-width: 3px;
+      border-color: #9ede8a #1b3318 #1b3318 #9ede8a;
+      background: #3a7332;
+      box-shadow: 0 4px 0 #0d140d;
+      padding: 12px 6px;
       font-size: 16px;
+      white-space: nowrap;
+    }
+    /* 押してほしい側は白地。保存があるときは「再開」、無いときは「最初から」 */
+    .course-action.primary {
+      background: #eef7ec;
+      border-color: #ffffff #4f9844 #4f9844 #ffffff;
+      color: #16210f;
+    }
+    .course-action:active {
+      transform: translateY(4px);
+      border-color: #1b3318 #9ede8a #9ede8a #1b3318;
+      box-shadow: none;
+    }
+    .course-action:focus-visible {
+      outline: 3px solid #ffe66d;
+      outline-offset: 2px;
+    }
+    /* 幅の狭い端末では「HOLE nから再開」が半分の幅に収まらないので落とす */
+    @media (max-width: 359px) {
+      .course-action {
+        font-size: 12px;
+      }
+    }
+    .course-best-row {
+      margin-top: 10px;
     }
     .course-name {
       font-size: 16px;
@@ -547,21 +575,14 @@ function ensureMenuStyles(): void {
       color: #bcd0c0;
     }
     /* 自己ベストと再開はドット絵のラベル。角丸にせず枠で囲む */
-    .course-best,
-    .course-resume {
-      margin-top: 10px;
+    .course-best {
+      display: inline-block;
       border: 2px solid #0d140d;
+      background: #ffe66d;
       padding: 3px 7px;
       font-size: 16px;
       letter-spacing: 0.06em;
-    }
-    .course-best {
-      background: #ffe66d;
       color: #16210f;
-    }
-    .course-resume {
-      background: #d94f3d;
-      color: #fff2ee;
     }
   `;
   document.head.append(style);
