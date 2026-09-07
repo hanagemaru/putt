@@ -160,13 +160,23 @@ function renderTourSelection(): void {
 
   const courses = document.createElement('div');
   courses.className = 'course-list';
-  for (const tour of TOUR_SETS) courses.append(courseButton(tour));
+  for (const tour of TOUR_SETS) courses.append(courseEntry(tour));
 
   panel.append(heading, courses);
   root.append(panel);
 }
 
-function courseButton(tour: TourDefinition): HTMLButtonElement {
+/**
+ * コース1つぶんの選択肢。
+ *
+ * 途中の保存があるときは「再開」と「最初から」を並べる。
+ * 再開しかできないと、続きを捨てて新しく回りたい人が詰まる。
+ * 最初からを選んだときは、押した時点で保存を消してから始める
+ */
+function courseEntry(tour: TourDefinition): HTMLElement {
+  const entry = document.createElement('div');
+  entry.className = 'course-entry';
+
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'course-button';
@@ -190,15 +200,29 @@ function courseButton(tour: TourDefinition): HTMLButtonElement {
   }
 
   const resume = resumeLabel(tour);
-  if (resume) {
-    const status = document.createElement('span');
-    status.className = 'course-resume';
-    status.textContent = resume;
-    button.append(status);
+  if (!resume) {
+    button.addEventListener('click', () => navigateTo({ tour: tour.id }));
+    entry.append(button);
+    return entry;
   }
 
+  const status = document.createElement('span');
+  status.className = 'course-resume';
+  status.textContent = resume;
+  button.append(status);
   button.addEventListener('click', () => navigateTo({ tour: tour.id }));
-  return button;
+
+  const restart = document.createElement('button');
+  restart.type = 'button';
+  restart.className = 'course-restart';
+  restart.textContent = '最初から';
+  restart.addEventListener('click', () => {
+    progressStore(tour).clear();
+    navigateTo({ tour: tour.id });
+  });
+
+  entry.append(button, restart);
+  return entry;
 }
 
 function bestLabel(tour: TourDefinition): string | null {
@@ -207,12 +231,17 @@ function bestLabel(tour: TourDefinition): string | null {
   return `BEST ${score.strokes} (${formatToPar(score.strokes - score.par)})`;
 }
 
-function resumeLabel(tour: TourDefinition): string | null {
-  const store = new RoundProgressStore(
+/** 通常ツアー1コースぶんの進行の保存場所。main.ts と同じキーの作り方をする */
+function progressStore(tour: TourDefinition): RoundProgressStore {
+  return new RoundProgressStore(
     `${CONFIG.game.round.save.tourKey}-${tour.id}`,
     CONFIG.game.round.save.version,
     tour.seeds,
   );
+}
+
+function resumeLabel(tour: TourDefinition): string | null {
+  const store = progressStore(tour);
   const saved = store.load();
   if (!saved) return null;
 
@@ -319,7 +348,12 @@ function ensureMenuStyles(): void {
       inset: 0;
       z-index: 60;
       display: flex;
-      align-items: center;
+      /*
+       * 中央寄せ（align-items: center）のままだと、内容が画面より高いときに
+       * 上へはみ出したぶんがスクロールで戻せず切れる。
+       * 揃えは先頭にして、余白があるときだけ margin で中央へ寄せる
+       */
+      align-items: flex-start;
       justify-content: center;
       overflow-y: auto;
       padding: max(24px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
@@ -342,6 +376,7 @@ function ensureMenuStyles(): void {
     }
     .menu-panel {
       width: min(360px, 100%);
+      margin: auto;
       border: 3px solid #74cf5c;
       /* 二重の枠でドット絵のウィンドウにする。ぼかさない */
       box-shadow: 0 0 0 3px #0d140d, 8px 8px 0 rgba(0, 0, 0, 0.45);
@@ -388,6 +423,7 @@ function ensureMenuStyles(): void {
     }
     .menu-button,
     .course-button,
+    .course-restart,
     .menu-back,
     .menu-text-link {
       appearance: none;
@@ -403,6 +439,7 @@ function ensureMenuStyles(): void {
      */
     .menu-button,
     .course-button,
+    .course-restart,
     .menu-back {
       border-style: solid;
       border-width: 3px;
@@ -418,6 +455,7 @@ function ensureMenuStyles(): void {
     }
     .menu-button:active,
     .course-button:active,
+    .course-restart:active,
     .menu-back:active {
       transform: translateY(4px);
       border-color: #1b3318 #9ede8a #9ede8a #1b3318;
@@ -428,6 +466,7 @@ function ensureMenuStyles(): void {
     }
     .menu-button:focus-visible,
     .course-button:focus-visible,
+    .course-restart:focus-visible,
     .menu-back:focus-visible,
     .menu-text-link:focus-visible {
       outline: 3px solid #ffe66d;
@@ -475,6 +514,10 @@ function ensureMenuStyles(): void {
     .course-list {
       margin-top: 20px;
     }
+    .course-entry {
+      display: grid;
+      gap: 8px;
+    }
     .course-button {
       display: flex;
       min-height: 88px;
@@ -483,6 +526,14 @@ function ensureMenuStyles(): void {
       background: #27431f;
       padding: 13px 14px;
       text-align: left;
+    }
+    /* 続きを捨てて回り直す側。押し間違えないよう、再開のボタンより控えめにする */
+    .course-restart {
+      justify-self: start;
+      min-height: 44px;
+      background: #1b2c1d;
+      padding: 12px 14px;
+      font-size: 16px;
     }
     .course-name {
       font-size: 16px;

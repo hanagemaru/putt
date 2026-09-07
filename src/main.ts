@@ -1689,6 +1689,11 @@ function giveUpHoldProgress(): number {
   return Math.min((performance.now() - giveUpStartedAt) / G.round.giveUpHoldMs, 1);
 }
 
+/** 押し続けている最中か。ボタンの文字を切り替えるのに使う */
+function holdingGiveUp(): boolean {
+  return giveUpTimer !== null;
+}
+
 function cancelGiveUpHold(): void {
   if (giveUpTimer !== null) {
     clearTimeout(giveUpTimer);
@@ -1778,7 +1783,13 @@ function updateControls(): void {
   const showGiveUp = canGiveUp() && !(state === 'ADDRESS' && aimView === 'MAP');
   if (!showGiveUp) cancelGiveUpHold();
   giveUpControl.style.display = showGiveUp ? 'block' : 'none';
-  giveUpLabel.textContent = round ? 'ギブアップ' : 'ギブアップ（ティーへ）';
+  // 押し続けないと決まらないことは、ボタンの中で先に言っておく。
+  // 帯（#giveup-fill）はもう押している人にしか見えないので、それだけでは気づけない
+  giveUpLabel.textContent = holdingGiveUp()
+    ? '押したまま…'
+    : round
+      ? 'ギブアップ 長押し'
+      : 'ギブアップ（ティーへ）長押し';
   giveUpFill.style.width = `${(giveUpHoldProgress() * 100).toFixed(1)}%`;
 
   const inAddress = state === 'ADDRESS';

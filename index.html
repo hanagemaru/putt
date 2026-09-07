@@ -71,15 +71,19 @@
         background: transparent;
         border-bottom-color: transparent;
       }
+      /*
+       * プレイ中の1行。折り返して2行になると帯の高さが動くので、
+       * 折り返さずに1行へ収める（区切りは空白の数で作っている）
+       */
       #hud .row {
         display: flex;
-        flex-wrap: wrap;
         gap: 2px 10px;
         font-size: 16px;
         line-height: 1.4;
+        min-height: 22px;
         color: #dfeade;
-        /* 項目の区切りは空白の数で作っているので、詰めさせない */
-        white-space: pre-wrap;
+        white-space: pre;
+        overflow: hidden;
       }
       #hud .row:empty {
         display: none;
@@ -90,7 +94,7 @@
       }
       /* 1行目の右上には「トップ」が乗る。文字が下へ潜らないよう場所を空ける */
       #hud .row:first-child {
-        padding-right: 58px;
+        padding-right: 66px;
       }
       #hud .state {
         font-size: 16px;
@@ -113,42 +117,62 @@
       #hud-line,
       #hud-undulation,
       #hud-adjust {
-        margin-top: 6px;
         pointer-events: auto;
         appearance: none;
-        border: 2px solid;
+        border-style: solid;
+        border-width: 2px;
         border-color: #9ede8a #1b3318 #1b3318 #9ede8a;
         border-radius: 0;
         background: rgba(12, 20, 14, 0.82);
+        box-shadow: 0 3px 0 rgba(0, 0, 0, 0.5);
         color: #eef7ec;
         font: inherit;
-        font-size: 16px;
-        padding: 6px 10px;
+        line-height: 1;
+        white-space: nowrap;
+        touch-action: manipulation;
+      }
+      #hud-seed,
+      #hud-pixel,
+      #hud-line,
+      #hud-undulation {
+        margin-top: 6px;
+      }
+      /*
+       * 練習の強さ調整の入口。**HUDの中に置くと帯の高さが動く**ので、
+       * 帯の外（下）へ出して単独で出し入れする
+       */
+      #adjust-control {
+        position: fixed;
+        top: max(62px, calc(env(safe-area-inset-top) + 62px));
+        right: max(10px, env(safe-area-inset-right));
+        z-index: 34;
+        font-family: var(--pixel-font);
       }
       #hud-pixel,
       #hud-line,
-      #hud-undulation,
-      #hud-adjust {
+      #hud-undulation {
         margin-left: 4px;
       }
       #hud-seed:disabled,
       #hud-undulation:disabled {
         opacity: 0.35;
       }
-      /* 池・OBの知らせだけは出す。空のときは帯を伸ばさない（高さは予約しない） */
+      /*
+       * 池・OBの知らせ。**出たり消えたりで帯の高さを動かさない。**
+       * 高さが動くと画面が跳ねて見えるので、知らせが無いときも1行ぶん空けておく
+       */
       #hud .notice {
         font-size: 12px;
         line-height: 1.5;
+        min-height: 18px;
         color: #ffd08a;
-      }
-      #hud .notice:empty {
-        display: none;
       }
 
       /* 練習用のパター反発調整。入口はSTROKE中だけ表示する */
       #tuning-panel {
         position: fixed;
-        top: max(76px, calc(env(safe-area-inset-top) + 76px));
+        /* 入口の「強さ」ボタン（#adjust-control）の下へ出す */
+        top: max(104px, calc(env(safe-area-inset-top) + 104px));
         right: max(10px, env(safe-area-inset-right));
         z-index: 40;
         width: min(280px, calc(100vw - 20px));
@@ -259,7 +283,8 @@
       }
       /*
        * 3Dの上に置くボタンは小さくする。画面を覆う面積を減らすのが目的なので、
-       * 指で押す高さ（40px）は保ったまま文字だけ落とす。
+       * 指で押す高さ（36px）は保ったまま文字だけ落とす。
+       * **この一覧の中では大きさを揃える。** 片方だけ大きいと押し間違える。
        * カードとダイアログの中のボタンは16pxのまま
        */
       .camera-button,
@@ -267,9 +292,14 @@
       .stroke-camera-button,
       #map-toggle,
       #giveup,
-      #home-button {
+      #home-button,
+      #hud-adjust,
+      #hud-seed,
+      #hud-pixel,
+      #hud-line,
+      #hud-undulation {
         min-height: 36px;
-        padding: 8px 6px;
+        padding: 8px 8px;
         font-size: 12px;
         letter-spacing: 0;
       }
@@ -293,7 +323,6 @@
         color: #16210f;
       }
       #stroke-back {
-        min-height: 40px;
         padding-inline: 14px;
       }
 
@@ -590,6 +619,9 @@
         <button type="button" id="hud-line" hidden>ライン</button>
         <button type="button" id="hud-undulation" hidden>地形</button>
       </div>
+    </div>
+
+    <div id="adjust-control">
       <button type="button" id="hud-adjust" style="display: none">強さ</button>
     </div>
 
