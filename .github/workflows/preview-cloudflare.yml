@@ -44,8 +44,12 @@ jobs:
             --tag "${GITHUB_SHA::8}" \
             --message "${message:0:100}" \
             2>&1 | tee upload.log
+          # ホスト名は <バージョン>-<worker>.<サブドメイン>.workers.dev の形なので、
+          # ドットも許す。色付けのエスケープが混ざるので先に落とす。
           # 形式が変わって拾えなくても、バージョン自体は上がっているのでジョブは失敗させない
-          url=$(grep -Eo 'https://[a-z0-9-]+\.workers\.dev[^ ]*' upload.log | tail -1 || true)
+          url=$(sed -E 's/\x1b\[[0-9;]*m//g' upload.log \
+            | grep -Eo 'https://[a-z0-9.-]+\.workers\.dev[^[:space:]]*' \
+            | tail -1 || true)
           echo "url=$url" >> "$GITHUB_OUTPUT"
       - name: Show preview URL
         run: |
