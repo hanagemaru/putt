@@ -59,7 +59,7 @@
         left: 0;
         right: 0;
         z-index: 20;
-        padding: max(8px, env(safe-area-inset-top)) 12px 10px;
+        padding: max(6px, env(safe-area-inset-top)) 10px 6px;
         pointer-events: none;
         font-family: var(--pixel-font);
         color: #eef7ec;
@@ -74,23 +74,39 @@
       #hud .row {
         display: flex;
         flex-wrap: wrap;
-        gap: 2px 14px;
+        gap: 2px 10px;
         font-size: 16px;
-        line-height: 1.5;
+        line-height: 1.4;
         color: #dfeade;
+        /* 項目の区切りは空白の数で作っているので、詰めさせない */
+        white-space: pre-wrap;
+      }
+      #hud .row:empty {
+        display: none;
+      }
+      /* 空の欄が桁の隙間として残らないよう、中身が無い span は畳む */
+      #hud .row > span:empty {
+        display: none;
       }
       /* 1行目の右上には「トップ」が乗る。文字が下へ潜らないよう場所を空ける */
       #hud .row:first-child {
-        padding-right: 76px;
+        padding-right: 58px;
       }
       #hud .state {
         font-size: 16px;
         color: #9ede8a;
       }
+      /* 開発用の1行。通常のプレイでは空 */
       #hud .result {
-        margin-top: 4px;
-        font-size: 16px;
+        font-size: 12px;
         line-height: 1.5;
+      }
+      #hud .result:empty {
+        display: none;
+      }
+      /* スワイプの数値も開発用。通常のプレイでは空 */
+      #hud-swing {
+        font-size: 12px;
       }
       #hud-seed,
       #hud-pixel,
@@ -119,13 +135,14 @@
       #hud-undulation:disabled {
         opacity: 0.35;
       }
+      /* 池・OBの知らせだけは出す。空のときは帯を伸ばさない（高さは予約しない） */
       #hud .notice {
-        margin-top: 2px;
-        font-size: 16px;
+        font-size: 12px;
         line-height: 1.5;
         color: #ffd08a;
-        /* 出たり消えたりで帯の高さが動かないよう、1行ぶん空けておく */
-        min-height: 24px;
+      }
+      #hud .notice:empty {
+        display: none;
       }
 
       /* 練習用のパター反発調整。入口はSTROKE中だけ表示する */
@@ -170,20 +187,19 @@
 
       /* 読みと方向調整を同じ段階に置く。視点切替はスワイプではなく明示的なボタンで行う */
       /*
-       * ドット絵フォントだと「ボール後方」などの札は1行に4つ並ばない。
-       * 折り返しに任せず 2×2 に固定して、押す場所が毎回同じ位置に来るようにする
+       * 視点バーは画面下の1行に4つ。プレイ画面を食わないよう、
+       * 札の文字はドット絵フォントの方眼から外れる12pxまで落として横幅を作る。
+       * 幅は4等分の格子に固定して、押す場所が毎回同じ位置に来るようにする
        */
       #camera-controls {
         position: fixed;
-        left: 50%;
-        bottom: max(14px, env(safe-area-inset-bottom));
-        transform: translateX(-50%);
+        left: max(8px, env(safe-area-inset-left));
+        right: max(8px, env(safe-area-inset-right));
+        bottom: max(12px, env(safe-area-inset-bottom));
         z-index: 30;
         display: none;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 6px;
-        width: max-content;
-        max-width: calc(100vw - 16px);
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 4px;
         font-family: var(--pixel-font);
       }
       /*
@@ -241,6 +257,22 @@
         white-space: nowrap;
         touch-action: manipulation;
       }
+      /*
+       * 3Dの上に置くボタンは小さくする。画面を覆う面積を減らすのが目的なので、
+       * 指で押す高さ（40px）は保ったまま文字だけ落とす。
+       * カードとダイアログの中のボタンは16pxのまま
+       */
+      .camera-button,
+      #stroke-back,
+      .stroke-camera-button,
+      #map-toggle,
+      #giveup,
+      #home-button {
+        min-height: 36px;
+        padding: 8px 6px;
+        font-size: 12px;
+        letter-spacing: 0;
+      }
       .camera-button:active,
       #stroke-back:active,
       .stroke-camera-button:active,
@@ -261,15 +293,16 @@
         color: #16210f;
       }
       #stroke-back {
-        padding-inline: 16px;
+        min-height: 40px;
+        padding-inline: 14px;
       }
 
       /* マップは視点バーに並べない。右下へ単独で置き、視点の切り替えと区別する */
       #map-control {
         position: fixed;
         right: max(10px, env(safe-area-inset-right));
-        /* 視点バーが2行になったぶん、重ならない高さへ上げる */
-        bottom: max(108px, calc(env(safe-area-inset-bottom) + 108px));
+        /* 視点バー（1行）と重ならない高さに置く */
+        bottom: max(58px, calc(env(safe-area-inset-bottom) + 58px));
         z-index: 30;
         display: none;
         font-family: var(--pixel-font);
@@ -285,7 +318,7 @@
       #giveup-control {
         position: fixed;
         left: max(10px, env(safe-area-inset-left));
-        bottom: max(108px, calc(env(safe-area-inset-bottom) + 108px));
+        bottom: max(58px, calc(env(safe-area-inset-bottom) + 58px));
         z-index: 30;
         display: none;
         font-family: var(--pixel-font);
@@ -325,9 +358,9 @@
         font-family: var(--pixel-font);
       }
       #home-button {
-        min-width: 62px;
-        min-height: 44px;
-        padding: 12px 13px;
+        min-width: 52px;
+        min-height: 36px;
+        padding: 10px 8px;
       }
       #home-dialog {
         position: fixed;
@@ -545,7 +578,6 @@
         <span class="state" id="hud-state">ADDRESS</span>
         <span id="hud-view"></span>
         <span id="hud-aim"></span>
-        <span id="hud-dist"></span>
         <span id="hud-shots"></span>
       </div>
       <div class="row" id="hud-swing"></div>
