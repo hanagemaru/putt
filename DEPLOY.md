@@ -22,6 +22,8 @@ Cloudflareへのデプロイは、リポジトリ変数 `CLOUDFLARE_DEPLOY` が 
 
 `npm run build:cloudflare` は `PUTT_BASE=/` を渡すだけで、他は同じビルド。
 
+PWAのマニフェストとアイコンも同じベースに追従する。詳細は `docs/pwa.md`。
+
 ## 設定済みのシークレットと変数
 
 `hanagemaru/putt` の Settings → Secrets and variables → Actions に登録済み。
