@@ -28,27 +28,27 @@ const COPY = {
     english: 'EN',
     backToMenu: '← トップ',
     tourTitle: '通常ツアー',
-    startOver: '最初から',
+    startOver: 'HOLE 1から',
 
     // --- 画面共通（index.html） ---
     top: 'トップ',
     backToTop: 'トップへ戻る',
     cameraViewLabel: 'カメラ視点',
     strokeViewLabel: '見る向きの切り替え',
-    map: 'コースマップ',
+    map: 'マップ',
     backToRead: '読みに戻る',
     checkAim: '狙いを見る',
-    giveUp: 'ギブアップ 長押し',
-    giveUpToTee: 'ギブアップ（ティーへ）長押し',
+    giveUp: '長押しでギブアップ',
+    giveUpToTee: '長押しでギブアップ（打ち直し）',
     giveUpHolding: '押したまま…',
     putterPower: 'パターの強さ',
     power: '強さ',
-    rotateToPortrait: '縦にしてください',
+    rotateToPortrait: 'スマホを縦にしてください',
 
     // --- 視点名（main.ts の HUD と視点バー） ---
     views: {
       AIM: 'ボール後方',
-      MAP: 'コースマップ',
+      MAP: 'マップ',
       BEHIND_BALL: '旧ボール後方',
       BEHIND_HOLE: 'カップ後方',
       LOW_LINE: '低い視点',
@@ -57,22 +57,22 @@ const COPY = {
 
     // --- 案内（main.ts / stroke-view.ts） ---
     noticeAim: '左右スワイプで狙い、タップで構える',
-    noticeMap: 'コースマップ ・ タップで戻る',
+    noticeMap: 'ホールマップ ・ タップで戻る',
     noticeLowLine: '低い視点 ・ 左右スワイプで狙い、タップで構える',
     noticeRead: '読み視点 ・ タップで構える',
-    noticeCupCheck: '狙いを見る ・ 左右スワイプで狙いを調整 ・ タップで手元へ戻る',
+    noticeCupCheck: '狙い ・ 左右スワイプで調整 ・ タップで戻る',
     noticeNextPutt: 'タップで次の一打',
     noticePullRight: '右へ引いてください',
-    noticeSwingThrough: '振り抜いてください',
+    noticeSwingThrough: 'そのまま振り抜いてください',
     noticeNoBackswing: 'バックスイングなし — 無効',
-    noticeFewSamples: 'サンプル不足 — 無効',
+    noticeFewSamples: 'スイングを読めません — 無効',
     noticeNotPulledRight: '右へ引いていません — 無効',
 
     // --- スコア表示（main.ts） ---
     gaveUpMark: '・ギブアップ',
     gaveUpNote: '　* はギブアップ',
     hintNextHole: 'タップで次のホールへ',
-    hintResult: 'タップで結果へ',
+    hintResult: 'タップでスコアへ',
     practiceEnd: '練習終了',
     colHole: 'H',
     colPar: 'PAR',
@@ -81,7 +81,7 @@ const COPY = {
 
     // --- トップへ戻る確認（main.ts） ---
     homeDialogTitle: 'トップへ戻りますか？',
-    homeContinue: 'ゲームを続ける',
+    homeContinue: '続ける',
     homeConfirm: 'トップへ戻る',
     homeMessageTourSaved: 'トップへ戻りますか？ ここまでの進行は保存されています。',
     homeMessageTourMid:
@@ -318,7 +318,7 @@ export function holeOutSub(
 }
 
 export function holedResult(strokes: number): string {
-  return en(`HOLED IN ${strokes}`, `カップイン（${strokes} 打）`);
+  return en(`HOLED IN ${strokes}`, `${strokes} 打でカップイン`);
 }
 
 export function waterResult(strokes: number): string {
