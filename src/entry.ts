@@ -4,10 +4,15 @@ import { TourBestScoreStore, type BestScoreUpdate } from './best-score-storage';
 import { Round, formatToPar, onRoundComplete, type RoundResult } from './round';
 import { RoundProgressStore } from './round-storage';
 import { ensurePixelFont } from './pixel-font';
+import * as i18n from './i18n';
+import { applyStaticUiText, language, setLanguage, t } from './i18n';
 
 const HOW_TO_URL = 'https://hanage.app/games/putt/how-to-play/';
 const PRIVACY_URL = 'https://hanage.app/privacy/';
 const params = new URLSearchParams(window.location.search);
+
+// index.html は日本語を初期値として持つ。英語ならここで一度だけ差し替える
+applyStaticUiText();
 
 if (shouldStartGameDirectly(params)) {
   const tour = directTourFromParams(params);
@@ -63,7 +68,7 @@ function setupTourBestTracking(tour: TourDefinition): void {
 
   const renderBest = (): void => {
     if (!scoreTitle || !bestResult) return;
-    if (scoreTitle.textContent !== `${tour.name}・ラウンド終了`) {
+    if (scoreTitle.dataset.screen !== 'round-end') {
       bestResult.hidden = true;
       return;
     }
@@ -78,14 +83,20 @@ function setupTourBestTracking(tour: TourDefinition): void {
     }
 
     const { score, isNewBest } = update;
-    const best = `BEST ${score.strokes} (${formatToPar(score.strokes - score.par)})`;
-    bestResult.textContent = isNewBest ? `NEW BEST!　${best}` : best;
+    const best = i18n.bestLabel(score.strokes, formatToPar(score.strokes - score.par));
+    bestResult.textContent = isNewBest ? i18n.newBestLabel(best) : best;
     bestResult.hidden = false;
   };
 
   if (scoreTitle) {
     const observer = new MutationObserver(renderBest);
-    observer.observe(scoreTitle, { childList: true, characterData: true, subtree: true });
+    observer.observe(scoreTitle, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['data-screen'],
+    });
   }
 
   onRoundComplete((result) => {
@@ -113,26 +124,28 @@ function renderTopMenu(): void {
   title.className = 'menu-title';
   title.textContent = 'putt';
 
+  const copy = t();
+
   const subtitle = document.createElement('p');
   subtitle.className = 'menu-subtitle';
-  subtitle.textContent = 'モードを選んでください';
+  subtitle.textContent = copy.menuSubtitle;
 
   const actions = document.createElement('div');
   actions.className = 'menu-actions';
   actions.append(
-    menuButton('通常ツアー', renderTourSelection),
-    menuButton('練習', () => navigateTo({ mode: 'practice' })),
+    menuButton(copy.modeTour, renderTourSelection),
+    menuButton(copy.modePractice, () => navigateTo({ mode: 'practice' })),
   );
 
   const secondary = document.createElement('nav');
   secondary.className = 'menu-secondary';
-  secondary.setAttribute('aria-label', '案内');
+  secondary.setAttribute('aria-label', copy.guideLabel);
 
-  const howTo = externalMenuLink('遊び方', HOW_TO_URL);
-  const privacy = externalMenuLink('プライバシー', PRIVACY_URL);
+  const howTo = externalMenuLink(copy.howTo, HOW_TO_URL);
+  const privacy = externalMenuLink(copy.privacy, PRIVACY_URL);
 
   secondary.append(howTo, privacy);
-  panel.append(title, subtitle, actions, secondary);
+  panel.append(title, subtitle, actions, secondary, languageToggle(renderTopMenu));
   root.append(panel);
 }
 
@@ -149,12 +162,12 @@ function renderTourSelection(): void {
   const back = document.createElement('button');
   back.type = 'button';
   back.className = 'menu-back';
-  back.textContent = '← トップ';
+  back.textContent = t().backToMenu;
   back.addEventListener('click', renderTopMenu);
 
   const title = document.createElement('h1');
   title.className = 'course-title';
-  title.textContent = '通常ツアー';
+  title.textContent = t().tourTitle;
 
   heading.append(back, title);
 
@@ -162,7 +175,7 @@ function renderTourSelection(): void {
   courses.className = 'course-list';
   for (const tour of TOUR_SETS) courses.append(courseEntry(tour));
 
-  panel.append(heading, courses);
+  panel.append(heading, courses, languageToggle(renderTourSelection));
   root.append(panel);
 }
 
@@ -180,11 +193,11 @@ function courseEntry(tour: TourDefinition): HTMLElement {
 
   const name = document.createElement('div');
   name.className = 'course-name';
-  name.textContent = tour.name;
+  name.textContent = tour.name[language()];
 
   const description = document.createElement('div');
   description.className = 'course-description';
-  description.textContent = tour.description;
+  description.textContent = tour.description[language()];
 
   card.append(name, description);
 
@@ -203,7 +216,7 @@ function courseEntry(tour: TourDefinition): HTMLElement {
   actions.className = 'course-actions';
 
   const resume = resumeLabel(tour);
-  const restart = courseAction('最初から', !resume, () => {
+  const restart = courseAction(t().startOver, !resume, () => {
     // 続きを捨てて回り直す。始める前に保存を消しておく
     if (resume) progressStore(tour).clear();
     navigateTo({ tour: tour.id });
@@ -232,7 +245,7 @@ function courseAction(label: string, primary: boolean, onClick: () => void): HTM
 function bestLabel(tour: TourDefinition): string | null {
   const score = new TourBestScoreStore(tour.id, tour.seeds).load();
   if (!score) return null;
-  return `BEST ${score.strokes} (${formatToPar(score.strokes - score.par)})`;
+  return i18n.bestLabel(score.strokes, formatToPar(score.strokes - score.par));
 }
 
 /** 通常ツアー1コースぶんの進行の保存場所。main.ts と同じキーの作り方をする */
@@ -252,7 +265,7 @@ function resumeLabel(tour: TourDefinition): string | null {
   const round = new Round(tour.seeds);
   if (!round.restore(saved) || round.holeNumber <= 1) return null;
 
-  return `HOLE ${round.holeNumber}から再開`;
+  return i18n.resumeLabel(round.holeNumber);
 }
 
 function menuButton(label: string, onClick: () => void): HTMLButtonElement {
@@ -264,14 +277,57 @@ function menuButton(label: string, onClick: () => void): HTMLButtonElement {
   return button;
 }
 
-function externalMenuLink(label: string, href: string): HTMLAnchorElement {
+function externalMenuLink(label: string, href: string): HTMLElement {
   const link = document.createElement('a');
   link.className = 'menu-text-link';
   link.href = href;
   link.target = '_blank';
   link.rel = 'noopener noreferrer';
   link.textContent = label;
-  return link;
+
+  // リンク先は日本語のページしかない。英語表示のときだけ、飛ぶ前に分かるようにする。
+  // 注記はリンクの外へ置く。中に入れると破線の下線が注記の下まで伸びる
+  const note = t().externalPageNote;
+  if (!note) return link;
+
+  const item = document.createElement('span');
+  item.className = 'menu-guide-item';
+  const suffix = document.createElement('small');
+  suffix.className = 'menu-link-note';
+  suffix.textContent = note;
+  item.append(link, suffix);
+  return item;
+}
+
+/**
+ * 日本語 / EN の切り替え。押すとその場で保存し、今の画面を描き直す。
+ * **ゲーム画面には置かない**（プレイ中の一手間を増やさない）。
+ * 英語表示では仮名と漢字のフォントを読み込まないので、切り替えでフォントも入れ直す
+ */
+function languageToggle(rerender: () => void): HTMLElement {
+  const copy = t();
+  const nav = document.createElement('nav');
+  nav.className = 'language-toggle';
+  nav.setAttribute('aria-label', copy.language);
+
+  const option = (value: i18n.Language, label: string): HTMLButtonElement => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = language() === value ? 'language-button selected' : 'language-button';
+    button.textContent = label;
+    button.setAttribute('aria-pressed', String(language() === value));
+    button.addEventListener('click', () => {
+      if (language() === value) return;
+      setLanguage(value);
+      ensurePixelFont(value);
+      applyStaticUiText();
+      rerender();
+    });
+    return button;
+  };
+
+  nav.append(option('ja', copy.japanese), option('en', copy.english));
+  return nav;
 }
 
 function navigateTo(nextParams: Record<string, string>): void {
@@ -323,7 +379,7 @@ function ensureBestScoreStyles(): void {
  * deepRough 0x3a7332 / ob 0x27431f / flag 0xd94f3d / trail 0xffe66d / ball 0xf6f8f4）。
  */
 function ensureMenuStyles(): void {
-  ensurePixelFont();
+  ensurePixelFont(language());
   if (document.getElementById('menu-styles')) return;
 
   const style = document.createElement('style');
@@ -490,6 +546,56 @@ function ensureMenuStyles(): void {
       background-position: 0 100%;
       color: #bcd0c0;
       cursor: pointer;
+    }
+    /* 英語表示のときだけ出る「(Japanese)」。リンクの下に小さく添える */
+    .menu-guide-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .menu-link-note {
+      font-size: 12px;
+      line-height: 1.4;
+      color: #a8bfae;
+    }
+    /* 言語の切り替え。押すところは他のボタンと同じベベルで作る */
+    .language-toggle {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 26px;
+    }
+    .language-button {
+      appearance: none;
+      min-height: 44px;
+      border-style: solid;
+      border-width: 3px;
+      border-color: #9ede8a #1b3318 #1b3318 #9ede8a;
+      border-radius: 0;
+      background: #27431f;
+      box-shadow: 0 4px 0 #0d140d;
+      padding: 10px 16px;
+      font: inherit;
+      font-size: 16px;
+      line-height: 1;
+      color: #bcd0c0;
+      touch-action: manipulation;
+      cursor: pointer;
+    }
+    /* 今の言語は反転して見せる。視点バーの選択中と同じ約束 */
+    .language-button.selected {
+      background: #eef7ec;
+      border-color: #ffffff #4f9844 #4f9844 #ffffff;
+      color: #16210f;
+    }
+    .language-button:active {
+      transform: translateY(4px);
+      border-color: #1b3318 #9ede8a #9ede8a #1b3318;
+      box-shadow: none;
+    }
+    .language-button:focus-visible {
+      outline: 3px solid #ffe66d;
+      outline-offset: 2px;
     }
     .menu-heading {
       display: grid;

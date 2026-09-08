@@ -285,7 +285,7 @@ function tourSetSections(all: readonly SurveyRow[]): string[] {
 
   for (const tour of TOUR_SETS) {
     const link = `https://hanagemaru.github.io/putt/?tour=${tour.id}`;
-    sections.push(`| ${tour.name} | ${tour.description} | [プレイする](${link}) |`);
+    sections.push(`| ${tour.name.ja} | ${tour.description.ja} | [プレイする](${link}) |`);
   }
   sections.push('');
 
@@ -302,7 +302,7 @@ function tourSetSections(all: readonly SurveyRow[]): string[] {
       hardPar4.length !== 5 ||
       par4Terrains.size !== TERRAIN_ORDER.length
     ) {
-      throw new Error(`${tour.name} がツアー構成の条件を満たしていません`);
+      throw new Error(`${tour.name.ja} がツアー構成の条件を満たしていません`);
     }
     for (const row of tourRows) {
       if (used.has(row.seed)) throw new Error(`ツアー間でシード ${row.seed} が重複しています`);
@@ -310,7 +310,7 @@ function tourSetSections(all: readonly SurveyRow[]): string[] {
     }
 
     const link = `https://hanagemaru.github.io/putt/?tour=${tour.id}`;
-    sections.push(`### [${tour.name}をプレイ](${link})`, '', tour.description, '');
+    sections.push(`### [${tour.name.ja}をプレイ](${link})`, '', tour.description.ja, '');
     sections.push(
       '| H | シード | PAR | 難易度 | 形 | 地形 | 全長 | 遠回り率 | 池 |',
       '|---:|---:|---:|---|---|---|---:|---:|---:|',

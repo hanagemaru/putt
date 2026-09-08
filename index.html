@@ -645,9 +645,9 @@
     </div>
 
     <div id="tuning-panel" hidden>
-      <div class="tuning-title">パターの強さ</div>
+      <div class="tuning-title" id="putter-power-title">パターの強さ</div>
       <div class="tuning-value">
-        <span>強さ</span>
+        <span id="putter-power-label">強さ</span>
         <strong id="putter-power-value">1.00×</strong>
       </div>
       <input type="range" id="putter-power" />
@@ -719,7 +719,7 @@
 
     <div id="rotate-overlay">
       <div class="icon">📱</div>
-      <div>縦にしてください</div>
+      <div id="rotate-message">縦にしてください</div>
     </div>
     <script type="module" src="/src/entry.ts"></script>
   </body>
