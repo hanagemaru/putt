@@ -14,6 +14,7 @@
 - `AGENTS.md`: ChatGPT / Codex向けの入口。上記と同じ正本へ誘導する
 - `TASKS.md`: 実装済みの履歴と、より長いタスク分割・実装順
 - `docs/spec.md`: ゲーム仕様・UX・数値などの詳細な正本
+- `docs/pwa.md`: PWAの素地の構成と、Service Workerを入れるときに要るもの
 
 同じ仕様を複数ファイルへ大量に複製しない。矛盾した場合は、ゲーム仕様は `docs/spec.md`、恒久ルールは `CLAUDE.md`、現在地はこのファイルを優先して確認する。
 
@@ -78,6 +79,11 @@ AdSense申請全体・ハブ側の準備は `hanage-hub` の正本に従う。
     `main` への push で両方に配信される
   - hanage-hub の `GAME_URLS.putt` も新URLへ差し替え済み
   - 設定値・ロールバック・残作業（Pages の停止）は `DEPLOY.md`
+
+- **PWAの素地: 実装済み・実機確認待ち**
+  - マニフェスト（`standalone` / `portrait`）とドット絵アイコン（192/512・マスカブル・apple 180）
+  - `start_url` / `scope` / アイコンのパスは配信先のベースに追従する
+  - Service Worker とオフライン化は未実装。次に要るものは `docs/pwa.md`
 
 ## 今回記録した未確定改善
 
