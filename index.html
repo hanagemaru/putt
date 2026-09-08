@@ -34,6 +34,9 @@
         height: 100%;
         overflow: hidden;
         background: #000;
+        /* 文字はメニューと同じドット絵フォント（src/pixel-font.ts が入れる） */
+        font-family: var(--pixel-font);
+        letter-spacing: 0.04em;
         /* スワイプ操作でブラウザのスクロール・引っ張り更新を起こさない */
         overscroll-behavior: none;
         touch-action: none;
@@ -61,94 +64,149 @@
       }
 
       /* デバッグ表示（spec §5 の一部。全項目と lil-gui は T4） */
+      /*
+       * 空（薄い水色）の上でもドットの細い線が読めるよう、HUDの後ろへ暗い帯を敷く。
+       * 帯の下辺はぼかさず1本の線で切る。カードを出している間は文字ごと引っ込める
+       */
       #hud {
         position: fixed;
         top: 0;
         left: 0;
         right: 0;
         z-index: 20;
-        padding: 8px 12px calc(8px + 6px);
+        padding: max(6px, env(safe-area-inset-top)) 10px 6px;
         pointer-events: none;
-        font-family: system-ui, -apple-system, sans-serif;
-        color: #e8f0e8;
-        font-variant-numeric: tabular-nums;
-        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+        font-family: var(--pixel-font);
+        color: #eef7ec;
+        background: rgba(12, 20, 14, 0.72);
+        border-bottom: 3px solid #16210f;
+        text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.85);
       }
+      #hud.quiet {
+        background: transparent;
+        border-bottom-color: transparent;
+      }
+      /*
+       * プレイ中の1行。折り返して2行になると帯の高さが動くので、
+       * 折り返さずに1行へ収める（区切りは空白の数で作っている）
+       */
       #hud .row {
         display: flex;
-        flex-wrap: wrap;
-        gap: 2px 14px;
-        font-size: 12px;
-        color: #cfe0d2;
+        gap: 2px 10px;
+        font-size: 16px;
+        line-height: 1.4;
+        min-height: 22px;
+        color: #dfeade;
+        white-space: pre;
+        overflow: hidden;
+      }
+      #hud .row:empty {
+        display: none;
+      }
+      /* 空の欄が桁の隙間として残らないよう、中身が無い span は畳む */
+      #hud .row > span:empty {
+        display: none;
+      }
+      /* 1行目の右上には「トップ」が乗る。文字が下へ潜らないよう場所を空ける */
+      #hud .row:first-child {
+        padding-right: 66px;
       }
       #hud .state {
-        font-size: 13px;
-        font-weight: 700;
-        letter-spacing: 0.1em;
+        font-size: 16px;
         color: #9ede8a;
       }
+      /* 開発用の1行。通常のプレイでは空 */
       #hud .result {
-        margin-top: 2px;
-        font-size: 15px;
-        font-weight: 600;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      #hud .result:empty {
+        display: none;
+      }
+      /* スワイプの数値も開発用。通常のプレイでは空 */
+      #hud-swing {
+        font-size: 12px;
       }
       #hud-seed,
       #hud-pixel,
       #hud-line,
       #hud-undulation,
       #hud-adjust {
-        margin-top: 4px;
         pointer-events: auto;
         appearance: none;
-        border: 1px solid rgba(232, 240, 232, 0.45);
-        border-radius: 999px;
-        background: rgba(0, 0, 0, 0.35);
-        color: #e8f0e8;
+        border-style: solid;
+        border-width: 2px;
+        border-color: #9ede8a #1b3318 #1b3318 #9ede8a;
+        border-radius: 0;
+        background: rgba(12, 20, 14, 0.82);
+        box-shadow: 0 3px 0 rgba(0, 0, 0, 0.5);
+        color: #eef7ec;
         font: inherit;
-        font-size: 12px;
-        padding: 4px 10px;
-        font-variant-numeric: tabular-nums;
+        line-height: 1;
+        white-space: nowrap;
+        touch-action: manipulation;
+      }
+      #hud-seed,
+      #hud-pixel,
+      #hud-line,
+      #hud-undulation {
+        margin-top: 6px;
+      }
+      /*
+       * 練習の強さ調整の入口。**HUDの中に置くと帯の高さが動く**ので、
+       * 帯の外（下）へ出して単独で出し入れする
+       */
+      #adjust-control {
+        position: fixed;
+        top: max(62px, calc(env(safe-area-inset-top) + 62px));
+        right: max(10px, env(safe-area-inset-right));
+        z-index: 34;
+        font-family: var(--pixel-font);
       }
       #hud-pixel,
       #hud-line,
-      #hud-undulation,
-      #hud-adjust {
+      #hud-undulation {
         margin-left: 4px;
       }
       #hud-seed:disabled,
       #hud-undulation:disabled {
         opacity: 0.35;
       }
+      /*
+       * 池・OBの知らせ。**出たり消えたりで帯の高さを動かさない。**
+       * 高さが動くと画面が跳ねて見えるので、知らせが無いときも1行ぶん空けておく
+       */
       #hud .notice {
-        margin-top: 2px;
         font-size: 12px;
+        line-height: 1.5;
+        min-height: 18px;
         color: #ffd08a;
-        min-height: 15px;
       }
 
       /* 練習用のパター反発調整。入口はSTROKE中だけ表示する */
       #tuning-panel {
         position: fixed;
-        top: max(76px, calc(env(safe-area-inset-top) + 76px));
+        /* 入口の「強さ」ボタン（#adjust-control）の下へ出す */
+        top: max(104px, calc(env(safe-area-inset-top) + 104px));
         right: max(10px, env(safe-area-inset-right));
         z-index: 40;
         width: min(280px, calc(100vw - 20px));
         padding: 12px 14px;
-        border: 1px solid rgba(232, 240, 232, 0.55);
-        border-radius: 14px;
-        background: rgba(12, 20, 14, 0.9);
-        color: #e8f0e8;
-        font-family: system-ui, -apple-system, sans-serif;
-        font-size: 12px;
-        line-height: 1.45;
+        border: 3px solid #74cf5c;
+        box-shadow: 0 0 0 3px #0d140d;
+        background: rgba(15, 23, 15, 0.94);
+        color: #eef7ec;
+        font-family: var(--pixel-font);
+        font-size: 16px;
+        line-height: 1.5;
         pointer-events: auto;
       }
       #tuning-panel[hidden] {
         display: none;
       }
       #tuning-panel .tuning-title {
-        font-size: 13px;
-        font-weight: 700;
+        font-size: 16px;
+        color: #9ede8a;
         margin-bottom: 8px;
       }
       #tuning-panel .tuning-value {
@@ -162,26 +220,26 @@
         touch-action: manipulation;
       }
       #putter-power-detail {
-        margin-top: 4px;
+        margin-top: 6px;
         color: #bcd0c0;
-        font-variant-numeric: tabular-nums;
       }
 
       /* 読みと方向調整を同じ段階に置く。視点切替はスワイプではなく明示的なボタンで行う */
+      /*
+       * 視点バーは画面下の1行に4つ。プレイ画面を食わないよう、
+       * 札の文字はドット絵フォントの方眼から外れる12pxまで落として横幅を作る。
+       * 幅は4等分の格子に固定して、押す場所が毎回同じ位置に来るようにする
+       */
       #camera-controls {
         position: fixed;
-        left: 50%;
-        bottom: max(14px, env(safe-area-inset-bottom));
-        transform: translateX(-50%);
+        left: max(8px, env(safe-area-inset-left));
+        right: max(8px, env(safe-area-inset-right));
+        bottom: max(12px, env(safe-area-inset-bottom));
         z-index: 30;
         display: none;
-        align-items: center;
-        justify-content: center;
-        flex-wrap: wrap;
-        gap: 6px;
-        width: max-content;
-        max-width: calc(100vw - 16px);
-        font-family: system-ui, -apple-system, sans-serif;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 4px;
+        font-family: var(--pixel-font);
       }
       /*
        * STROKE中のボタンは画面下の左右の角へ置く。
@@ -197,7 +255,7 @@
         display: none;
         flex-direction: column;
         gap: 6px;
-        font-family: system-ui, -apple-system, sans-serif;
+        font-family: var(--pixel-font);
       }
       /* 打つのをやめて戻る側は右下 */
       #stroke-controls {
@@ -209,63 +267,91 @@
         left: max(10px, env(safe-area-inset-left));
         align-items: flex-start;
       }
+      /*
+       * 画面の上に乗るボタンは、メニューと同じドット絵のベベルにする。
+       * 角丸とぼかし影は使わず、上と左を明るく・下と右を暗くして盛り上げ、
+       * 押したぶんだけ下の影が消えて沈む
+       */
       .camera-button,
       #stroke-back,
-      .stroke-camera-button {
+      .stroke-camera-button,
+      #map-toggle,
+      #giveup,
+      #home-button,
+      .home-dialog-button,
+      .score-action {
         appearance: none;
-        border: 1px solid rgba(232, 240, 232, 0.55);
-        border-radius: 999px;
-        background: rgba(12, 20, 14, 0.72);
-        color: #e8f0e8;
-        min-height: 36px;
-        padding: 7px 11px;
+        border-style: solid;
+        border-width: 2px;
+        border-color: #9ede8a #1b3318 #1b3318 #9ede8a;
+        border-radius: 0;
+        background: rgba(12, 20, 14, 0.82);
+        box-shadow: 0 3px 0 rgba(0, 0, 0, 0.5);
+        color: #eef7ec;
+        min-height: 40px;
+        padding: 9px 11px;
         font: inherit;
-        font-size: 11px;
+        font-size: 16px;
         line-height: 1;
         white-space: nowrap;
         touch-action: manipulation;
       }
-      .camera-button.active {
-        background: rgba(232, 240, 232, 0.92);
-        border-color: rgba(255, 255, 255, 0.95);
-        color: #162018;
-        font-weight: 700;
+      /*
+       * 3Dの上に置くボタンは小さくする。画面を覆う面積を減らすのが目的なので、
+       * 指で押す高さ（36px）は保ったまま文字だけ落とす。
+       * **この一覧の中では大きさを揃える。** 片方だけ大きいと押し間違える。
+       * カードとダイアログの中のボタンは16pxのまま
+       */
+      .camera-button,
+      #stroke-back,
+      .stroke-camera-button,
+      #map-toggle,
+      #giveup,
+      #home-button,
+      #hud-adjust,
+      #hud-seed,
+      #hud-pixel,
+      #hud-line,
+      #hud-undulation {
+        min-height: 36px;
+        padding: 8px 8px;
+        font-size: 12px;
+        letter-spacing: 0;
+      }
+      .camera-button:active,
+      #stroke-back:active,
+      .stroke-camera-button:active,
+      #map-toggle:active,
+      #giveup:active,
+      #home-button:active,
+      .home-dialog-button:active,
+      .score-action:active {
+        transform: translateY(3px);
+        border-color: #1b3318 #9ede8a #9ede8a #1b3318;
+        box-shadow: none;
+      }
+      /* 今そこにいることを示す側は白地。反転して見せる */
+      .camera-button.active,
+      #map-toggle.active {
+        background: #eef7ec;
+        border-color: #ffffff #4f9844 #4f9844 #ffffff;
+        color: #16210f;
       }
       #stroke-back {
-        min-height: 40px;
-        padding-inline: 16px;
-        font-size: 12px;
+        padding-inline: 14px;
       }
 
       /* マップは視点バーに並べない。右下へ単独で置き、視点の切り替えと区別する */
       #map-control {
         position: fixed;
         right: max(10px, env(safe-area-inset-right));
+        /* 視点バー（1行）と重ならない高さに置く */
         bottom: max(58px, calc(env(safe-area-inset-bottom) + 58px));
         z-index: 30;
         display: none;
-        font-family: system-ui, -apple-system, sans-serif;
+        font-family: var(--pixel-font);
       }
-      #map-toggle {
-        appearance: none;
-        border: 1px solid rgba(232, 240, 232, 0.55);
-        border-radius: 999px;
-        background: rgba(12, 20, 14, 0.72);
-        color: #e8f0e8;
-        min-height: 36px;
-        padding: 7px 13px;
-        font: inherit;
-        font-size: 11px;
-        line-height: 1;
-        white-space: nowrap;
-        touch-action: manipulation;
-      }
-      #map-toggle.active {
-        background: rgba(232, 240, 232, 0.92);
-        border-color: rgba(255, 255, 255, 0.95);
-        color: #162018;
-        font-weight: 700;
-      }
+
 
       /*
        * ギブアップ（spec §3）。ダブルパーに達したときだけ出す出口。
@@ -279,23 +365,14 @@
         bottom: max(58px, calc(env(safe-area-inset-bottom) + 58px));
         z-index: 30;
         display: none;
-        font-family: system-ui, -apple-system, sans-serif;
+        font-family: var(--pixel-font);
       }
+      /* ラウンドを1ホール捨てる側は赤い縁で他のボタンと分ける */
       #giveup {
         position: relative;
         overflow: hidden;
-        appearance: none;
-        border: 1px solid rgba(255, 176, 176, 0.5);
-        border-radius: 999px;
-        background: rgba(12, 20, 14, 0.72);
+        border-color: #ffb0b0 #5a2020 #5a2020 #ffb0b0;
         color: #f0d8d8;
-        min-height: 36px;
-        padding: 7px 13px;
-        font: inherit;
-        font-size: 11px;
-        line-height: 1;
-        white-space: nowrap;
-        touch-action: manipulation;
       }
       /* 押し続けている間だけ伸びる帯。どれだけ押せば決まるかを指に見せる */
       #giveup-fill {
@@ -322,21 +399,12 @@
         right: max(10px, env(safe-area-inset-right));
         z-index: 34;
         display: none;
-        font-family: system-ui, -apple-system, sans-serif;
+        font-family: var(--pixel-font);
       }
       #home-button {
-        appearance: none;
-        min-width: 62px;
-        min-height: 44px;
-        border: 1px solid rgba(232, 240, 232, 0.55);
-        border-radius: 999px;
-        background: rgba(12, 20, 14, 0.78);
-        color: #e8f0e8;
-        padding: 8px 13px;
-        font: inherit;
-        font-size: 12px;
-        font-weight: 700;
-        touch-action: manipulation;
+        min-width: 52px;
+        min-height: 36px;
+        padding: 10px 8px;
       }
       #home-dialog {
         position: fixed;
@@ -347,30 +415,31 @@
         justify-content: center;
         padding: 20px;
         background: rgba(0, 0, 0, 0.58);
-        font-family: system-ui, -apple-system, sans-serif;
+        font-family: var(--pixel-font);
         color: #e8f0e8;
         touch-action: manipulation;
       }
       #home-dialog[hidden] {
         display: none;
       }
+      /* カードはメニューのパネルと同じ二重枠。角丸とぼかし影は使わない */
       #home-dialog-card {
-        width: min(320px, calc(100vw - 40px));
-        padding: 20px;
-        border: 1px solid rgba(232, 240, 232, 0.55);
-        border-radius: 16px;
-        background: rgba(12, 20, 14, 0.96);
+        width: min(340px, calc(100vw - 32px));
+        padding: 20px 16px;
+        border: 3px solid #74cf5c;
+        box-shadow: 0 0 0 3px #0d140d, 8px 8px 0 rgba(0, 0, 0, 0.5);
+        background: rgba(15, 23, 15, 0.96);
         text-align: center;
       }
       #home-dialog-title {
-        font-size: 18px;
-        font-weight: 700;
+        font-size: 16px;
+        color: #9ede8a;
       }
       #home-dialog-message {
-        margin-top: 10px;
-        color: #cfe0d2;
-        font-size: 13px;
-        line-height: 1.55;
+        margin-top: 12px;
+        color: #bcd0c0;
+        font-size: 16px;
+        line-height: 1.5;
       }
       #home-dialog-actions {
         display: grid;
@@ -379,21 +448,17 @@
         margin-top: 18px;
       }
       .home-dialog-button {
-        appearance: none;
         min-height: 44px;
-        border: 1px solid rgba(232, 240, 232, 0.55);
-        border-radius: 999px;
-        background: rgba(30, 45, 33, 0.92);
-        color: #e8f0e8;
-        padding: 9px 12px;
-        font: inherit;
-        font-size: 13px;
-        font-weight: 700;
-        touch-action: manipulation;
+        background: #3a7332;
+        /* 2つ並べても「ゲームを続ける」が折り返さない詰め方にする */
+        padding: 12px 6px;
+        white-space: nowrap;
       }
+      /* 進む側は白地。押した後に戻れない操作なので、続ける側と見た目で分ける */
       #home-confirm {
-        background: rgba(232, 240, 232, 0.92);
-        color: #162018;
+        background: #eef7ec;
+        border-color: #ffffff #4f9844 #4f9844 #ffffff;
+        color: #16210f;
       }
 
       /*
@@ -411,54 +476,52 @@
         justify-content: center;
         padding: 20px;
         pointer-events: none;
-        font-family: system-ui, -apple-system, sans-serif;
+        font-family: var(--pixel-font);
         color: #e8f0e8;
       }
       #score-overlay[hidden] {
         display: none;
       }
       #score-card {
-        width: min(320px, calc(100vw - 40px));
-        padding: 18px 20px;
-        border: 1px solid rgba(232, 240, 232, 0.55);
-        border-radius: 16px;
-        background: rgba(12, 20, 14, 0.86);
+        width: min(330px, calc(100vw - 36px));
+        padding: 18px 16px;
+        border: 3px solid #74cf5c;
+        box-shadow: 0 0 0 3px #0d140d, 8px 8px 0 rgba(0, 0, 0, 0.5);
+        background: rgba(15, 23, 15, 0.92);
         text-align: center;
-        font-variant-numeric: tabular-nums;
       }
       #score-title {
-        font-size: 13px;
-        font-weight: 700;
-        letter-spacing: 0.16em;
+        font-size: 16px;
+        letter-spacing: 0.08em;
         color: #9ede8a;
       }
       /* ホール間はこの1行が主役。打数とパー差を大きく出す */
       #score-headline {
-        margin-top: 10px;
-        font-size: 30px;
-        font-weight: 700;
+        margin-top: 12px;
+        font-size: 32px;
         line-height: 1.1;
+        text-shadow: 3px 3px 0 #0d140d;
       }
       #score-sub {
-        margin-top: 6px;
-        font-size: 13px;
-        color: #cfe0d2;
+        margin-top: 10px;
+        font-size: 16px;
+        line-height: 1.5;
+        color: #bcd0c0;
       }
       /* ラウンド終了の一覧表 */
       #score-table {
         margin-top: 12px;
         width: 100%;
         border-collapse: collapse;
-        font-size: 13px;
+        font-size: 16px;
+        line-height: 1.45;
       }
       #score-table[hidden] {
         display: none;
       }
       #score-table th {
-        font-weight: 600;
         color: #a8bfae;
-        font-size: 11px;
-        letter-spacing: 0.08em;
+        font-weight: 400;
         padding-bottom: 4px;
       }
       #score-table th,
@@ -476,14 +539,14 @@
       }
       #score-table tr.total td,
       #score-table tr.total th {
-        border-top: 1px solid rgba(232, 240, 232, 0.35);
+        border-top: 2px solid rgba(232, 240, 232, 0.4);
         padding-top: 6px;
-        font-weight: 700;
+        color: #eef7ec;
       }
       #score-hint {
-        margin-top: 12px;
-        font-size: 12px;
-        color: #ffd08a;
+        margin-top: 14px;
+        font-size: 16px;
+        color: #ffe66d;
       }
       #score-hint[hidden] {
         display: none;
@@ -499,22 +562,16 @@
         display: none;
       }
       .score-action {
-        appearance: none;
-        border: 1px solid rgba(232, 240, 232, 0.55);
-        border-radius: 999px;
-        background: rgba(30, 45, 33, 0.92);
-        color: #e8f0e8;
         min-height: 44px;
-        padding: 9px 18px;
-        font: inherit;
-        font-size: 13px;
-        font-weight: 700;
-        touch-action: manipulation;
+        background: #3a7332;
+        padding: 12px 18px;
       }
+      /* 遊び続ける側は白地。トップへ戻る側と見た目で分ける */
       #score-course,
       #score-again {
-        background: rgba(232, 240, 232, 0.92);
-        color: #162018;
+        background: #eef7ec;
+        border-color: #ffffff #4f9844 #4f9844 #ffffff;
+        color: #16210f;
       }
 
       /* 横画面のときだけ出す「縦にしてください」オーバーレイ。縦画面専用（spec §0） */
@@ -528,10 +585,10 @@
         justify-content: center;
         gap: 24px;
         background: #101410;
-        color: #e8f0e8;
-        font-family: system-ui, -apple-system, sans-serif;
-        font-size: 20px;
-        letter-spacing: 0.08em;
+        color: #eef7ec;
+        font-family: var(--pixel-font);
+        font-size: 16px;
+        letter-spacing: 0.12em;
         text-align: center;
       }
       #rotate-overlay .icon {
@@ -565,7 +622,6 @@
         <span class="state" id="hud-state">ADDRESS</span>
         <span id="hud-view"></span>
         <span id="hud-aim"></span>
-        <span id="hud-dist"></span>
         <span id="hud-shots"></span>
       </div>
       <div class="row" id="hud-swing"></div>
@@ -578,6 +634,9 @@
         <button type="button" id="hud-line" hidden>ライン</button>
         <button type="button" id="hud-undulation" hidden>地形</button>
       </div>
+    </div>
+
+    <div id="adjust-control">
       <button type="button" id="hud-adjust" style="display: none">強さ</button>
     </div>
 

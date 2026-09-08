@@ -1,0 +1,67 @@
+name: Preview on Cloudflare Workers
+
+# main 以外のブランチを、本番（putt.hanage.app）に触らずに実URLで確認するための下ごしらえ。
+# `wrangler versions upload` はバージョンを上げるだけで、公開中のデプロイは差し替えない。
+# 出てくるプレビューURLは Actions の Summary に出す。
+#
+# 動かすには Cloudflare 側で Worker の Preview URLs を有効にしておく（DEPLOY.md 参照）。
+on:
+  push:
+    branches-ignore: [main]
+  workflow_dispatch:
+
+# 同じブランチへ続けて push したら、古いプレビューの作成は止める
+concurrency:
+  group: preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    # 本番デプロイと同じリポジトリ変数で止められるようにする。手順は DEPLOY.md を参照。
+    if: vars.CLOUDFLARE_DEPLOY == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # プレビューも独自ドメインと同じ条件で見たいので、ベースパスは / でビルドする
+      - run: npm run build:cloudflare
+      - name: Upload version to Cloudflare
+        id: upload
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -o pipefail
+          # コミット件名はそのまま渡すと引用符で壊れるので、変数に入れてから渡す
+          subject=$(git log -1 --pretty=%s)
+          message="${GITHUB_REF_NAME}: ${subject}"
+          # プレビューURLを含む案内は stderr に出るので、stdout へ寄せてから拾う
+          npx wrangler versions upload \
+            --tag "${GITHUB_SHA::8}" \
+            --message "${message:0:100}" \
+            2>&1 | tee upload.log
+          # ホスト名は <バージョン>-<worker>.<サブドメイン>.workers.dev の形なので、
+          # ドットも許す。色付けのエスケープが混ざるので先に落とす。
+          # 形式が変わって拾えなくても、バージョン自体は上がっているのでジョブは失敗させない
+          url=$(sed -E 's/\x1b\[[0-9;]*m//g' upload.log \
+            | grep -Eo 'https://[a-z0-9.-]+\.workers\.dev[^[:space:]]*' \
+            | tail -1 || true)
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+      - name: Show preview URL
+        run: |
+          url="${{ steps.upload.outputs.url }}"
+          {
+            echo "## プレビュー"
+            echo
+            echo "- ブランチ: \`${GITHUB_REF_NAME}\`"
+            if [ -n "$url" ]; then
+              echo "- URL: $url"
+            else
+              echo "- URLを出力から拾えなかった。Cloudflareの Workers & Pages → putt → Versions で確認する"
+              echo "- Preview URLs が無効だとURLは出ない（DEPLOY.md）"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -54,6 +54,35 @@ PWAのマニフェストとアイコンも同じベースに追従する。詳�
 - しばらく様子を見てから、GitHub Pages のワークフロー（`.github/workflows/deploy.yml`）を止める。
   止めたら `TASKS.md` と `docs/tour-hole-candidates.md` に残る `github.io` のリンクも差し替える
 
+## ブランチのプレビュー（Cloudflare）
+
+`main` 以外へ push すると、`Preview on Cloudflare Workers`
+（`.github/workflows/preview-cloudflare.yml`）が動く。
+`wrangler versions upload` でバージョンを上げるだけなので、**公開中の
+`putt.hanage.app` は差し替わらない**。プレビューURLは Actions の実行結果の
+Summary に出る。形は次の通り。
+
+```
+https://<バージョンIDの先頭8桁>-putt.jibunnha.workers.dev/
+```
+
+本番デプロイと同じ `CLOUDFLARE_DEPLOY` / `CLOUDFLARE_API_TOKEN` /
+`CLOUDFLARE_ACCOUNT_ID` を使う。止めたいときは `CLOUDFLARE_DEPLOY` を
+`false` にすれば、本番デプロイと一緒に止まる。
+
+### 有効にするための1回だけの設定
+
+Cloudflare のダッシュボードで、Workers & Pages → `putt` → Settings →
+Domains & Routes → **Preview URLs を有効にする**（`workers.dev` の
+サブドメインが有効になっていること）。無効のままだとバージョンは上がるが
+URLが出ない。
+
+### 注意
+
+- プレビューURLは公開URL。推測しにくいだけでアクセス制限はない
+- バージョンを上げても本番は動かないので、実機確認が済んだら通常どおり
+  `main` へマージして本番へ出す
+
 ## ロールバック
 
 `CLOUDFLARE_DEPLOY` を `false` に戻せば、Cloudflareへのデプロイが止まり、

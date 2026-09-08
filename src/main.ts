@@ -27,6 +27,7 @@ import { approachDirection, generateCourse } from './course/course-generate';
 import type { CourseDefinition, TerrainType } from './course/course-types';
 import { tourById } from './course/tour-holes';
 import { CourseMapMarker } from './course-map-marker';
+import { ensurePixelFont } from './pixel-font';
 import { Round, formatToPar, type HoleScore } from './round';
 import { RoundProgressStore } from './round-storage';
 import { SmoothLineOverlay, type BallOccluder } from './smooth-line-overlay';
@@ -1408,11 +1409,14 @@ renderer.setAnimationLoop((now) => {
 
 // --- デバッグ表示と画面操作 ------------------------------------------------
 
+// 画面の文字はメニューと同じドット絵フォントで出す（spec §0 の世界観をDOM側でも保つ）
+ensurePixelFont();
+
 const hud = {
+  root: document.getElementById('hud')!,
   state: document.getElementById('hud-state')!,
   view: document.getElementById('hud-view')!,
   aim: document.getElementById('hud-aim')!,
-  dist: document.getElementById('hud-dist')!,
   shots: document.getElementById('hud-shots')!,
   swing: document.getElementById('hud-swing')!,
   result: document.getElementById('hud-result')!,
@@ -1685,6 +1689,11 @@ function giveUpHoldProgress(): number {
   return Math.min((performance.now() - giveUpStartedAt) / G.round.giveUpHoldMs, 1);
 }
 
+/** 押し続けている最中か。ボタンの文字を切り替えるのに使う */
+function holdingGiveUp(): boolean {
+  return giveUpTimer !== null;
+}
+
 function cancelGiveUpHold(): void {
   if (giveUpTimer !== null) {
     clearTimeout(giveUpTimer);
@@ -1774,11 +1783,18 @@ function updateControls(): void {
   const showGiveUp = canGiveUp() && !(state === 'ADDRESS' && aimView === 'MAP');
   if (!showGiveUp) cancelGiveUpHold();
   giveUpControl.style.display = showGiveUp ? 'block' : 'none';
-  giveUpLabel.textContent = round ? 'ギブアップ' : 'ギブアップ（ティーへ）';
+  // 押し続けないと決まらないことは、ボタンの中で先に言っておく。
+  // 帯（#giveup-fill）はもう押している人にしか見えないので、それだけでは気づけない
+  giveUpLabel.textContent = holdingGiveUp()
+    ? '押したまま…'
+    : round
+      ? 'ギブアップ 長押し'
+      : 'ギブアップ（ティーへ）長押し';
   giveUpFill.style.width = `${(giveUpHoldProgress() * 100).toFixed(1)}%`;
 
   const inAddress = state === 'ADDRESS';
-  cameraControls.style.display = inAddress ? 'flex' : 'none';
+  // 視点バーは 2×2 の格子（index.html）。出すときは grid で戻す
+  cameraControls.style.display = inAddress ? 'grid' : 'none';
   mapControl.style.display = inAddress ? 'block' : 'none';
   mapToggle.classList.toggle('active', inAddress && aimView === 'MAP');
   const inStroke = state === 'STROKE';
@@ -1797,46 +1813,55 @@ function updateControls(): void {
 }
 
 /**
- * プレイ中に常時出す1行。ツアーでは何ホール目・PAR・打数・ここまでのパー差を出す。
+ * プレイ中に常時出す1行。ホール・PAR・打数・スコア・カップまでの距離だけを並べる。
+ *
+ * HUDが画面を食うとプレイの邪魔になるので、これ以上は増やさない。
+ * 視点名・方角・直前の結果・スワイプの数値は `?debug=1` のときだけ出す。
  * パー差はホールアウト済みのぶんだけで、プレイ中のホールは打数の側に出る
  */
 function progressText(): string {
-  if (!round) return `${shots} 打`;
+  const distance = `${distanceToCup().toFixed(2)}m`;
+  // 「・」で区切ると横幅が足りず2行になる。区切りは空白だけにして1行に収める
+  if (!round) return `PAR ${course.par}  ${shots}打  ${distance}`;
   return (
-    `HOLE ${round.holeNumber}/${round.holeCount} ・ PAR ${course.par} ・ ` +
-    `${shots} 打 ・ 合計 ${formatToPar(round.toPar)}`
+    `HOLE ${round.holeNumber}/${round.holeCount}  PAR ${course.par}  ` +
+    `${shots}打 ${formatToPar(round.toPar)}  ${distance}`
   );
 }
 
 function updateHud(): void {
   // スコアカードを出している間は、同じことを言うHUDを引っ込めてカードだけ読ませる
   const showingScore = state === 'HOLE_OUT' || state === 'ROUND_END';
+  // 文字が消えるときは、後ろの帯も一緒に消す（空の帯だけが残らないように）
+  hud.root.classList.toggle('quiet', showingScore);
   // 状態名は英語の内部名なので、通常のプレイ画面には出さない
   // 開発用の表示だけ、地形の性格も出す。実機で「今どの型か」を見ながら確かめるため
-  hud.state.textContent = debugEnabled
-    ? `${state} / ${TERRAIN_LABEL[course.terrain]}`
-    : round
-      ? selectedTour.name
-      : '';
-  if (state === 'ADDRESS') {
+  hud.state.textContent = debugEnabled ? `${state} / ${TERRAIN_LABEL[course.terrain]}` : '';
+  // 視点名は開発用。どの視点にいるかは視点バーのボタンが反転して示している
+  if (!debugEnabled) {
+    hud.view.textContent = '';
+  } else if (state === 'ADDRESS') {
     hud.view.textContent = AIM_VIEW_LABEL[aimView];
   } else if (state === 'STROKE' && strokeCameraView === 'CUP') {
     hud.view.textContent = '狙いを見る';
   } else {
     hud.view.textContent = '';
   }
-  const offset = Math.atan2(Math.sin(aim - aimBase), Math.cos(aim - aimBase));
-  const offsetDeg = THREE.MathUtils.radToDeg(offset);
-  const headingDeg = (THREE.MathUtils.radToDeg(aim) + 360) % 360;
-  hud.aim.textContent = showingScore
-    ? ''
-    : `方角 ${headingDeg.toFixed(0)}° ・ カップから ` +
+  if (debugEnabled && !showingScore) {
+    const offset = Math.atan2(Math.sin(aim - aimBase), Math.cos(aim - aimBase));
+    const offsetDeg = THREE.MathUtils.radToDeg(offset);
+    const headingDeg = (THREE.MathUtils.radToDeg(aim) + 360) % 360;
+    hud.aim.textContent =
+      `方角 ${headingDeg.toFixed(0)}° ・ カップから ` +
       `${offsetDeg >= 0 ? '+' : ''}${offsetDeg.toFixed(1)}°`;
-  hud.dist.textContent = showingScore ? '' : `カップまで ${distanceToCup().toFixed(2)}m`;
+  } else {
+    hud.aim.textContent = '';
+  }
   // カードが同じことを言うので、ホールアウト中は進行の1行も引っ込める
   hud.shots.textContent = showingScore ? '' : progressText();
-  hud.swing.textContent = showingScore ? '' : lastSwing;
-  hud.result.textContent = showingScore ? '' : lastResult;
+  // 直前の結果とスワイプの数値は帯が伸びるので開発用だけに出す
+  hud.swing.textContent = debugEnabled && !showingScore ? lastSwing : '';
+  hud.result.textContent = debugEnabled && !showingScore ? lastResult : '';
   hud.notice.textContent = notice;
   hud.seed.textContent = `${course.name}・PAR ${course.par}・シード ${seed} ⟳`;
   hud.pixel.textContent = PIXEL_MODES[pixelMode];
