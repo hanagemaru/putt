@@ -10,6 +10,11 @@
 //   ボールの転がりの演出 ballPxPerMeter / ballDecelMs2 だけは §4.7 の検証ページ限定で、持ち込まない）
 import { CONFIG } from './config';
 import {
+  drawPutterHead,
+  loadPutterShape,
+  type PutterShapeId,
+} from './putter-shape';
+import {
   SwipeMeasure,
   faceAngleFrom,
   wrapPi,
@@ -82,6 +87,9 @@ export class StrokeView {
 
   private live: Sample | null = null;
 
+  /** 選択中のヘッド形状。見た目だけの選択で、計測にも当たり判定にも関わらない */
+  private shapeId: PutterShapeId = loadPutterShape();
+
   private readonly putter: Putter = {
     x: 0,
     y: 0,
@@ -130,6 +138,8 @@ export class StrokeView {
   /** STROKE に入る。オーバーレイを出してスワイプを待つ */
   enter(): void {
     this.active = true;
+    // 別タブでの選択もあるので、構えるたびに読み直す
+    this.shapeId = loadPutterShape();
     this.pointerId = null;
     this.live = null;
     // 前の一打のサンプルを捨てる。残っていると、その軌跡が描かれたまま構えることになる
@@ -337,73 +347,27 @@ export class StrokeView {
   }
 
   /**
-   * ブレード型のパターヘッドを、スイング軌跡と直角に描く（§4.4）。
-   * ローカル座標は +X がボール側（フェース面）、-Y が手元（ヒール）側。
-   * フェース面の位置と長さ、芯の範囲は計測側の値のままで、シルエットだけを足している。
+   * パターヘッドを、フェースがスイング軌跡と直角になる向きで描く（§4.4）。
+   * シルエットは選択中の形状（putter-shape.ts）に任せ、ここは位置・向きと状態の色だけを渡す。
    */
   private drawPutter(armed: boolean): void {
     const ctx = this.ctx;
-    const P = S.putterShape;
     const rest = this.putter.mode === 'rest';
     const face = rest
       ? 'rgba(150,175,160,0.55)'
       : armed
         ? 'rgba(140,255,180,0.95)'
         : 'rgba(255,180,120,0.6)';
-    const body = rest ? 'rgba(150,162,158,0.85)' : 'rgba(176,190,196,0.95)';
     const spot = rest
       ? 'rgba(18,26,22,0.7)'
       : armed
         ? 'rgba(20,40,28,0.85)'
         : 'rgba(40,26,14,0.7)';
 
-    // フェース面は当たり判定と同じ位置（ローカル +putterWidth/2）に置く。
-    // 胴と後ろのフランジは、そこから後ろ（-X）へ伸ばす。
-    const front = C.putterWidth / 2;
-    const back = front - P.bodyDepth;
-    const half = C.putterLength / 2;
-
     ctx.save();
     ctx.translate(this.putter.x, this.putter.y);
     ctx.rotate(this.putter.angle);
-
-    // 後ろのフランジ。トウ・ヒール側を短くして、中央だけ張り出させる
-    ctx.fillStyle = body;
-    ctx.fillRect(
-      back - P.flangeDepth,
-      -half + P.flangeInset,
-      P.flangeDepth,
-      C.putterLength - P.flangeInset * 2,
-    );
-    // 胴
-    ctx.fillRect(back, -half, P.bodyDepth, C.putterLength);
-    // ヒール側のホーゼルと、手元へ伸びるシャフト
-    ctx.fillRect(-P.hoselSize / 2, -half - P.hoselSize, P.hoselSize, P.hoselSize);
-    ctx.fillRect(
-      -P.shaftWidth / 2,
-      -half - P.hoselSize - P.shaftLength,
-      P.shaftWidth,
-      P.shaftLength,
-    );
-
-    // フェース板。状態の色はここに出す
-    ctx.fillStyle = face;
-    ctx.fillRect(front - P.faceThickness, -half, P.faceThickness, C.putterLength);
-
-    // 芯の範囲。フェース板の上にインサートとして置く。
-    // 状態の色はトウ・ヒール側のフェースに残るので、打てるかどうかは変わらず読める
-    ctx.fillStyle = spot;
-    ctx.fillRect(front - P.faceThickness, -C.sweetSpotPx, P.faceThickness, C.sweetSpotPx * 2);
-
-    // 照準線。フェースと直角に、芯の中心をヘッドの奥まで貫く
-    ctx.fillStyle = face;
-    ctx.fillRect(
-      back - P.flangeDepth,
-      -P.sightLineWidth / 2,
-      P.bodyDepth + P.flangeDepth,
-      P.sightLineWidth,
-    );
-
+    drawPutterHead(ctx, this.shapeId, { face, spot, rest });
     ctx.restore();
   }
 }

@@ -4,6 +4,13 @@ import { TourBestScoreStore, type BestScoreUpdate } from './best-score-storage';
 import { Round, formatToPar, onRoundComplete, type RoundResult } from './round';
 import { RoundProgressStore } from './round-storage';
 import { ensurePixelFont } from './pixel-font';
+import {
+  PUTTER_SHAPES,
+  drawPutterHead,
+  loadPutterShape,
+  savePutterShape,
+  type PutterShapeId,
+} from './putter-shape';
 
 const HOW_TO_URL = 'https://hanage.app/games/putt/how-to-play/';
 const PRIVACY_URL = 'https://hanage.app/privacy/';
@@ -128,10 +135,11 @@ function renderTopMenu(): void {
   secondary.className = 'menu-secondary';
   secondary.setAttribute('aria-label', '案内');
 
+  const putter = internalMenuLink('パター', renderPutterSelection);
   const howTo = externalMenuLink('遊び方', HOW_TO_URL);
   const privacy = externalMenuLink('プライバシー', PRIVACY_URL);
 
-  secondary.append(howTo, privacy);
+  secondary.append(putter, howTo, privacy);
   panel.append(title, subtitle, actions, secondary);
   root.append(panel);
 }
@@ -164,6 +172,145 @@ function renderTourSelection(): void {
 
   panel.append(heading, courses);
   root.append(panel);
+}
+
+/**
+ * パターの形状を選ぶ画面。
+ *
+ * **見た目だけの選択で、性能差は付けない。** どれを選んでもフェース長・芯の範囲・
+ * 打ち出しの計算は同じなので、画面にもそう書いておく。
+ * 枠は押さず、コース選択と同じく中のボタンだけを押させる。
+ */
+function renderPutterSelection(): void {
+  const root = prepareMenuRoot();
+  root.replaceChildren();
+
+  const panel = document.createElement('main');
+  panel.className = 'menu-panel course-panel';
+
+  const heading = document.createElement('div');
+  heading.className = 'menu-heading';
+
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'menu-back';
+  back.textContent = '← トップ';
+  back.addEventListener('click', renderTopMenu);
+
+  const title = document.createElement('h1');
+  title.className = 'course-title';
+  title.textContent = 'パター';
+
+  heading.append(back, title);
+
+  const note = document.createElement('p');
+  note.className = 'menu-note';
+  note.textContent = '見た目だけの違いです。転がりは変わりません';
+
+  const list = document.createElement('div');
+  list.className = 'course-list';
+  const selected = loadPutterShape();
+  for (const shape of PUTTER_SHAPES) list.append(putterEntry(shape, selected));
+
+  panel.append(heading, note, list);
+  root.append(panel);
+}
+
+/** パター1本ぶんの枠。見本・名前・説明と、選ぶボタンを置く */
+function putterEntry(
+  shape: (typeof PUTTER_SHAPES)[number],
+  selected: PutterShapeId,
+): HTMLElement {
+  const card = document.createElement('div');
+  card.className = 'course-card putter-card';
+
+  const preview = putterPreview(shape.id);
+
+  const info = document.createElement('div');
+  info.className = 'putter-info';
+
+  const name = document.createElement('div');
+  name.className = 'course-name';
+  name.textContent = shape.name;
+
+  const description = document.createElement('div');
+  description.className = 'course-description';
+  description.textContent = shape.description;
+
+  info.append(name, description);
+
+  const actions = document.createElement('div');
+  actions.className = 'course-actions';
+
+  if (shape.id === selected) {
+    const current = document.createElement('span');
+    current.className = 'course-best';
+    current.textContent = '選択中';
+    actions.append(current);
+  } else {
+    actions.append(
+      courseAction('これにする', false, () => {
+        savePutterShape(shape.id);
+        renderPutterSelection();
+      }),
+    );
+  }
+
+  info.append(actions);
+  card.append(preview, info);
+  return card;
+}
+
+/**
+ * 枠の中に置くヘッドの見本。
+ * ゲーム本体と同じ描画（putter-shape.ts）を使い、待機中の色・向きでそのまま描く。
+ * 別々に描くと、選んだ形と構えたときの形が食い違う。
+ */
+function putterPreview(id: PutterShapeId): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.className = 'putter-preview';
+  canvas.setAttribute('aria-hidden', 'true');
+
+  // ヘッドは実寸だと枠に収まらないので半分に落とす。
+  // 半分ちょうどなら点の境目がずれないので、ドットのままで縮む
+  const scale = 0.5;
+  const w = 56;
+  const h = 64;
+  // 見本の原点。ここにヘッドの回転中心（＝構えたときのパター位置）を置く
+  const cx = 36;
+  const cy = 22;
+
+  const dpr = Math.min(window.devicePixelRatio, CONFIG.renderer.maxPixelRatio);
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  canvas.style.width = `${w}px`;
+  canvas.style.height = `${h}px`;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(scale, scale);
+  // ゲーム本体の待機姿勢と同じ向き。フェースは左（狙い方向）を向く
+  ctx.rotate(Math.PI);
+
+  // 大きさが分かるようにボールも置く。フェースからの隙間もゲーム本体と同じにする
+  const gap = CONFIG.swipeTest.putterRestOffsetPx - CONFIG.swipeTest.ballRadius;
+  ctx.fillStyle = '#f6f8f4';
+  ctx.beginPath();
+  ctx.arc(gap + CONFIG.swipeTest.ballRadius, 0, CONFIG.swipeTest.ballRadius, 0, Math.PI * 2);
+  ctx.fill();
+
+  drawPutterHead(ctx, id, {
+    face: 'rgba(150,175,160,0.55)',
+    spot: 'rgba(18,26,22,0.7)',
+    rest: true,
+  });
+  ctx.restore();
+
+  return canvas;
 }
 
 /**
@@ -259,6 +406,16 @@ function menuButton(label: string, onClick: () => void): HTMLButtonElement {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'menu-button';
+  button.textContent = label;
+  button.addEventListener('click', onClick);
+  return button;
+}
+
+/** メニュー内の別画面へ移る。見た目は外部リンクと揃える */
+function internalMenuLink(label: string, onClick: () => void): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'menu-text-link';
   button.textContent = label;
   button.addEventListener('click', onClick);
   return button;
@@ -562,6 +719,36 @@ function ensureMenuStyles(): void {
     }
     .course-best-row {
       margin-top: 10px;
+    }
+    /* パター選択。見本を左に置き、名前・説明・ボタンを右へ縦に積む */
+    .menu-note {
+      margin-top: 16px;
+      font-size: 12px;
+      line-height: 1.5;
+      letter-spacing: 0.04em;
+      color: #bcd0c0;
+    }
+    .putter-card {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .putter-preview {
+      flex: none;
+      border: 2px solid #0d140d;
+      background: #3a7332;
+      image-rendering: pixelated;
+    }
+    .putter-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .putter-card .course-actions {
+      margin-top: 14px;
+    }
+    /* 「選択中」はボタンではないので、押せそうな幅いっぱいには広げない */
+    .putter-card .course-best {
+      justify-self: start;
     }
     .course-name {
       font-size: 16px;
