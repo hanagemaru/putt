@@ -336,27 +336,74 @@ export class StrokeView {
     }
   }
 
-  /** フェースをスイング軌跡と直角に描く（§4.4）。芯の範囲は色を変える */
+  /**
+   * ブレード型のパターヘッドを、スイング軌跡と直角に描く（§4.4）。
+   * ローカル座標は +X がボール側（フェース面）、-Y が手元（ヒール）側。
+   * フェース面の位置と長さ、芯の範囲は計測側の値のままで、シルエットだけを足している。
+   */
   private drawPutter(armed: boolean): void {
     const ctx = this.ctx;
+    const P = S.putterShape;
     const rest = this.putter.mode === 'rest';
     const face = rest
       ? 'rgba(150,175,160,0.55)'
       : armed
         ? 'rgba(140,255,180,0.95)'
         : 'rgba(255,180,120,0.6)';
+    const body = rest ? 'rgba(150,162,158,0.85)' : 'rgba(176,190,196,0.95)';
     const spot = rest
       ? 'rgba(18,26,22,0.7)'
       : armed
         ? 'rgba(20,40,28,0.85)'
         : 'rgba(40,26,14,0.7)';
+
+    // フェース面は当たり判定と同じ位置（ローカル +putterWidth/2）に置く。
+    // 胴と後ろのフランジは、そこから後ろ（-X）へ伸ばす。
+    const front = C.putterWidth / 2;
+    const back = front - P.bodyDepth;
+    const half = C.putterLength / 2;
+
     ctx.save();
     ctx.translate(this.putter.x, this.putter.y);
     ctx.rotate(this.putter.angle);
+
+    // 後ろのフランジ。トウ・ヒール側を短くして、中央だけ張り出させる
+    ctx.fillStyle = body;
+    ctx.fillRect(
+      back - P.flangeDepth,
+      -half + P.flangeInset,
+      P.flangeDepth,
+      C.putterLength - P.flangeInset * 2,
+    );
+    // 胴
+    ctx.fillRect(back, -half, P.bodyDepth, C.putterLength);
+    // ヒール側のホーゼルと、手元へ伸びるシャフト
+    ctx.fillRect(-P.hoselSize / 2, -half - P.hoselSize, P.hoselSize, P.hoselSize);
+    ctx.fillRect(
+      -P.shaftWidth / 2,
+      -half - P.hoselSize - P.shaftLength,
+      P.shaftWidth,
+      P.shaftLength,
+    );
+
+    // フェース板。状態の色はここに出す
     ctx.fillStyle = face;
-    ctx.fillRect(-C.putterWidth / 2, -C.putterLength / 2, C.putterWidth, C.putterLength);
+    ctx.fillRect(front - P.faceThickness, -half, P.faceThickness, C.putterLength);
+
+    // 芯の範囲。フェース板の上にインサートとして置く。
+    // 状態の色はトウ・ヒール側のフェースに残るので、打てるかどうかは変わらず読める
     ctx.fillStyle = spot;
-    ctx.fillRect(-C.putterWidth / 2, -C.sweetSpotPx, C.putterWidth, C.sweetSpotPx * 2);
+    ctx.fillRect(front - P.faceThickness, -C.sweetSpotPx, P.faceThickness, C.sweetSpotPx * 2);
+
+    // 照準線。フェースと直角に、芯の中心をヘッドの奥まで貫く
+    ctx.fillStyle = face;
+    ctx.fillRect(
+      back - P.flangeDepth,
+      -P.sightLineWidth / 2,
+      P.bodyDepth + P.flangeDepth,
+      P.sightLineWidth,
+    );
+
     ctx.restore();
   }
 }
