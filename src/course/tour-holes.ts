@@ -45,7 +45,8 @@ export const TOUR_SETS = [
   },
   {
     id: 'waterside',
-    name: { ja: '水鏡の庭', en: 'Mirror Water Garden' },
+    // 英語名は、ラウンド終了カードの見出しが狭い端末で折り返さない長さにする
+    name: { ja: '水鏡の庭', en: 'Mirror Garden' },
     description: {
       ja: '池の数と水面積比が大きいホールを集めたコース',
       en: 'Holes with the most water, and the largest share of it.',

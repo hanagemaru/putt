@@ -106,24 +106,25 @@ const COPY = {
     english: 'EN',
     backToMenu: '← TOP',
     tourTitle: 'TOUR',
-    startOver: 'FROM START',
+    startOver: 'FROM HOLE 1',
 
     top: 'TOP',
     backToTop: 'Back to top',
     cameraViewLabel: 'Camera view',
     strokeViewLabel: 'Change view',
     map: 'MAP',
-    backToRead: 'BACK TO READ',
+    backToRead: 'BACK TO THE READ',
     checkAim: 'CHECK AIM',
     giveUp: 'HOLD TO GIVE UP',
-    giveUpToTee: 'HOLD TO GIVE UP (TEE)',
+    giveUpToTee: 'HOLD TO RESTART HOLE',
     giveUpHolding: 'KEEP HOLDING…',
     putterPower: 'PUTTER POWER',
     power: 'POWER',
-    rotateToPortrait: 'PLEASE HOLD IT UPRIGHT',
+    rotateToPortrait: 'HOLD YOUR PHONE UPRIGHT',
 
     views: {
-      AIM: 'AIM',
+      // 視点名は「どこから見ているか」で揃える。何をするかは案内の行が言う
+      AIM: 'BALL',
       MAP: 'MAP',
       BEHIND_BALL: 'BEHIND BALL (OLD)',
       BEHIND_HOLE: 'CUP',
@@ -132,21 +133,21 @@ const COPY = {
     },
 
     noticeAim: 'Swipe left or right to aim, tap to address',
-    noticeMap: 'Course map · Tap to go back',
+    noticeMap: 'Hole map · Tap to go back',
     noticeLowLine: 'Low view · Swipe to aim, tap to address',
-    noticeRead: 'Reading view · Tap to address',
-    noticeCupCheck: 'Aim view · Swipe to adjust · Tap back',
-    noticeNextPutt: 'Tap for the next stroke',
-    noticePullRight: 'Pull back to the right',
-    noticeSwingThrough: 'Swing through',
+    noticeRead: 'Green read · Tap to address',
+    noticeCupCheck: 'Aim · Swipe to adjust · Tap to go back',
+    noticeNextPutt: 'Tap for the next putt',
+    noticePullRight: 'Take the putter back to the right',
+    noticeSwingThrough: 'Now swing through',
     noticeNoBackswing: 'No backswing — no stroke',
-    noticeFewSamples: 'Not enough samples — no stroke',
-    noticeNotPulledRight: 'Not pulled to the right — no stroke',
+    noticeFewSamples: "Couldn't read the swing — no stroke",
+    noticeNotPulledRight: 'Not taken back — no stroke',
 
-    gaveUpMark: ' · GAVE UP',
-    gaveUpNote: ' · * GAVE UP',
+    gaveUpMark: ' · PICKED UP',
+    gaveUpNote: ' · * PICKED UP',
     hintNextHole: 'Tap for the next hole',
-    hintResult: 'Tap for the result',
+    hintResult: 'Tap for the scorecard',
     practiceEnd: 'PRACTICE OVER',
     colHole: 'H',
     colPar: 'PAR',
@@ -158,11 +159,12 @@ const COPY = {
     homeConfirm: 'GO TO TOP',
     homeMessageTourSaved: 'Return to the top menu? Your progress so far is saved.',
     homeMessageTourMid:
-      'Return to the top menu? This hole is not saved partway. Next time you start this hole again from the tee.',
+      'Return to the top menu? Progress within this hole is not saved — ' +
+      'next time you play this hole again from the tee.',
     homeMessagePractice: 'Return to the top menu? Strokes and ball position in practice are not saved.',
 
     toCourseSelect: 'COURSES',
-    playAgain: 'RETRY',
+    playAgain: 'PLAY AGAIN',
     toTop: 'TOP',
   },
 } as const;
@@ -233,9 +235,9 @@ const en = (value: string, jaValue: string): string => (language() === 'en' ? va
 // --- 数値が混じる行 -------------------------------------------------------
 // 数字の書式（打数・パー差・距離・角度）は言語で変えない。変えるのは前後の語だけ
 
-/** 「3 打」。練習モードの進行表示と、カード見出しの打数 */
+/** 「3 打」。カード見出しの打数。英語は1打だけ単数にする（ホールインワンで出る） */
 export function strokesText(strokes: number): string {
-  return en(`${strokes} STROKES`, `${strokes} 打`);
+  return en(`${strokes} ${strokes === 1 ? 'STROKE' : 'STROKES'}`, `${strokes} 打`);
 }
 
 /** ホール間・ラウンド終了カードの見出し。「3 打  ±0」 */
@@ -272,7 +274,7 @@ export function practiceProgressText(par: number, strokes: number, distance: str
 
 export function resumeNotice(tourName: string, holeNumber: number): string {
   return en(
-    `${tourName} · resuming from hole ${holeNumber}`,
+    `${tourName} · Resuming from hole ${holeNumber}`,
     `${tourName}・ホール${holeNumber}から再開します`,
   );
 }
@@ -291,7 +293,7 @@ export function newBestLabel(best: string): string {
 }
 
 export function roundEndTitle(tourName: string): string {
-  return en(`${tourName} · ROUND END`, `${tourName}・ラウンド終了`);
+  return en(`${tourName} · FINAL`, `${tourName}・ラウンド終了`);
 }
 
 export function roundEndSub(holeCount: number, totalPar: number, gaveUp: boolean): string {
@@ -316,11 +318,11 @@ export function holeOutSub(
 }
 
 export function holedResult(strokes: number): string {
-  return en(`IN THE CUP (${strokes})`, `カップイン（${strokes} 打）`);
+  return en(`HOLED IN ${strokes}`, `カップイン（${strokes} 打）`);
 }
 
 export function waterResult(strokes: number): string {
-  return en(`WATER (+1) · ${strokes}`, `池（1罰打）・${strokes} 打`);
+  return en(`IN THE WATER (+1) · ${strokes}`, `池（1罰打）・${strokes} 打`);
 }
 
 export function outOfBoundsResult(strokes: number): string {
@@ -332,7 +334,7 @@ export function missResult(along: number, lateral: number): string {
   const distance = Math.abs(along).toFixed(1);
   const head =
     along >= 0
-      ? en(`${distance}m LONG`, `${distance}m オーバー`)
+      ? en(`${distance}m PAST`, `${distance}m オーバー`)
       : en(`${distance}m SHORT`, `${distance}m ショート`);
   if (Math.abs(lateral) < 0.05) return head;
   const side = Math.abs(lateral).toFixed(1);
@@ -343,7 +345,7 @@ export function missResult(along: number, lateral: number): string {
 
 export function whiffNotice(offsetPx: number): string {
   return en(
-    `Missed the ball — ${offsetPx}px off centre`,
+    `Whiff — ${offsetPx}px off the sweet spot`,
     `空振り — 芯から ${offsetPx}px 外れました`,
   );
 }
