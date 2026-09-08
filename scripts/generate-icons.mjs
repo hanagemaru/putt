@@ -57,8 +57,17 @@ function designFlagHill(g, scale) {
   disc(g, s.x(16), s.x(19.5), s.r(2.6), COLOR.ob);
   rect(g, s.x(15), s.x(4), s.r(2), s.r(15.5), COLOR.ball);
   banner(g, s.x(16.8), s.x(4.8), s.r(9.8), s.r(6.4), s.r(2.3), COLOR.flag);
-  disc(g, s.x(10.2), s.x(24), s.r(3), COLOR.fairwayShade);
-  disc(g, s.x(9.6), s.x(23.2), s.r(3), COLOR.ball);
+  ball(g, s, 10, 23.5);
+}
+
+// ボール。半径3.5の円をラスタライズすると輪郭が欠けるので、
+// 角を落とした7x7として矩形3枚で組む。接地の影は真下に1段だけ置く。
+// 縮小しても角の落としが残るよう、切り欠きは幅の1/7ぶんを確保する。
+function ball(g, s, cx, cy) {
+  rect(g, s.x(cx - 2.5), s.x(cy + 3.5), s.r(5), s.r(1), COLOR.fairwayShade);
+  rect(g, s.x(cx - 3.5), s.x(cy - 2.5), s.r(7), s.r(5), COLOR.ball);
+  rect(g, s.x(cx - 2.5), s.x(cy - 3.5), s.r(5), s.r(1), COLOR.ball);
+  rect(g, s.x(cx - 2.5), s.x(cy + 2.5), s.r(5), s.r(1), COLOR.ball);
 }
 
 const DESIGNS = {
