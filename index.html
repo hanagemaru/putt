@@ -7,6 +7,21 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
     <title>putt</title>
+
+    <!--
+      PWA の素地（Service Worker はまだ入れていない）。
+      href は `/` 始まりで書く。配信先のベース（GitHub Pages は `/putt/`、
+      Cloudflare Workers は `/`）は Vite がビルド時に前置する
+    -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#101410" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <!-- viewport-fit=cover と組み合わせて、iOS でも画面いっぱいに出す。上端は safe-area で避ける -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="putt" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon-180.png" />
+    <link rel="icon" href="/icons/icon-192.png" type="image/png" sizes="192x192" />
     <style>
       * {
         margin: 0;
