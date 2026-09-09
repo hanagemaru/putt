@@ -31,6 +31,8 @@ const COPY = {
     startOver: 'HOLE 1から',
     /** パター選択（§4.4）。形の名前は日本のゴルフでの呼び方に合わせる */
     putter: 'パター',
+    /** トップのボタン。「パター」だけでは何をする所か分からないので動詞まで書く */
+    putterChoose: 'パターを選ぶ',
     putterSelect: '選ぶ',
     putterSelected: '選択中',
     putterShapes: {
@@ -120,6 +122,7 @@ const COPY = {
     tourTitle: 'TOUR',
     startOver: 'FROM HOLE 1',
     putter: 'PUTTER',
+    putterChoose: 'CHOOSE PUTTER',
     putterSelect: 'SELECT',
     putterSelected: 'IN USE',
     putterShapes: {

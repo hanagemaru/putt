@@ -140,20 +140,18 @@ function renderTopMenu(): void {
   subtitle.textContent = copy.menuSubtitle;
 
   /*
-   * ボタンは2列。遊ぶ入口（通常ツアー）だけ2列ぶんに広げ、
-   * その下に「練習」と「パター」を同じ幅で並べる。
+   * ボタンは「通常ツアー」「練習」「パターを選ぶ」の縦1列。
+   * 横に並べると、日本語も英語も名前が折り返してボタンの高さが変わる。
    * パターは遊び始めるボタンではないので色を落として、押す前に区別できるようにする
    */
   const actions = document.createElement('div');
   actions.className = 'menu-actions';
 
-  const tour = menuButton(copy.modeTour, renderTourSelection);
-  tour.classList.add('wide');
-  const putter = menuButton(copy.putter, renderPutterSelection);
+  const putter = menuButton(copy.putterChoose, renderPutterSelection);
   putter.classList.add('menu-button-sub');
 
   actions.append(
-    tour,
+    menuButton(copy.modeTour, renderTourSelection),
     menuButton(copy.modePractice, () => navigateTo({ mode: 'practice' })),
     putter,
   );
@@ -672,18 +670,10 @@ function ensureMenuStyles(): void {
       gap: 14px;
       margin-top: 28px;
     }
-    /*
-     * 上から「通常ツアー」「練習 ・ パター」の2段。
-     * 2列の格子にして、広げるボタンだけ .wide で2列ぶんを占めさせる
-     */
     .menu-actions {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 14px;
       margin-top: 28px;
-    }
-    .menu-button.wide {
-      grid-column: 1 / -1;
     }
     .menu-button,
     .course-action,
@@ -719,6 +709,8 @@ function ensureMenuStyles(): void {
      * ベベルと大きさは揃えたままにして、押せることは分かるようにする
      */
     .menu-button-sub {
+      /* 遊ぶ2つと続けて並ぶので、間を少し空けて区切りを作る */
+      margin-top: 6px;
       background: #27431f;
       color: #bcd0c0;
     }
