@@ -21,8 +21,6 @@ const COPY = {
     guideLabel: '案内',
     howTo: '遊び方',
     privacy: 'プライバシー',
-    /** 外部リンクは日本語ページしかない。英語表示のときだけ注記を添える */
-    externalPageNote: '',
     language: '言語',
     japanese: '日本語',
     english: 'EN',
@@ -71,7 +69,7 @@ const COPY = {
 
     // --- 案内（main.ts / stroke-view.ts） ---
     noticeAim: '左右スワイプで狙い、タップで構える',
-    noticeMap: 'ホールマップ ・ タップで戻る',
+    noticeMap: 'マップ ・ タップで戻る',
     noticeLowLine: '低い視点 ・ 左右スワイプで狙い、タップで構える',
     noticeRead: '読み視点 ・ タップで構える',
     noticeCupCheck: '狙い ・ 左右スワイプで調整 ・ タップで戻る',
@@ -114,7 +112,6 @@ const COPY = {
     guideLabel: 'Guide',
     howTo: 'HOW TO PLAY',
     privacy: 'PRIVACY POLICY',
-    externalPageNote: '(Japanese)',
     language: 'Language',
     japanese: '日本語',
     english: 'EN',
@@ -158,7 +155,7 @@ const COPY = {
     },
 
     noticeAim: 'Swipe left or right to aim, tap to address',
-    noticeMap: 'Hole map · Tap to go back',
+    noticeMap: 'Map · Tap to go back',
     noticeLowLine: 'Low view · Swipe to aim, tap to address',
     noticeRead: 'Green read · Tap to address',
     noticeCupCheck: 'Aim · Swipe to adjust · Tap to go back',

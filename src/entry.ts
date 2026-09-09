@@ -16,8 +16,9 @@ import {
   type PutterShapeId,
 } from './putter-shape';
 
-const HOW_TO_URL = 'https://hanage.app/games/putt/how-to-play/';
-const PRIVACY_URL = 'https://hanage.app/privacy/';
+const HUB_ORIGIN = 'https://hanage.app';
+const HOW_TO_PATH = '/games/putt/how-to-play/';
+const PRIVACY_PATH = '/privacy/';
 const params = new URLSearchParams(window.location.search);
 
 // index.html は日本語を初期値として持つ。英語ならここで一度だけ差し替える
@@ -160,8 +161,8 @@ function renderTopMenu(): void {
   secondary.className = 'menu-secondary';
   secondary.setAttribute('aria-label', copy.guideLabel);
 
-  const howTo = externalMenuLink(copy.howTo, HOW_TO_URL);
-  const privacy = externalMenuLink(copy.privacy, PRIVACY_URL);
+  const howTo = externalMenuLink(copy.howTo, hubUrl(HOW_TO_PATH));
+  const privacy = externalMenuLink(copy.privacy, hubUrl(PRIVACY_PATH));
 
   secondary.append(howTo, privacy);
   panel.append(title, subtitle, actions, secondary, languageToggle(renderTopMenu));
@@ -467,26 +468,23 @@ function menuButton(label: string, onClick: () => void): HTMLButtonElement {
   return button;
 }
 
-function externalMenuLink(label: string, href: string): HTMLElement {
+/**
+ * ハブ（hanage.app）のページURL。**言語からパスを組み立てるのはここだけ。**
+ * 日本語は接頭辞なし、英語は `/en/` 配下。ハブ側の `src/lib/i18n.ts` の規則に合わせる。
+ * 言語を切り替えると画面ごと描き直すので、リンクもそのたびに作り直される
+ */
+function hubUrl(path: string): string {
+  return `${HUB_ORIGIN}${language() === 'en' ? '/en' : ''}${path}`;
+}
+
+function externalMenuLink(label: string, href: string): HTMLAnchorElement {
   const link = document.createElement('a');
   link.className = 'menu-text-link';
   link.href = href;
   link.target = '_blank';
   link.rel = 'noopener noreferrer';
   link.textContent = label;
-
-  // リンク先は日本語のページしかない。英語表示のときだけ、飛ぶ前に分かるようにする。
-  // 注記はリンクの外へ置く。中に入れると破線の下線が注記の下まで伸びる
-  const note = t().externalPageNote;
-  if (!note) return link;
-
-  const item = document.createElement('span');
-  item.className = 'menu-guide-item';
-  const suffix = document.createElement('small');
-  suffix.className = 'menu-link-note';
-  suffix.textContent = note;
-  item.append(link, suffix);
-  return item;
+  return link;
 }
 
 /**
@@ -755,17 +753,6 @@ function ensureMenuStyles(): void {
       background-position: 0 100%;
       color: #bcd0c0;
       cursor: pointer;
-    }
-    /* 英語表示のときだけ出る「(Japanese)」。リンクの下に小さく添える */
-    .menu-guide-item {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-    .menu-link-note {
-      font-size: 12px;
-      line-height: 1.4;
-      color: #a8bfae;
     }
     /* 言語の切り替え。押すところは他のボタンと同じベベルで作る */
     .language-toggle {

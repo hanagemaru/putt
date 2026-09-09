@@ -403,7 +403,7 @@ aimGuide.visible = false;
 scene.add(aimGuide);
 
 /**
- * コースマップのボール・カップ位置マーカー。**マップの間だけ出す。**
+ * マップのボール・カップ位置マーカー。**マップの間だけ出す。**
  * 実寸のボールは真上30m超からは点にもならないので、
  * 斜めの矢印とドット文字で位置とそこが何かを示す（作りは course-map-marker.ts）。
  * 曲がりの予測線や推奨ルートは描かない（§3 / ゲーム設計の原則）
@@ -477,7 +477,7 @@ type State =
   | 'HOLE_OUT'
   | 'ROUND_END'
   | 'PRACTICE_END';
-/** ADDRESS の中の視点。MAP はコース全体を真上から見渡すコースマップ */
+/** ADDRESS の中の視点。MAP はコース全体を真上から見渡すマップ */
 type AimView = 'AIM' | 'MAP' | ReadView;
 
 function aimViewLabel(view: AimView): string {
@@ -1796,7 +1796,7 @@ hud.seed.addEventListener('click', () => {
 
 function updateControls(): void {
   // ギブアップはダブルパーに達するまで出さない。出る場面を離れたら押し続けも取り消す
-  // コースマップは一時的な参照画面。タップで閉じる約束なので、ここには重ねない
+  // マップは一時的な参照画面。タップで閉じる約束なので、ここには重ねない
   const showGiveUp = canGiveUp() && !(state === 'ADDRESS' && aimView === 'MAP');
   if (!showGiveUp) cancelGiveUpHold();
   giveUpControl.style.display = showGiveUp ? 'block' : 'none';
