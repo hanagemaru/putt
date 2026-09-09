@@ -276,6 +276,7 @@
       #stroke-back,
       .stroke-camera-button,
       #map-toggle,
+      #course-shuffle,
       #giveup,
       #home-button,
       .home-dialog-button,
@@ -306,6 +307,7 @@
       #stroke-back,
       .stroke-camera-button,
       #map-toggle,
+      #course-shuffle,
       #giveup,
       #home-button,
       #hud-adjust,
@@ -322,6 +324,7 @@
       #stroke-back:active,
       .stroke-camera-button:active,
       #map-toggle:active,
+      #course-shuffle:active,
       #giveup:active,
       #home-button:active,
       .home-dialog-button:active,
@@ -352,6 +355,19 @@
         font-family: var(--pixel-font);
       }
 
+
+      /*
+       * コース変更（練習モードだけ）。マップの真上へ積む。
+       * 左下はギブアップ（練習では打ち直し）の場所なので空けておく
+       */
+      #course-control {
+        position: fixed;
+        right: max(10px, env(safe-area-inset-right));
+        bottom: max(102px, calc(env(safe-area-inset-bottom) + 102px));
+        z-index: 30;
+        display: none;
+        font-family: var(--pixel-font);
+      }
 
       /*
        * ギブアップ（spec §3）。ダブルパーに達したときだけ出す出口。
@@ -664,6 +680,11 @@
     <!-- マップは読み視点ではなく一時的な参照画面なので、視点バーとは別に置く -->
     <div id="map-control">
       <button type="button" id="map-toggle">マップ</button>
+    </div>
+
+    <!-- 練習モードだけの、コースを引き直すボタン（spec §6） -->
+    <div id="course-control">
+      <button type="button" id="course-shuffle">コース変更</button>
     </div>
 
     <!-- ダブルパーに達したときだけ出す出口。押し続けで確定する（spec §3） -->

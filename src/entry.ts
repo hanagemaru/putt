@@ -139,22 +139,31 @@ function renderTopMenu(): void {
   subtitle.className = 'menu-subtitle';
   subtitle.textContent = copy.menuSubtitle;
 
+  /*
+   * ボタンは「通常ツアー」「練習」「パターを選ぶ」の縦1列。
+   * 横に並べると、日本語も英語も名前が折り返してボタンの高さが変わる。
+   * パターは遊び始めるボタンではないので色を落として、押す前に区別できるようにする
+   */
   const actions = document.createElement('div');
   actions.className = 'menu-actions';
+
+  const putter = menuButton(copy.putterChoose, renderPutterSelection);
+  putter.classList.add('menu-button-sub');
+
   actions.append(
     menuButton(copy.modeTour, renderTourSelection),
     menuButton(copy.modePractice, () => navigateTo({ mode: 'practice' })),
+    putter,
   );
 
   const secondary = document.createElement('nav');
   secondary.className = 'menu-secondary';
   secondary.setAttribute('aria-label', copy.guideLabel);
 
-  const putter = internalMenuLink(copy.putter, renderPutterSelection);
   const howTo = externalMenuLink(copy.howTo, HOW_TO_URL);
   const privacy = externalMenuLink(copy.privacy, PRIVACY_URL);
 
-  secondary.append(putter, howTo, privacy);
+  secondary.append(howTo, privacy);
   panel.append(title, subtitle, actions, secondary, languageToggle(renderTopMenu));
   root.append(panel);
 }
@@ -458,16 +467,6 @@ function menuButton(label: string, onClick: () => void): HTMLButtonElement {
   return button;
 }
 
-/** メニュー内の別画面へ移る。見た目は外部リンクと揃える */
-function internalMenuLink(label: string, onClick: () => void): HTMLButtonElement {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'menu-text-link';
-  button.textContent = label;
-  button.addEventListener('click', onClick);
-  return button;
-}
-
 function externalMenuLink(label: string, href: string): HTMLElement {
   const link = document.createElement('a');
   link.className = 'menu-text-link';
@@ -666,8 +665,12 @@ function ensureMenuStyles(): void {
       letter-spacing: 0.12em;
       color: #bcd0c0;
     }
-    .menu-actions,
     .course-list {
+      display: grid;
+      gap: 14px;
+      margin-top: 28px;
+    }
+    .menu-actions {
       display: grid;
       gap: 14px;
       margin-top: 28px;
@@ -701,6 +704,16 @@ function ensureMenuStyles(): void {
       font-size: 16px;
       font-weight: 400;
     }
+    /*
+     * 遊び始めるボタンではないもの（パター）は、同じ形のまま色だけ落とす。
+     * ベベルと大きさは揃えたままにして、押せることは分かるようにする
+     */
+    .menu-button-sub {
+      /* 遊ぶ2つと続けて並ぶので、間を少し空けて区切りを作る */
+      margin-top: 6px;
+      background: #27431f;
+      color: #bcd0c0;
+    }
     .menu-button:active,
     .menu-back:active {
       transform: translateY(4px);
@@ -719,8 +732,8 @@ function ensureMenuStyles(): void {
     .menu-secondary {
       display: flex;
       /*
-       * 高さを揃えない。英語は「HOW TO PLAY」が2行になるので、
-       * 揃えると1行の「PUTTER」だけ下線が段違いに落ちる
+       * 高さを揃えない。英語は行数が項目ごとに変わるので、
+       * 揃えると1行の項目だけ下線が段違いに落ちる
        */
       align-items: flex-start;
       justify-content: center;

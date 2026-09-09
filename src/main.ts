@@ -1129,6 +1129,10 @@ function loadHole(next: number): void {
  * URL にも書いておくので、面白いコースが出たらその URL でもう一度出せる
  * （ツアー中に書くと、読み込み直しで練習モードになってしまう）
  */
+function randomSeed(): number {
+  return Math.floor(Math.random() * G.practice.seedRange);
+}
+
 function newGreen(next: number): void {
   loadHole(next);
   const url = new URL(location.href);
@@ -1434,6 +1438,8 @@ debugControls.hidden = !debugEnabled;
 const cameraButtons = Array.from(
   cameraControls.querySelectorAll<HTMLButtonElement>('[data-aim-view]'),
 );
+const courseControl = document.getElementById('course-control')!;
+const courseShuffle = document.getElementById('course-shuffle') as HTMLButtonElement;
 const giveUpControl = document.getElementById('giveup-control')!;
 const giveUpButton = document.getElementById('giveup') as HTMLButtonElement;
 const giveUpFill = document.getElementById('giveup-fill') as HTMLSpanElement;
@@ -1770,10 +1776,22 @@ hud.undulation.addEventListener('click', () => {
 
 // シードのボタン。押すと別の地形になる（練習モードの ADDRESS / RESULT のときだけ）。
 // ツアーは固定9ホールを順に回るので、途中でホールを差し替えない
+/*
+ * コースを引き直すボタン（練習モードだけ）。
+ * ランダムなシードで地形も外形もカップも引き直す。同じ場所を打ち直したいときは
+ * ギブアップ（練習では打ち直し）を使う。
+ * 打っている途中で差し替えないよう、ADDRESS のときだけ効かせる
+ */
+courseShuffle.addEventListener('click', () => {
+  if (round) return;
+  if (state !== 'ADDRESS') return;
+  newGreen(randomSeed());
+});
+
 hud.seed.addEventListener('click', () => {
   if (round) return;
   if (state !== 'ADDRESS' && state !== 'RESULT') return;
-  newGreen(Math.floor(Math.random() * 100000));
+  newGreen(randomSeed());
 });
 
 function updateControls(): void {
@@ -1795,6 +1813,10 @@ function updateControls(): void {
   // 視点バーは 2×2 の格子（index.html）。出すときは grid で戻す
   cameraControls.style.display = inAddress ? 'grid' : 'none';
   mapControl.style.display = inAddress ? 'block' : 'none';
+  // コース変更は練習だけ。ツアーは固定9ホールを順に回るので、途中でホールを差し替えない。
+  // マップを開いている間は参照画面なので重ねない（ギブアップと同じ約束）
+  courseControl.style.display =
+    !round && inAddress && aimView !== 'MAP' ? 'block' : 'none';
   mapToggle.classList.toggle('active', inAddress && aimView === 'MAP');
   const inStroke = state === 'STROKE';
   strokeControls.style.display = inStroke ? 'flex' : 'none';
