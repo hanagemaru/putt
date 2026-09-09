@@ -216,7 +216,7 @@ function renderPutterSelection(): void {
   root.append(panel);
 }
 
-/** パター1本ぶんの枠。見本・名前・説明と、選ぶボタンを置く */
+/** パター1本ぶんの枠。見本・名前と、選ぶボタンを1行に置く */
 function putterEntry(
   shape: (typeof PUTTER_SHAPES)[number],
   selected: PutterShapeId,
@@ -224,31 +224,20 @@ function putterEntry(
   const card = document.createElement('div');
   card.className = 'course-card putter-card';
 
-  const preview = putterPreview(shape.id);
-
-  const info = document.createElement('div');
-  info.className = 'putter-info';
-
   const name = document.createElement('div');
-  name.className = 'course-name';
+  name.className = 'course-name putter-name';
   name.textContent = shape.name;
 
-  const description = document.createElement('div');
-  description.className = 'course-description';
-  description.textContent = shape.description;
-
-  info.append(name, description);
-
-  const actions = document.createElement('div');
-  actions.className = 'course-actions';
+  const action = document.createElement('div');
+  action.className = 'putter-action';
 
   if (shape.id === selected) {
     const current = document.createElement('span');
     current.className = 'course-best';
     current.textContent = '選択中';
-    actions.append(current);
+    action.append(current);
   } else {
-    actions.append(
+    action.append(
       courseAction('これにする', false, () => {
         savePutterShape(shape.id);
         renderPutterSelection();
@@ -256,8 +245,7 @@ function putterEntry(
     );
   }
 
-  info.append(actions);
-  card.append(preview, info);
+  card.append(putterPreview(shape.id), name, action);
   return card;
 }
 
@@ -274,10 +262,11 @@ function putterPreview(id: PutterShapeId): HTMLCanvasElement {
   // ヘッドは実寸だと枠に収まらないので半分に落とす。
   // 半分ちょうどなら点の境目がずれないので、ドットのままで縮む
   const scale = 0.5;
-  const w = 56;
+  // 一番後ろまで伸びるマレットとネオマレットが収まる大きさにする
+  const w = 60;
   const h = 64;
   // 見本の原点。ここにヘッドの回転中心（＝構えたときのパター位置）を置く
-  const cx = 36;
+  const cx = 34;
   const cy = 22;
 
   const dpr = Math.min(window.devicePixelRatio, CONFIG.renderer.maxPixelRatio);
@@ -728,10 +717,12 @@ function ensureMenuStyles(): void {
       letter-spacing: 0.04em;
       color: #bcd0c0;
     }
+    /* パター1本は「見本・名前・ボタン」の1行。説明は付けず、違いは見本で見せる */
     .putter-card {
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       gap: 12px;
+      padding: 10px 12px;
     }
     .putter-preview {
       flex: none;
@@ -739,16 +730,15 @@ function ensureMenuStyles(): void {
       background: #3a7332;
       image-rendering: pixelated;
     }
-    .putter-info {
+    .putter-name {
       flex: 1;
       min-width: 0;
     }
-    .putter-card .course-actions {
-      margin-top: 14px;
+    .putter-action {
+      flex: none;
     }
-    /* 「選択中」はボタンではないので、押せそうな幅いっぱいには広げない */
-    .putter-card .course-best {
-      justify-self: start;
+    .putter-action .course-action {
+      padding: 12px 10px;
     }
     .course-name {
       font-size: 16px;

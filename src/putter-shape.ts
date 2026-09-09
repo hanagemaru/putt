@@ -20,20 +20,20 @@ interface ShapeGeometry {
   bodyDepth: number;
   rear: ReadonlyArray<{ depth: number; inset: number }>;
   rails: { depth: number; width: number } | null;
+  sightDepth: number | null;
   body: string;
   bodyRest: string;
 }
 
-/** 選択画面に出す順番と表示名。数値ではないので config には置かない */
-export const PUTTER_SHAPES: ReadonlyArray<{
-  id: PutterShapeId;
-  name: string;
-  description: string;
-}> = [
-  { id: 'pin', name: 'ピン型', description: '見慣れた標準の形。迷ったらこれ' },
-  { id: 'blade', name: 'L字ブレード', description: '薄い銅色のヘッド。輪郭が細い' },
-  { id: 'mallet', name: 'マレット', description: '後ろが丸く張り出す。大きく見える' },
-  { id: 'fang', name: 'ネオマレット', description: '後ろが二股。狙いを挟んで構える' },
+/**
+ * 選択画面に出す順番と表示名。数値ではないので config には置かない。
+ * 見本を見れば違いは分かるので、名前以外の説明は付けない
+ */
+export const PUTTER_SHAPES: ReadonlyArray<{ id: PutterShapeId; name: string }> = [
+  { id: 'pin', name: 'ピン型' },
+  { id: 'blade', name: 'L字' },
+  { id: 'mallet', name: 'マレット' },
+  { id: 'fang', name: 'ネオマレット' },
 ];
 
 export function shapeGeometry(id: PutterShapeId): ShapeGeometry {
@@ -127,8 +127,8 @@ export function drawPutterHead(
   ctx.fillStyle = colors.spot;
   ctx.fillRect(front - P.faceThickness, -C.sweetSpotPx, P.faceThickness, C.sweetSpotPx * 2);
 
-  // 照準線。フェースと直角に、ヘッドの一番奥まで貫く。
-  // ファング型では二股の間を通るので、そこが狙いの通り道に見える
+  // 照準線。フェースと直角に引く。既定はヘッドの一番奥まで
+  const sightDepth = shape.sightDepth ?? front - back;
   ctx.fillStyle = colors.face;
-  ctx.fillRect(back, -P.sightLineWidth / 2, front - back, P.sightLineWidth);
+  ctx.fillRect(front - sightDepth, -P.sightLineWidth / 2, sightDepth, P.sightLineWidth);
 }

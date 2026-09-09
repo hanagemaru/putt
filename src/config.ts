@@ -686,6 +686,8 @@ export const CONFIG = {
        * - `rails`: 後ろへ二股に伸ばす羽根。`width` [px] はトウ側・ヒール側それぞれの幅。
        *   間は空けたままにするので、上から見て輪郭がコの字に見える
        * - `body` / `bodyRest`: 胴の色。待機中（rest）は少し落とす。形状の見分けはこの色にも持たせる
+       * - `sightDepth`: 照準線をフェースから後ろへ引く長さ [px]。null ならヘッドの一番奥まで。
+       *   二股の間を最後まで貫くと横棒が3本並んだ記号に見えるので、ファング型だけ手前で止める
        */
       putterShapes: {
         /** ピン型（アンサー型）。一番見慣れたシルエット。既定 */
@@ -693,35 +695,46 @@ export const CONFIG = {
           bodyDepth: 12,
           rear: [{ depth: 5, inset: 10 }],
           rails: null,
+          sightDepth: null,
           body: 'rgba(176,190,196,0.95)',
           bodyRest: 'rgba(150,162,158,0.85)',
         },
-        /** L字ブレード。薄さと銅色で見分ける。後ろの張り出しを持たない */
+        /**
+         * L字。後ろの張り出しを持たない代わりに、真鍮の金色で見分ける。
+         * 薄くしすぎると芝の上で線にしか見えないので、ピン型より一回り薄い程度に留める
+         */
         blade: {
-          bodyDepth: 7,
+          bodyDepth: 10,
           rear: [],
           rails: null,
-          body: 'rgba(202,124,66,0.95)',
-          bodyRest: 'rgba(168,104,58,0.85)',
+          sightDepth: null,
+          body: 'rgba(214,176,88,0.95)',
+          bodyRest: 'rgba(184,150,74,0.85)',
         },
-        /** マレット（かまぼこ型）。後ろを段で丸めて、上から見た面積をはっきり増やす */
+        /**
+         * マレット（かまぼこ型）。後ろを段で丸める。
+         * 段を粗くすると多角形に見えるので、奥へ行くほど短くする幅を広げて丸みを出す
+         */
         mallet: {
-          bodyDepth: 11,
+          bodyDepth: 12,
           rear: [
-            { depth: 5, inset: 3 },
-            { depth: 4, inset: 9 },
-            { depth: 3, inset: 17 },
-            { depth: 2, inset: 24 },
+            { depth: 8, inset: 3 },
+            { depth: 7, inset: 8 },
+            { depth: 6, inset: 15 },
+            { depth: 5, inset: 22 },
+            { depth: 4, inset: 27 },
           ],
           rails: null,
+          sightDepth: null,
           body: 'rgba(126,146,168,0.95)',
           bodyRest: 'rgba(108,124,142,0.85)',
         },
-        /** ネオマレット（ファング型）。後ろの二股が空いたまま伸びるので輪郭が一番特徴的 */
+        /** ネオマレット（ファング型）。後ろの二股が空いたまま長く伸びるので輪郭が一番特徴的 */
         fang: {
-          bodyDepth: 9,
+          bodyDepth: 10,
           rear: [],
-          rails: { depth: 17, width: 11 },
+          rails: { depth: 30, width: 12 },
+          sightDepth: 22,
           body: 'rgba(232,236,230,0.95)',
           bodyRest: 'rgba(198,206,198,0.85)',
         },
