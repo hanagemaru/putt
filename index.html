@@ -413,7 +413,8 @@
         position: fixed;
         top: max(10px, env(safe-area-inset-top));
         right: max(10px, env(safe-area-inset-right));
-        z-index: 34;
+        /* スコアカード（35）より上。カードを出している間もトップへ戻れるようにする */
+        z-index: 36;
         display: none;
         font-family: var(--pixel-font);
       }
@@ -488,18 +489,35 @@
         inset: 0;
         z-index: 35;
         display: flex;
-        align-items: center;
+        /*
+         * 揃えは先頭にして、余白があるときだけ card の margin:auto で中央へ寄せる。
+         * align-items: center のままだと、カードが画面より高いときに上へはみ出したぶんが
+         * スクロールで戻せず切れる（9ホールの一覧は縦に長い）
+         */
+        align-items: flex-start;
         justify-content: center;
-        padding: 20px;
+        padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
         pointer-events: none;
         font-family: var(--pixel-font);
         color: #e8f0e8;
+      }
+      /*
+       * ボタンで進むカード（ラウンド終了・練習終了）だけ指を受ける。
+       * 画面が低くてカードが収まらないときはここをスクロールさせる。
+       * ホール間のカードは「タップで進む」ので、指を通したまま（pointer-events: none）にする
+       */
+      #score-overlay.scrollable {
+        pointer-events: auto;
+        overflow-y: auto;
+        /* body は touch-action: none なので、ここで縦の指の動きだけ通す */
+        touch-action: pan-y;
       }
       #score-overlay[hidden] {
         display: none;
       }
       #score-card {
         width: min(330px, calc(100vw - 36px));
+        margin: auto;
         padding: 18px 16px;
         border: 3px solid #74cf5c;
         box-shadow: 0 0 0 3px #0d140d, 8px 8px 0 rgba(0, 0, 0, 0.5);
@@ -524,6 +542,37 @@
         line-height: 1.5;
         color: #bcd0c0;
       }
+      /*
+       * 一覧表を出す（＝縦に長い）カードは、字と余白を詰めて画面に収める。
+       * 押すところ（.score-action の44px）は詰めない
+       */
+      #score-card.list #score-headline {
+        margin-top: 8px;
+        font-size: 24px;
+      }
+      #score-card.list #score-sub {
+        margin-top: 6px;
+      }
+      #score-card.list #tour-best-result {
+        margin-top: 8px;
+      }
+      #score-card.list #score-table {
+        margin-top: 8px;
+        line-height: 1.3;
+      }
+      #score-card.list #score-table th,
+      #score-card.list #score-table td {
+        padding: 1px 0;
+      }
+      #score-card.list #score-actions {
+        margin-top: 10px;
+        gap: 6px;
+      }
+      #score-card.list {
+        padding-top: 12px;
+        padding-bottom: 12px;
+      }
+
       /* ラウンド終了の一覧表 */
       #score-table {
         margin-top: 12px;
