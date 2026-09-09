@@ -28,13 +28,14 @@ import type { CourseDefinition, TerrainType } from './course/course-types';
 import { tourById } from './course/tour-holes';
 import { CourseMapMarker } from './course-map-marker';
 import { ensurePixelFont } from './pixel-font';
+import * as i18n from './i18n';
+import { language, t } from './i18n';
 import { Round, formatToPar, type HoleScore } from './round';
 import { RoundProgressStore } from './round-storage';
 import { SmoothLineOverlay, type BallOccluder } from './smooth-line-overlay';
 import { StrokeView } from './stroke-view';
 import {
   CameraRig,
-  READ_VIEW_LABEL,
   addressPose,
   courseMapPose,
   courseMapScreenXSign,
@@ -129,7 +130,7 @@ if (round && roundStore) {
   if (saved) {
     if (round.restore(saved)) {
       if (round.holeNumber > 1) {
-        resumeNotice = `${selectedTour.name}・ホール${round.holeNumber}から再開します`;
+        resumeNotice = i18n.resumeNotice(selectedTour.name[language()], round.holeNumber);
       }
     } else {
       roundStore.clear();
@@ -479,11 +480,9 @@ type State =
 /** ADDRESS の中の視点。MAP はコース全体を真上から見渡すコースマップ */
 type AimView = 'AIM' | 'MAP' | ReadView;
 
-const AIM_VIEW_LABEL: Record<AimView, string> = {
-  AIM: 'ボール後方',
-  MAP: 'コースマップ',
-  ...READ_VIEW_LABEL,
-};
+function aimViewLabel(view: AimView): string {
+  return t().views[view];
+}
 type StrokeCameraView = 'DOWN' | 'CUP';
 
 let roller = new Roller(green, course.cup);
@@ -683,13 +682,15 @@ function updateAimGuide(): void {
 // --- 状態遷移 -------------------------------------------------------------
 
 /** ADDRESS の方向調整視点で出す通常の案内 */
-const AIM_NOTICE = '左右スワイプで狙い、タップで構える';
+function aimNotice(): string {
+  return t().noticeAim;
+}
 
 /** 復帰の一言を消して通常の案内へ戻す。最初の操作で消える */
 function clearResumeNotice(): void {
   if (!resumeNotice) return;
   resumeNotice = '';
-  if (state === 'ADDRESS' && aimView === 'AIM') notice = AIM_NOTICE;
+  if (state === 'ADDRESS' && aimView === 'AIM') notice = aimNotice();
 }
 
 /**
@@ -701,7 +702,7 @@ function enterAddress(cut = false, resetAim = true): void {
   aimView = 'AIM';
   strokeCameraView = 'DOWN';
   cupViewUsed = false;
-  notice = resumeNotice || AIM_NOTICE;
+  notice = resumeNotice || aimNotice();
   props.visible = true;
   ballMesh.visible = roller.status !== 'holed';
   strokeView.exit();
@@ -748,14 +749,14 @@ function setAimView(view: AimView): void {
   syncMapMarkers();
 
   if (view === 'AIM') {
-    notice = AIM_NOTICE;
+    notice = aimNotice();
     rig.transition(addressPose(ball, aim, visualGreen, distanceToCup()), G.address.transition);
     return;
   }
 
   if (view === 'MAP') {
     // コース全体の枠取り。ボールが止まっている ADDRESS でしか入れない
-    notice = 'コースマップ ・ タップで戻る';
+    notice = t().noticeMap;
     rig.transition(
       courseMapPose(course.bounds, course.tee, course.cup, visualGreen, camera.aspect),
       G.courseMap.transition,
@@ -764,7 +765,7 @@ function setAimView(view: AimView): void {
   }
 
   if (view === 'LOW_LINE') {
-    notice = '低い視点 ・ 左右スワイプで狙い、タップで構える';
+    notice = t().noticeLowLine;
     rig.transition(
       lowLineAimPose(ball, cup, aim, visualGreen, distanceToCup()),
       G.read.transition,
@@ -772,7 +773,7 @@ function setAimView(view: AimView): void {
     return;
   }
 
-  notice = '読み視点 ・ タップで構える';
+  notice = t().noticeRead;
   rig.transition(readPose(view, ball, cup, visualGreen, camera.aspect), G.read.transition);
 }
 
@@ -800,7 +801,7 @@ function showCupCheck(): void {
   strokeArmed = false;
   strokeView.exit();
   props.visible = true;
-  notice = '狙いを見る ・ 左右スワイプで狙いを調整 ・ タップで手元へ戻る';
+  notice = t().noticeCupCheck;
   // 先に遷移を始めてから引き直す。こうするとガイドは移動中は出ず、
   // 着いたフレームで初めて出る
   rig.transition(
@@ -933,9 +934,9 @@ function enterResult(): void {
 
 /** 結果テキスト（§3）。打ち出しラインへの射影で オーバー／ショート と左右のズレを出す */
 function describeResult(): string {
-  if (roller.status === 'holed') return `カップイン（${shots} 打）`;
-  if (roller.status === 'water') return `池（1罰打）・${shots} 打`;
-  if (roller.status === 'outOfBounds') return `OB（1罰打）・${shots} 打`;
+  if (roller.status === 'holed') return i18n.holedResult(shots);
+  if (roller.status === 'water') return i18n.waterResult(shots);
+  if (roller.status === 'outOfBounds') return i18n.outOfBoundsResult(shots);
   const ux = cup.x - shotStart.x;
   const uz = cup.y - shotStart.y;
   const len = Math.hypot(ux, uz) || 1;
@@ -947,12 +948,7 @@ function describeResult(): string {
   // 進行方向に対する右手側（three.js は右手系なので right = cross(forward, up)）
   const lateral = rx * -fz + rz * fx;
 
-  const head = along >= 0 ? `${along.toFixed(1)}m オーバー` : `${(-along).toFixed(1)}m ショート`;
-  const side =
-    Math.abs(lateral) < 0.05
-      ? ''
-      : `、${lateral >= 0 ? '右' : '左'} ${Math.abs(lateral).toFixed(1)}m`;
-  return `${head}${side}`;
+  return i18n.missResult(along, lateral);
 }
 
 /** RESULT でタップされた。ホールが続いている場合だけ次のパットへ */
@@ -1383,7 +1379,7 @@ renderer.setAnimationLoop((now) => {
           syncLineVisibility();
           rig.transition(resultPose(shotStart, ball, cup, visualGreen), G.result.transition);
           // カップイン後は終了カードへ移るので、次の一打の案内は出さない
-          notice = holeOutPending() || practiceEndPending() ? '' : 'タップで次の一打';
+          notice = holeOutPending() || practiceEndPending() ? '' : t().noticeNextPutt;
         }
       } else if (holeOutPending() || practiceEndPending()) {
         // 最後の一打の軌跡を見せてからカードを重ねる
@@ -1410,7 +1406,7 @@ renderer.setAnimationLoop((now) => {
 // --- デバッグ表示と画面操作 ------------------------------------------------
 
 // 画面の文字はメニューと同じドット絵フォントで出す（spec §0 の世界観をDOM側でも保つ）
-ensurePixelFont();
+ensurePixelFont(language());
 
 const hud = {
   root: document.getElementById('hud')!,
@@ -1483,12 +1479,9 @@ function openHomeDialog(): void {
 
   if (mode === 'tour') {
     homeDialogMessage.textContent =
-      state === 'HOLE_OUT'
-        ? 'トップへ戻りますか？ ここまでの進行は保存されています。'
-        : 'トップへ戻りますか？ このホールの途中経過は保存されません。次回はこのホールの最初から再開します。';
+      state === 'HOLE_OUT' ? t().homeMessageTourSaved : t().homeMessageTourMid;
   } else {
-    homeDialogMessage.textContent =
-      'トップへ戻りますか？ 練習中の打数やボール位置は保存されません。';
+    homeDialogMessage.textContent = t().homeMessagePractice;
   }
 
   navigationPaused = true;
@@ -1538,21 +1531,25 @@ function hideScoreOverlay(): void {
 
 /** 打数とパー差の見出し。「3 打 ±0」 */
 function strokesHeadline(strokes: number, par: number): string {
-  return `${strokes} 打  ${formatToPar(strokes - par)}`;
+  return i18n.strokesHeadline(strokes, formatToPar(strokes - par));
 }
 
 /** ホールアウトのカード。今のホールの結果と、ここまでの合計を出す */
 function showHoleOutCard(current: Round): void {
   const last = current.scores[current.scores.length - 1];
+  scoreTitle.dataset.screen = 'hole-out';
   scoreTitle.textContent = `HOLE ${last.number} / ${current.holeCount}`;
   scoreHeadline.textContent = strokesHeadline(last.strokes, last.par);
-  scoreSub.textContent =
-    `PAR ${last.par}${last.holedOut ? '' : '・ギブアップ'}　` +
-    `ここまで ${current.totalStrokes} 打 ${formatToPar(current.toPar)}`;
+  scoreSub.textContent = i18n.holeOutSub(
+    last.par,
+    last.holedOut,
+    current.totalStrokes,
+    formatToPar(current.toPar),
+  );
   scoreTable.hidden = true;
   scoreRows.replaceChildren();
   scoreHint.hidden = false;
-  scoreHint.textContent = current.hasNext ? 'タップで次のホールへ' : 'タップで結果へ';
+  scoreHint.textContent = current.hasNext ? t().hintNextHole : t().hintResult;
   scoreActions.hidden = true;
   scoreOverlay.hidden = false;
 }
@@ -1560,10 +1557,10 @@ function showHoleOutCard(current: Round): void {
 /** ラウンド終了のカード。全ホールの一覧と合計を出す */
 function showRoundEndCard(current: Round): void {
   const gaveUp = current.scores.some((hole) => !hole.holedOut);
-  scoreTitle.textContent = `${selectedTour.name}・ラウンド終了`;
+  scoreTitle.dataset.screen = 'round-end';
+  scoreTitle.textContent = i18n.roundEndTitle(selectedTour.name[language()]);
   scoreHeadline.textContent = strokesHeadline(current.totalStrokes, current.totalPar);
-  scoreSub.textContent =
-    `${current.holeCount} ホール ・ PAR ${current.totalPar}` + (gaveUp ? '　* はギブアップ' : '');
+  scoreSub.textContent = i18n.roundEndSub(current.holeCount, current.totalPar, gaveUp);
   scoreRows.replaceChildren(
     scoreHeaderRow(),
     ...current.scores.map(scoreRow),
@@ -1580,7 +1577,8 @@ function showRoundEndCard(current: Round): void {
 
 /** 練習のカップイン後。結果と、打ち直すかトップへ戻るかの選択を出す */
 function showPracticeEndCard(): void {
-  scoreTitle.textContent = '練習終了';
+  scoreTitle.dataset.screen = 'practice-end';
+  scoreTitle.textContent = t().practiceEnd;
   scoreHeadline.textContent = strokesHeadline(shots, course.par);
   scoreSub.textContent = `PAR ${course.par}`;
   scoreTable.hidden = true;
@@ -1603,9 +1601,9 @@ function scoreCell(tag: 'td' | 'th', text: string, className = ''): HTMLTableCel
 function scoreHeaderRow(): HTMLTableRowElement {
   const row = document.createElement('tr');
   row.append(
-    scoreCell('th', 'H'),
-    scoreCell('th', 'PAR'),
-    scoreCell('th', '打数'),
+    scoreCell('th', t().colHole),
+    scoreCell('th', t().colPar),
+    scoreCell('th', t().colStrokes),
     scoreCell('th', ''),
   );
   return row;
@@ -1627,7 +1625,7 @@ function scoreTotalRow(current: Round): HTMLTableRowElement {
   const row = document.createElement('tr');
   row.className = 'total';
   row.append(
-    scoreCell('th', '合計'),
+    scoreCell('th', t().colTotal),
     scoreCell('td', String(current.totalPar)),
     scoreCell('td', String(current.totalStrokes)),
     scoreCell('td', formatToPar(current.toPar), 'diff'),
@@ -1647,10 +1645,11 @@ putterPower.value = String(putterPowerScale);
 
 function updatePutterTuningUi(): void {
   putterPowerValue.textContent = `${putterPowerScale.toFixed(2)}×`;
-  putterPowerDetail.textContent =
-    `基準係数 ${CONFIG.swipeTest.speedK.toFixed(5)} → ` +
-    `${(CONFIG.swipeTest.speedK * putterPowerScale).toFixed(5)}`;
-  hud.adjust.textContent = `強さ ${putterPowerScale.toFixed(2)}×`;
+  putterPowerDetail.textContent = i18n.putterPowerDetail(
+    CONFIG.swipeTest.speedK.toFixed(5),
+    (CONFIG.swipeTest.speedK * putterPowerScale).toFixed(5),
+  );
+  hud.adjust.textContent = i18n.powerButtonText(putterPowerScale.toFixed(2));
 }
 
 putterPower.addEventListener('input', () => {
@@ -1786,10 +1785,10 @@ function updateControls(): void {
   // 押し続けないと決まらないことは、ボタンの中で先に言っておく。
   // 帯（#giveup-fill）はもう押している人にしか見えないので、それだけでは気づけない
   giveUpLabel.textContent = holdingGiveUp()
-    ? '押したまま…'
+    ? t().giveUpHolding
     : round
-      ? 'ギブアップ 長押し'
-      : 'ギブアップ（ティーへ）長押し';
+      ? t().giveUp
+      : t().giveUpToTee;
   giveUpFill.style.width = `${(giveUpHoldProgress() * 100).toFixed(1)}%`;
 
   const inAddress = state === 'ADDRESS';
@@ -1822,10 +1821,14 @@ function updateControls(): void {
 function progressText(): string {
   const distance = `${distanceToCup().toFixed(2)}m`;
   // 「・」で区切ると横幅が足りず2行になる。区切りは空白だけにして1行に収める
-  if (!round) return `PAR ${course.par}  ${shots}打  ${distance}`;
-  return (
-    `HOLE ${round.holeNumber}/${round.holeCount}  PAR ${course.par}  ` +
-    `${shots}打 ${formatToPar(round.toPar)}  ${distance}`
+  if (!round) return i18n.practiceProgressText(course.par, shots, distance);
+  return i18n.progressText(
+    round.holeNumber,
+    round.holeCount,
+    course.par,
+    shots,
+    formatToPar(round.toPar),
+    distance,
   );
 }
 
@@ -1841,9 +1844,9 @@ function updateHud(): void {
   if (!debugEnabled) {
     hud.view.textContent = '';
   } else if (state === 'ADDRESS') {
-    hud.view.textContent = AIM_VIEW_LABEL[aimView];
+    hud.view.textContent = aimViewLabel(aimView);
   } else if (state === 'STROKE' && strokeCameraView === 'CUP') {
-    hud.view.textContent = '狙いを見る';
+    hud.view.textContent = t().checkAim;
   } else {
     hud.view.textContent = '';
   }

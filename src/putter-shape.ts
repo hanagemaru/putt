@@ -30,15 +30,10 @@ interface ShapeGeometry {
 }
 
 /**
- * 選択画面に出す順番と表示名。数値ではないので config には置かない。
+ * 選択画面に出す順番。表示名は言語ごとに変わるので i18n の putterShapes に置く。
  * 見本を見れば違いは分かるので、名前以外の説明は付けない
  */
-export const PUTTER_SHAPES: ReadonlyArray<{ id: PutterShapeId; name: string }> = [
-  { id: 'pin', name: 'ピン型' },
-  { id: 'blade', name: 'L字' },
-  { id: 'mallet', name: 'マレット' },
-  { id: 'fang', name: 'ネオマレット' },
-];
+export const PUTTER_SHAPE_IDS: ReadonlyArray<PutterShapeId> = ['pin', 'blade', 'mallet', 'fang'];
 
 /**
  * ヘッドが占めるローカル座標の範囲。シャフトの先まで含む。

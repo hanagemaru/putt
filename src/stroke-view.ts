@@ -21,6 +21,7 @@ import {
   type Measurement,
   type Sample,
 } from './swipe-measure';
+import { t, whiffNotice } from './i18n';
 
 const C = CONFIG.swipeTest;
 const S = CONFIG.game.stroke;
@@ -216,7 +217,7 @@ export class StrokeView {
     this.live = first;
     this.putter.mode = 'follow';
     this.putter.struck = false;
-    this.callbacks.onNotice('右へ引いてください');
+    this.callbacks.onNotice(t().noticePullRight);
   };
 
   private onMove = (e: PointerEvent): void => {
@@ -225,7 +226,7 @@ export class StrokeView {
       this.live = s;
       const wasArmed = this.measure.armed();
       const r = this.measure.add(s);
-      if (!wasArmed && this.measure.armed()) this.callbacks.onNotice('振り抜いてください');
+      if (!wasArmed && this.measure.armed()) this.callbacks.onNotice(t().noticeSwingThrough);
 
       // 待機位置を原点に指の移動量へ追従する。インパクト後も空振りのあとも同じ（§4.4）。
       if (this.putter.mode === 'follow') {
@@ -241,12 +242,12 @@ export class StrokeView {
 
       if (r === null) continue;
       if (r === 'no-backswing') {
-        this.callbacks.onNotice('バックスイングなし — 無効');
+        this.callbacks.onNotice(t().noticeNoBackswing);
       } else if (r === 'too-few-samples') {
-        this.callbacks.onNotice('サンプル不足 — 無効');
+        this.callbacks.onNotice(t().noticeFewSamples);
       } else if (r === 'whiff') {
         this.callbacks.onNotice(
-          `空振り — 芯から ${Math.round(Math.abs(this.measure.lastOffsetPx()))}px 外れました`,
+          whiffNotice(Math.round(Math.abs(this.measure.lastOffsetPx()))),
         );
       } else {
         this.putter.struck = true;
@@ -264,7 +265,7 @@ export class StrokeView {
     this.live = null;
     this.restPutter();
     if (this.measure.end() === 'no-backswing') {
-      this.callbacks.onNotice('右へ引いていません — 無効');
+      this.callbacks.onNotice(t().noticeNotPulledRight);
     }
   };
 
