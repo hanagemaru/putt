@@ -318,8 +318,11 @@ function putterPreview(id: PutterShapeId): HTMLCanvasElement {
 
 /**
  * 見本のボール。ただの白丸だと紙のシールに見えるので、
- * ゲーム本体と同じく芝への影を敷き、光の当たらない側に陰を残して球に見せる。
- * 影の大きさと濃さは CONFIG.ball のものをそのまま使う
+ * ゲーム本体と同じく芝への影を敷き、光の当たらない側を暗くして球に見せる。
+ * 影の大きさと濃さは CONFIG.ball のものをそのまま使う。
+ *
+ * 陰は円を2枚ずらして重ねるのではなく、**1枚の円の中を放射状に暗くする**。
+ * 重ねる描き方だと輪郭が円からずれて、いびつな球に見えてしまう
  */
 function drawPreviewBall(ctx: CanvasRenderingContext2D, centerX: number, radius: number): void {
   // 芝に落ちる影
@@ -328,20 +331,20 @@ function drawPreviewBall(ctx: CanvasRenderingContext2D, centerX: number, radius:
   ctx.arc(centerX, 0, radius * CONFIG.ball.shadowScale, 0, Math.PI * 2);
   ctx.fill();
 
-  // 陰の側。まず全体を暗い方の色で塗る
-  ctx.fillStyle = '#aeb8b0';
-  ctx.beginPath();
-  ctx.arc(centerX, 0, radius, 0, Math.PI * 2);
-  ctx.fill();
-
   /*
-   * 光の側。少し小さい円をずらして重ねると、間に三日月の陰が残って球に見える。
    * 明るい側は 3D のボールに合わせて画面の左下。
    * ローカル座標は回転後なので、画面の左下は +X / -Y になる
    */
-  ctx.fillStyle = `#${CONFIG.ball.color.toString(16).padStart(6, '0')}`;
+  const lightX = centerX + radius * 0.35;
+  const lightY = -radius * 0.35;
+  const shade = ctx.createRadialGradient(lightX, lightY, radius * 0.1, centerX, 0, radius);
+  shade.addColorStop(0, '#ffffff');
+  shade.addColorStop(0.5, `#${CONFIG.ball.color.toString(16).padStart(6, '0')}`);
+  shade.addColorStop(1, '#9aa79d');
+
+  ctx.fillStyle = shade;
   ctx.beginPath();
-  ctx.arc(centerX + radius * 0.22, -radius * 0.22, radius * 0.82, 0, Math.PI * 2);
+  ctx.arc(centerX, 0, radius, 0, Math.PI * 2);
   ctx.fill();
 }
 
