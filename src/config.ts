@@ -773,7 +773,19 @@ export const CONFIG = {
       },
 
       /** 選んだ形状の保存場所。読めない・知らない値なら既定へ落とす */
-      putterShapeStorageKey: 'putt-putter-shape',
+      /**
+     * メニューの見本（entry.ts）。**枠に収める都合だけで決める数値で、ゲームの見た目は変えない。**
+     * シャフトは根元だけ見せて枠の外へ逃がす（丸ごと入れると枠が縦に伸びる）
+     */
+    putterPreview: {
+      scale: 0.7,
+      width: 56,
+      height: 60,
+      /** 枠に入れるシャフトの長さ [px]。残りは枠の外へ出る */
+      shaftVisiblePx: 6,
+    },
+
+    putterShapeStorageKey: 'putt-putter-shape',
       /** 既定の形状。`putterShapes` のキー */
       putterShapeDefault: 'pin',
     },

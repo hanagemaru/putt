@@ -1509,6 +1509,7 @@ function closeHomeDialog(): void {
  * カード自体は指を通すので、タップで進む規則はそのまま使える
  */
 const scoreOverlay = document.getElementById('score-overlay') as HTMLDivElement;
+const scoreCard = document.getElementById('score-card') as HTMLDivElement;
 const scoreTitle = document.getElementById('score-title')!;
 const scoreHeadline = document.getElementById('score-headline')!;
 const scoreSub = document.getElementById('score-sub')!;
@@ -1533,6 +1534,7 @@ scoreHome.addEventListener('click', () => navigateToMenu());
 function hideScoreOverlay(): void {
   scoreOverlay.hidden = true;
   scoreActions.hidden = true;
+  scoreCard.classList.remove('list');
 }
 
 /** 打数とパー差の見出し。「3 打 ±0」 */
@@ -1557,6 +1559,8 @@ function showHoleOutCard(current: Round): void {
   scoreHint.hidden = false;
   scoreHint.textContent = current.hasNext ? t().hintNextHole : t().hintResult;
   scoreActions.hidden = true;
+  // ホール間のカードは指を通す（画面のどこをタップしても次のホールへ進む）
+  scoreCard.classList.remove('list');
   scoreOverlay.hidden = false;
 }
 
@@ -1578,6 +1582,8 @@ function showRoundEndCard(current: Round): void {
   scoreAgain.hidden = false;
   scoreHome.hidden = false;
   scoreActions.hidden = false;
+  // 一覧表があるぶん縦に長い。字と余白を詰め、収まらない画面では枠の中をスクロールさせる
+  scoreCard.classList.add('list');
   scoreOverlay.hidden = false;
 }
 
@@ -1594,6 +1600,7 @@ function showPracticeEndCard(): void {
   scoreAgain.hidden = false;
   scoreHome.hidden = false;
   scoreActions.hidden = false;
+  scoreCard.classList.remove('list');
   scoreOverlay.hidden = false;
 }
 
