@@ -413,8 +413,7 @@
         position: fixed;
         top: max(10px, env(safe-area-inset-top));
         right: max(10px, env(safe-area-inset-right));
-        /* スコアカード（35）より上。カードを出している間もトップへ戻れるようにする */
-        z-index: 36;
+        z-index: 34;
         display: none;
         font-family: var(--pixel-font);
       }
@@ -496,21 +495,15 @@
          */
         align-items: flex-start;
         justify-content: center;
-        padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
+        /*
+         * 上は「トップ」ボタン（右上）の下から。カードが縦いっぱいに伸びる低い画面でも、
+         * ボタンの行に重ならないようにする
+         */
+        padding: max(56px, calc(env(safe-area-inset-top) + 46px)) 20px
+          max(20px, env(safe-area-inset-bottom));
         pointer-events: none;
         font-family: var(--pixel-font);
         color: #e8f0e8;
-      }
-      /*
-       * ボタンで進むカード（ラウンド終了・練習終了）だけ指を受ける。
-       * 画面が低くてカードが収まらないときはここをスクロールさせる。
-       * ホール間のカードは「タップで進む」ので、指を通したまま（pointer-events: none）にする
-       */
-      #score-overlay.scrollable {
-        pointer-events: auto;
-        overflow-y: auto;
-        /* body は touch-action: none なので、ここで縦の指の動きだけ通す */
-        touch-action: pan-y;
       }
       #score-overlay[hidden] {
         display: none;
@@ -571,6 +564,16 @@
       #score-card.list {
         padding-top: 12px;
         padding-bottom: 12px;
+        /*
+         * 詰めても収まらない低い画面（およそ610px以下）では、枠は画面に収めたまま
+         * 中身だけを縦にスクロールさせる。**指を受けるのはこの枠の中だけ**なので、
+         * 画面の他の場所（「トップ」ボタンなど）はこれまでどおり押せる。
+         * body は touch-action: none なので、ここで縦の指の動きだけ通す
+         */
+        max-height: 100%;
+        overflow-y: auto;
+        pointer-events: auto;
+        touch-action: pan-y;
       }
 
       /* ラウンド終了の一覧表 */

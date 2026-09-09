@@ -36,10 +36,14 @@ interface ShapeGeometry {
 export const PUTTER_SHAPE_IDS: ReadonlyArray<PutterShapeId> = ['pin', 'blade', 'mallet', 'fang'];
 
 /**
- * ヘッドが占めるローカル座標の範囲。シャフトの先まで含む。
- * 見本の枠にどう置くかを呼ぶ側で決められるようにする（形状ごとに奥行きが違う）
+ * ヘッドが占めるローカル座標の範囲。既定はシャフトの先まで含む。
+ * 見本の枠にどう置くかを呼ぶ側で決められるようにする（形状ごとに奥行きが違う）。
+ * `shaftPx` を渡すと、その長さぶんのシャフトだけを範囲に入れる（枠から先を出したいとき）
  */
-export function putterHeadBounds(id: PutterShapeId): {
+export function putterHeadBounds(
+  id: PutterShapeId,
+  shaftPx: number = P.shaftLength,
+): {
   front: number;
   back: number;
   toe: number;
@@ -61,7 +65,7 @@ export function putterHeadBounds(id: PutterShapeId): {
     front,
     back: front - depth,
     toe: half,
-    heel: -(half + P.hoselSize + P.shaftLength),
+    heel: -(half + P.hoselSize + shaftPx),
   };
 }
 

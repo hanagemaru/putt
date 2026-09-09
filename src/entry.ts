@@ -210,8 +210,10 @@ function renderPutterSelection(): void {
   root.replaceChildren();
   const copy = t();
 
+  // 4本を一覧で見せる画面。**スクロールさせない**（下へ送ると「← トップ」が画面から消えて、
+  // 戻れないように見える）。そのぶん余白を詰めた putter-panel を使う
   const panel = document.createElement('main');
-  panel.className = 'menu-panel course-panel';
+  panel.className = 'menu-panel course-panel putter-panel';
 
   const heading = document.createElement('div');
   heading.className = 'menu-heading';
@@ -281,9 +283,8 @@ function putterPreview(id: PutterShapeId): HTMLCanvasElement {
 
   // ヘッドは実寸だと枠に収まらないので少し落とす。
   // ボールとの大小はゲーム本体のままなので、比率は構えたときと変わらない
-  const scale = 0.75;
-  const w = 56;
-  const h = 84;
+  const preview = CONFIG.game.stroke.putterPreview;
+  const { scale, width: w, height: h } = preview;
 
   const dpr = Math.min(window.devicePixelRatio, CONFIG.renderer.maxPixelRatio);
   canvas.width = Math.round(w * dpr);
@@ -315,7 +316,8 @@ function putterPreview(id: PutterShapeId): HTMLCanvasElement {
    * 原点を固定すると形によって枠の中で偏る。
    * ボールの左端からヘッドの一番奥まで、シャフトの先までを枠の中央へ置く
    */
-  const bounds = putterHeadBounds(id);
+  // シャフトは根元だけ見せて枠の外へ逃がす。全部入れると枠が縦に伸びて一覧が画面に収まらない
+  const bounds = putterHeadBounds(id, preview.shaftVisiblePx);
   const left = ballCenter + ballRadius;
   const cx = w / 2 + (scale * (left + bounds.back)) / 2;
   const cy = h / 2 + (scale * (bounds.toe + bounds.heel)) / 2;
@@ -879,12 +881,29 @@ function ensureMenuStyles(): void {
       margin-top: 10px;
     }
     /* パター選択 */
+    /*
+     * 4本を1画面に収める。スクロールさせると「← トップ」が上へ消えて、
+     * 戻る道が無くなったように見える。そのために余白を詰める
+     */
+    .putter-panel {
+      padding: 14px 12px 16px;
+    }
+    .putter-panel .menu-heading {
+      gap: 12px;
+    }
+    .putter-panel .course-title {
+      font-size: 24px;
+    }
+    .putter-panel .course-list {
+      gap: 10px;
+      margin-top: 14px;
+    }
     /* パター1本は「見本・名前・ボタン」の1行。説明は付けず、違いは見本で見せる */
     .putter-card {
       display: flex;
       align-items: center;
       gap: 12px;
-      padding: 10px 12px;
+      padding: 8px 10px;
     }
     .putter-preview {
       flex: none;
