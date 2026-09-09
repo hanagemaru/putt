@@ -46,6 +46,8 @@ const COPY = {
     cameraViewLabel: 'カメラ視点',
     strokeViewLabel: '見る向きの切り替え',
     map: 'マップ',
+    /** 練習モードだけのコース引き直し（spec §6） */
+    newCourse: 'コース変更',
     backToRead: '読みに戻る',
     checkAim: '狙いを見る',
     giveUp: '長押しでギブアップ',
@@ -132,6 +134,7 @@ const COPY = {
     cameraViewLabel: 'Camera view',
     strokeViewLabel: 'Change view',
     map: 'MAP',
+    newCourse: 'NEW HOLE',
     backToRead: 'BACK TO THE READ',
     checkAim: 'CHECK AIM',
     giveUp: 'HOLD TO GIVE UP',
@@ -399,6 +402,7 @@ export function applyStaticUiText(): void {
   setText('home-button', copy.top);
   setAria('home-button', copy.backToTop);
   setText('map-toggle', copy.map);
+  setText('course-shuffle', copy.newCourse);
   setText('giveup-label', copy.giveUp);
   setText('stroke-back', copy.backToRead);
   setText('stroke-cup-check', copy.checkAim);
