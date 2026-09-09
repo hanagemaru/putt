@@ -203,16 +203,12 @@ function renderPutterSelection(): void {
 
   heading.append(back, title);
 
-  const note = document.createElement('p');
-  note.className = 'menu-note';
-  note.textContent = '見た目だけの違いです。転がりは変わりません';
-
   const list = document.createElement('div');
   list.className = 'course-list';
   const selected = loadPutterShape();
   for (const shape of PUTTER_SHAPES) list.append(putterEntry(shape, selected));
 
-  panel.append(heading, note, list);
+  panel.append(heading, list);
   root.append(panel);
 }
 
@@ -238,7 +234,8 @@ function putterEntry(
     action.append(current);
   } else {
     action.append(
-      courseAction('これにする', false, () => {
+      // 名前と横に並ぶので、狭い端末で名前が折り返さない短い言葉にする
+      courseAction('選ぶ', false, () => {
         savePutterShape(shape.id);
         renderPutterSelection();
       }),
@@ -709,14 +706,7 @@ function ensureMenuStyles(): void {
     .course-best-row {
       margin-top: 10px;
     }
-    /* パター選択。見本を左に置き、名前・説明・ボタンを右へ縦に積む */
-    .menu-note {
-      margin-top: 16px;
-      font-size: 12px;
-      line-height: 1.5;
-      letter-spacing: 0.04em;
-      color: #bcd0c0;
-    }
+    /* パター選択 */
     /* パター1本は「見本・名前・ボタン」の1行。説明は付けず、違いは見本で見せる */
     .putter-card {
       display: flex;
@@ -733,12 +723,13 @@ function ensureMenuStyles(): void {
     .putter-name {
       flex: 1;
       min-width: 0;
+      white-space: nowrap;
     }
     .putter-action {
       flex: none;
     }
     .putter-action .course-action {
-      padding: 12px 10px;
+      padding: 12px 14px;
     }
     .course-name {
       font-size: 16px;

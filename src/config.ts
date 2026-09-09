@@ -683,8 +683,10 @@ export const CONFIG = {
        * - `bodyDepth`: フェースのすぐ後ろにある胴の奥行き [px]
        * - `rear`: 胴の後ろへ重ねる段。`depth` だけ後ろへ伸ばし、トウ・ヒール側を `inset` [px] ずつ短くする。
        *   段を細かくすると、丸めずにドットの階段でかまぼこ型の輪郭が作れる
-       * - `rails`: 後ろへ二股に伸ばす羽根。`width` [px] はトウ側・ヒール側それぞれの幅。
-       *   間は空けたままにするので、上から見て輪郭がコの字に見える
+       * - `rails`: 後ろへ二股に伸ばす羽根。`segments` を手前から順に並べ、奥ほど細くすると先細りになる。
+       *   間は空けたままにするので、上から見て輪郭がコの字に見える。
+       *   `weight` は羽根の先に置く重り。`detail` の色で塗って、ただの棒に見えないようにする
+       * - `detail`: 重りなど、胴と塗り分ける部分の色
        * - `body` / `bodyRest`: 胴の色。待機中（rest）は少し落とす。形状の見分けはこの色にも持たせる
        * - `sightDepth`: 照準線をフェースから後ろへ引く長さ [px]。null ならヘッドの一番奥まで。
        *   二股の間を最後まで貫くと横棒が3本並んだ記号に見えるので、ファング型だけ手前で止める
@@ -695,6 +697,7 @@ export const CONFIG = {
           bodyDepth: 12,
           rear: [{ depth: 5, inset: 10 }],
           rails: null,
+          detail: null,
           sightDepth: null,
           body: 'rgba(176,190,196,0.95)',
           bodyRest: 'rgba(150,162,158,0.85)',
@@ -707,6 +710,7 @@ export const CONFIG = {
           bodyDepth: 10,
           rear: [],
           rails: null,
+          detail: null,
           sightDepth: null,
           body: 'rgba(214,176,88,0.95)',
           bodyRest: 'rgba(184,150,74,0.85)',
@@ -717,24 +721,43 @@ export const CONFIG = {
          */
         mallet: {
           bodyDepth: 12,
+          /*
+           * 段の幅は円弧（半長 32px の楕円）から取っている。
+           * 手前はほとんど細らせず、奥へ行くほど細る量を増やすと、
+           * 段のままでも直線的な三角ではなく丸みとして読める
+           */
           rear: [
-            { depth: 8, inset: 3 },
-            { depth: 7, inset: 8 },
-            { depth: 6, inset: 15 },
-            { depth: 5, inset: 22 },
-            { depth: 4, inset: 27 },
+            { depth: 4, inset: 0 },
+            { depth: 4, inset: 1 },
+            { depth: 4, inset: 3 },
+            { depth: 4, inset: 6 },
+            { depth: 4, inset: 10 },
+            { depth: 4, inset: 15 },
+            { depth: 4, inset: 23 },
           ],
           rails: null,
+          detail: null,
           sightDepth: null,
           body: 'rgba(126,146,168,0.95)',
           bodyRest: 'rgba(108,124,142,0.85)',
         },
-        /** ネオマレット（ファング型）。後ろの二股が空いたまま長く伸びるので輪郭が一番特徴的 */
+        /**
+         * ネオマレット（ファング型）。スパイダーやオデッセイのファング系を目安にした。
+         * 厚い胴から二股が先細りで伸び、先端に暗い重りが乗る。
+         * 後ろが単なる長方形にならないよう、段と重りで輪郭を作る
+         */
         fang: {
-          bodyDepth: 10,
+          bodyDepth: 14,
           rear: [],
-          rails: { depth: 30, width: 12 },
-          sightDepth: 22,
+          rails: {
+            segments: [
+              { depth: 13, width: 13 },
+              { depth: 13, width: 9 },
+            ],
+            weight: { depth: 6, width: 9 },
+          },
+          detail: 'rgba(64,72,78,0.95)',
+          sightDepth: 26,
           body: 'rgba(232,236,230,0.95)',
           bodyRest: 'rgba(198,206,198,0.85)',
         },

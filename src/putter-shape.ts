@@ -15,11 +15,15 @@ const P = S.putterShape;
 
 export type PutterShapeId = keyof typeof S.putterShapes;
 
-/** config の形状データ。`rails` を持つのはファング型だけ */
+/** config の形状データ。`rails` と `detail` を持つのはファング型だけ */
 interface ShapeGeometry {
   bodyDepth: number;
   rear: ReadonlyArray<{ depth: number; inset: number }>;
-  rails: { depth: number; width: number } | null;
+  rails: {
+    segments: ReadonlyArray<{ depth: number; width: number }>;
+    weight: { depth: number; width: number } | null;
+  } | null;
+  detail: string | null;
   sightDepth: number | null;
   body: string;
   bodyRest: string;
@@ -101,11 +105,25 @@ export function drawPutterHead(
     ctx.fillRect(back, -half + step.inset, step.depth, C.putterLength - step.inset * 2);
   }
 
-  // 二股の羽根。間は空けたままにして、上から見た輪郭をコの字にする
+  // 二股の羽根。間は空けたままにして、上から見た輪郭をコの字にする。
+  // 奥の段ほど細くすると先細りになり、後ろが単なる長方形に見えない
   if (shape.rails) {
-    const railBack = bodyBack - shape.rails.depth;
-    ctx.fillRect(railBack, -half, shape.rails.depth, shape.rails.width);
-    ctx.fillRect(railBack, half - shape.rails.width, shape.rails.depth, shape.rails.width);
+    let railBack = bodyBack;
+    for (const segment of shape.rails.segments) {
+      railBack -= segment.depth;
+      ctx.fillRect(railBack, -half, segment.depth, segment.width);
+      ctx.fillRect(railBack, half - segment.width, segment.depth, segment.width);
+    }
+
+    // 羽根の先の重り。胴と塗り分けて、先端が締まって見えるようにする
+    const weight = shape.rails.weight;
+    if (weight && shape.detail) {
+      ctx.fillStyle = shape.detail;
+      ctx.fillRect(railBack, -half, weight.depth, weight.width);
+      ctx.fillRect(railBack, half - weight.width, weight.depth, weight.width);
+      ctx.fillStyle = body;
+    }
+
     back = Math.min(back, railBack);
   }
 
