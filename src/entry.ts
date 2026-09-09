@@ -4,6 +4,7 @@ import { TourBestScoreStore, type BestScoreUpdate } from './best-score-storage';
 import { Round, formatToPar, onRoundComplete, type RoundResult } from './round';
 import { RoundProgressStore } from './round-storage';
 import { ensurePixelFont } from './pixel-font';
+import { projectedRadiusPx } from './projection';
 import {
   PUTTER_SHAPES,
   drawPutterHead,
@@ -256,15 +257,14 @@ function putterPreview(id: PutterShapeId): HTMLCanvasElement {
   canvas.className = 'putter-preview';
   canvas.setAttribute('aria-hidden', 'true');
 
-  // ヘッドは実寸だと枠に収まらないので半分に落とす。
-  // 半分ちょうどなら点の境目がずれないので、ドットのままで縮む
-  const scale = 0.5;
-  // 一番後ろまで伸びるマレットとネオマレットが収まる大きさにする
-  const w = 60;
-  const h = 64;
+  // ヘッドは実寸だと枠に収まらないので少し落とす。
+  // ボールとの大小はゲーム本体のままなので、比率は構えたときと変わらない
+  const scale = 0.75;
+  const w = 56;
+  const h = 84;
   // 見本の原点。ここにヘッドの回転中心（＝構えたときのパター位置）を置く
-  const cx = 34;
-  const cy = 22;
+  const cx = 22;
+  const cy = 30;
 
   const dpr = Math.min(window.devicePixelRatio, CONFIG.renderer.maxPixelRatio);
   canvas.width = Math.round(w * dpr);
@@ -282,11 +282,22 @@ function putterPreview(id: PutterShapeId): HTMLCanvasElement {
   // ゲーム本体の待機姿勢と同じ向き。フェースは左（狙い方向）を向く
   ctx.rotate(Math.PI);
 
-  // 大きさが分かるようにボールも置く。フェースからの隙間もゲーム本体と同じにする
+  /*
+   * ボールは 3D を真上から見た見かけの大きさで描く。
+   * /swipe-test/ の 28px は検証ページ専用の値で、実際の STROKE ではこの半分以下にしか見えない。
+   * main.ts と同じ式で出すので、見本と構えたときで大小が食い違わない
+   */
+  const ballRadius = projectedRadiusPx(
+    CONFIG.ball.radius,
+    CONFIG.game.stroke.eyeHeight - CONFIG.ball.radius,
+    CONFIG.camera.fov,
+    window.innerHeight,
+  );
+  // フェースからの隙間もゲーム本体の待機位置と同じ 3px
   const gap = CONFIG.swipeTest.putterRestOffsetPx - CONFIG.swipeTest.ballRadius;
   ctx.fillStyle = '#f6f8f4';
   ctx.beginPath();
-  ctx.arc(gap + CONFIG.swipeTest.ballRadius, 0, CONFIG.swipeTest.ballRadius, 0, Math.PI * 2);
+  ctx.arc(CONFIG.swipeTest.putterWidth / 2 + gap + ballRadius, 0, ballRadius, 0, Math.PI * 2);
   ctx.fill();
 
   drawPutterHead(ctx, id, {

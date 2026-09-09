@@ -634,6 +634,8 @@ ADDRESS（読み＋方向調整） → STROKE → FOLLOW → CUP → RESULT → 
   形の説明も注意書きも書かない（見本で分かる）。`putt-putter-shape` に保存し、
   読めない・知らない値なら既定（`pin`）へ落とす
 - 選択画面の見本はゲーム本体と同じ描画関数を使う。別々に描くと、選んだ形と構えた形が食い違う
+- 見本のボールも、ゲーム本体と同じ式（`projectedRadiusPx`）で 3D の見かけの大きさから出す。
+  `/swipe-test/` の `ballRadius = 28px` は検証ページ専用の値なので見本には使わない
 
 `putterRestOffsetPx = 36` は `/swipe-test/` の基準値。ゲーム本体ではこの値から3pxの隙間を導出し、3Dボールの見かけサイズに合わせる。
 
