@@ -9,6 +9,7 @@ import {
   PUTTER_SHAPES,
   drawPutterHead,
   loadPutterShape,
+  putterHeadBounds,
   savePutterShape,
   type PutterShapeId,
 } from './putter-shape';
@@ -262,9 +263,6 @@ function putterPreview(id: PutterShapeId): HTMLCanvasElement {
   const scale = 0.75;
   const w = 56;
   const h = 84;
-  // 見本の原点。ここにヘッドの回転中心（＝構えたときのパター位置）を置く
-  const cx = 22;
-  const cy = 30;
 
   const dpr = Math.min(window.devicePixelRatio, CONFIG.renderer.maxPixelRatio);
   canvas.width = Math.round(w * dpr);
@@ -275,12 +273,6 @@ function putterPreview(id: PutterShapeId): HTMLCanvasElement {
   const ctx = canvas.getContext('2d');
   if (!ctx) return canvas;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.scale(scale, scale);
-  // ゲーム本体の待機姿勢と同じ向き。フェースは左（狙い方向）を向く
-  ctx.rotate(Math.PI);
 
   /*
    * ボールは 3D を真上から見た見かけの大きさで描く。
@@ -295,11 +287,25 @@ function putterPreview(id: PutterShapeId): HTMLCanvasElement {
   );
   // フェースからの隙間もゲーム本体の待機位置と同じ 3px
   const gap = CONFIG.swipeTest.putterRestOffsetPx - CONFIG.swipeTest.ballRadius;
-  ctx.fillStyle = '#f6f8f4';
-  ctx.beginPath();
-  ctx.arc(CONFIG.swipeTest.putterWidth / 2 + gap + ballRadius, 0, ballRadius, 0, Math.PI * 2);
-  ctx.fill();
+  const ballCenter = CONFIG.swipeTest.putterWidth / 2 + gap + ballRadius;
 
+  /*
+   * 置き方は形状ごとに解く。奥行きはピン型とマレットで倍ほど違うので、
+   * 原点を固定すると形によって枠の中で偏る。
+   * ボールの左端からヘッドの一番奥まで、シャフトの先までを枠の中央へ置く
+   */
+  const bounds = putterHeadBounds(id);
+  const left = ballCenter + ballRadius;
+  const cx = w / 2 + (scale * (left + bounds.back)) / 2;
+  const cy = h / 2 + (scale * (bounds.toe + bounds.heel)) / 2;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(scale, scale);
+  // ゲーム本体の待機姿勢と同じ向き。フェースは左（狙い方向）を向く
+  ctx.rotate(Math.PI);
+
+  drawPreviewBall(ctx, ballCenter, ballRadius);
   drawPutterHead(ctx, id, {
     face: 'rgba(150,175,160,0.55)',
     spot: 'rgba(18,26,22,0.7)',
@@ -308,6 +314,35 @@ function putterPreview(id: PutterShapeId): HTMLCanvasElement {
   ctx.restore();
 
   return canvas;
+}
+
+/**
+ * 見本のボール。ただの白丸だと紙のシールに見えるので、
+ * ゲーム本体と同じく芝への影を敷き、光の当たらない側に陰を残して球に見せる。
+ * 影の大きさと濃さは CONFIG.ball のものをそのまま使う
+ */
+function drawPreviewBall(ctx: CanvasRenderingContext2D, centerX: number, radius: number): void {
+  // 芝に落ちる影
+  ctx.fillStyle = `rgba(13, 20, 13, ${CONFIG.ball.shadowOpacity})`;
+  ctx.beginPath();
+  ctx.arc(centerX, 0, radius * CONFIG.ball.shadowScale, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 陰の側。まず全体を暗い方の色で塗る
+  ctx.fillStyle = '#aeb8b0';
+  ctx.beginPath();
+  ctx.arc(centerX, 0, radius, 0, Math.PI * 2);
+  ctx.fill();
+
+  /*
+   * 光の側。少し小さい円をずらして重ねると、間に三日月の陰が残って球に見える。
+   * 明るい側は 3D のボールに合わせて画面の左下。
+   * ローカル座標は回転後なので、画面の左下は +X / -Y になる
+   */
+  ctx.fillStyle = `#${CONFIG.ball.color.toString(16).padStart(6, '0')}`;
+  ctx.beginPath();
+  ctx.arc(centerX + radius * 0.22, -radius * 0.22, radius * 0.82, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 /**

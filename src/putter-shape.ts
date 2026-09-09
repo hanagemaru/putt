@@ -40,6 +40,36 @@ export const PUTTER_SHAPES: ReadonlyArray<{ id: PutterShapeId; name: string }> =
   { id: 'fang', name: 'ネオマレット' },
 ];
 
+/**
+ * ヘッドが占めるローカル座標の範囲。シャフトの先まで含む。
+ * 見本の枠にどう置くかを呼ぶ側で決められるようにする（形状ごとに奥行きが違う）
+ */
+export function putterHeadBounds(id: PutterShapeId): {
+  front: number;
+  back: number;
+  toe: number;
+  heel: number;
+} {
+  const shape = shapeGeometry(id);
+  const front = C.putterWidth / 2;
+  const half = C.putterLength / 2;
+
+  let depth = shape.bodyDepth;
+  for (const step of shape.rear) depth += step.depth;
+  if (shape.rails) {
+    let rails = 0;
+    for (const segment of shape.rails.segments) rails += segment.depth;
+    depth = Math.max(depth, shape.bodyDepth + rails);
+  }
+
+  return {
+    front,
+    back: front - depth,
+    toe: half,
+    heel: -(half + P.hoselSize + P.shaftLength),
+  };
+}
+
 export function shapeGeometry(id: PutterShapeId): ShapeGeometry {
   return S.putterShapes[id] as ShapeGeometry;
 }
