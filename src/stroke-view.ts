@@ -10,6 +10,11 @@
 //   ボールの転がりの演出 ballPxPerMeter / ballDecelMs2 だけは §4.7 の検証ページ限定で、持ち込まない）
 import { CONFIG } from './config';
 import {
+  drawPutterHead,
+  loadPutterShape,
+  type PutterShapeId,
+} from './putter-shape';
+import {
   SwipeMeasure,
   faceAngleFrom,
   wrapPi,
@@ -83,6 +88,9 @@ export class StrokeView {
 
   private live: Sample | null = null;
 
+  /** 選択中のヘッド形状。見た目だけの選択で、計測にも当たり判定にも関わらない */
+  private shapeId: PutterShapeId = loadPutterShape();
+
   private readonly putter: Putter = {
     x: 0,
     y: 0,
@@ -131,6 +139,8 @@ export class StrokeView {
   /** STROKE に入る。オーバーレイを出してスワイプを待つ */
   enter(): void {
     this.active = true;
+    // 別タブでの選択もあるので、構えるたびに読み直す
+    this.shapeId = loadPutterShape();
     this.pointerId = null;
     this.live = null;
     // 前の一打のサンプルを捨てる。残っていると、その軌跡が描かれたまま構えることになる
@@ -337,7 +347,10 @@ export class StrokeView {
     }
   }
 
-  /** フェースをスイング軌跡と直角に描く（§4.4）。芯の範囲は色を変える */
+  /**
+   * パターヘッドを、フェースがスイング軌跡と直角になる向きで描く（§4.4）。
+   * シルエットは選択中の形状（putter-shape.ts）に任せ、ここは位置・向きと状態の色だけを渡す。
+   */
   private drawPutter(armed: boolean): void {
     const ctx = this.ctx;
     const rest = this.putter.mode === 'rest';
@@ -351,13 +364,11 @@ export class StrokeView {
       : armed
         ? 'rgba(20,40,28,0.85)'
         : 'rgba(40,26,14,0.7)';
+
     ctx.save();
     ctx.translate(this.putter.x, this.putter.y);
     ctx.rotate(this.putter.angle);
-    ctx.fillStyle = face;
-    ctx.fillRect(-C.putterWidth / 2, -C.putterLength / 2, C.putterWidth, C.putterLength);
-    ctx.fillStyle = spot;
-    ctx.fillRect(-C.putterWidth / 2, -C.sweetSpotPx, C.putterWidth, C.sweetSpotPx * 2);
+    drawPutterHead(ctx, this.shapeId, { face, spot, rest });
     ctx.restore();
   }
 }

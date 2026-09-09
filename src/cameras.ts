@@ -411,21 +411,6 @@ export function strokeUp(aim: number, out: THREE.Vector3): THREE.Vector3 {
   return out.set(Math.cos(aim), 0, Math.sin(aim));
 }
 
-/**
- * 半径 radius [m] の球が distance [m] 先にあるときの画面上の半径 [px]。
- * ストローク画面のインパクトラインを実寸に合わせるために使う（§4.2）。
- * 3D で描いているボールと同じ大きさになるので、px の定数を別に持たない
- */
-export function projectedRadiusPx(
-  radius: number,
-  distance: number,
-  fovDeg: number,
-  viewportHeightPx: number,
-): number {
-  const half = Math.tan(THREE.MathUtils.degToRad(fovDeg) / 2) * distance;
-  return (radius / half) * (viewportHeightPx / 2);
-}
-
 const UP_Y = new THREE.Vector3(0, 1, 0);
 const tmpMatrix = new THREE.Matrix4();
 const tmpQuat = new THREE.Quaternion();

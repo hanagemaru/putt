@@ -46,12 +46,12 @@ import {
   lowLineAimPose,
   readPose,
   resultPose,
-  projectedRadiusPx,
   strokeCupPose,
   strokePose,
   strokeUp,
   type ReadView,
 } from './cameras';
+import { projectedRadiusPx } from './projection';
 
 const G = CONFIG.game;
 

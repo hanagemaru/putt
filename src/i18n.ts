@@ -29,6 +29,16 @@ const COPY = {
     backToMenu: '← トップ',
     tourTitle: '通常ツアー',
     startOver: 'HOLE 1から',
+    /** パター選択（§4.4）。形の名前は日本のゴルフでの呼び方に合わせる */
+    putter: 'パター',
+    putterSelect: '選ぶ',
+    putterSelected: '選択中',
+    putterShapes: {
+      pin: 'ピン型',
+      blade: 'L字',
+      mallet: 'マレット',
+      fang: 'ネオマレット',
+    },
 
     // --- 画面共通（index.html） ---
     top: 'トップ',
@@ -107,6 +117,15 @@ const COPY = {
     backToMenu: '← TOP',
     tourTitle: 'TOUR',
     startOver: 'FROM HOLE 1',
+    putter: 'PUTTER',
+    putterSelect: 'SELECT',
+    putterSelected: 'IN USE',
+    putterShapes: {
+      pin: 'PIN',
+      blade: 'BLADE',
+      mallet: 'MALLET',
+      fang: 'FANG',
+    },
 
     top: 'TOP',
     backToTop: 'Back to top',
