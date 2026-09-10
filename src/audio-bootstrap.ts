@@ -26,7 +26,10 @@ menuObserver.observe(document.body, { childList: true, subtree: true });
 
 function installSwipeAudio(): void {
   const originalAdd = SwipeMeasure.prototype.add;
-  SwipeMeasure.prototype.add = function (...args: Parameters<typeof originalAdd>) {
+  SwipeMeasure.prototype.add = function (
+    this: SwipeMeasure,
+    ...args: Parameters<typeof originalAdd>
+  ) {
     const result = originalAdd.apply(this, args);
     if (result === 'whiff') {
       puttAudio.playWhiff();
@@ -39,7 +42,10 @@ function installSwipeAudio(): void {
 
 function installRollAudio(): void {
   const originalAdvance = Roller.prototype.advance;
-  Roller.prototype.advance = function (...args: Parameters<typeof originalAdvance>) {
+  Roller.prototype.advance = function (
+    this: Roller,
+    ...args: Parameters<typeof originalAdvance>
+  ) {
     const beforeHits = this.flagstickHits;
     const beforeStatus = this.status;
     const status = originalAdvance.apply(this, args);
