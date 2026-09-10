@@ -352,7 +352,7 @@ export function courseMapScreenXSign(tee: CoursePoint, cup: CoursePoint): number
 }
 
 /**
- * コースマップ（§3）。コース全体（幅 X・長さ Z の長方形）を真上から見渡す。
+ * マップ（§3）。コース全体（幅 X・長さ Z の長方形）を真上から見渡す。
  * **ボールが止まっている間しか使わない。**
  *
  * RESULT の俯瞰との違いは枠取りだけ。3点ではなく `course.bounds` が収まる距離まで引く。
