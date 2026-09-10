@@ -24,9 +24,6 @@ installMenuSoundToggle();
 const menuObserver = new MutationObserver(installMenuSoundToggle);
 menuObserver.observe(document.body, { childList: true, subtree: true });
 
-// 音のフックを先に入れてから通常の入口を読み込む。
-void import('./entry');
-
 function installSwipeAudio(): void {
   const originalAdd = SwipeMeasure.prototype.add;
   SwipeMeasure.prototype.add = function (...args: Parameters<typeof originalAdd>) {
