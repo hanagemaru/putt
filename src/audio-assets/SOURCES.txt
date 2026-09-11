@@ -1,0 +1,19 @@
+Putt sound sources (CC0)
+
+Putter impact / cup-in
+- Freesound 512505 "Minigolf putt, right into the hole!" by pfranzen
+- https://freesound.org/people/pfranzen/sounds/512505/
+- License: Creative Commons 0
+- Split into separate impact and cup-in samples; impact is pitch/rate shifted in-game by putter shape.
+
+Flagstick
+- Freesound 826146 "plasticimpact2.wav" by Mihacappy
+- https://freesound.org/people/Mihacappy/sounds/826146/
+- License: Creative Commons 0
+- Trimmed and sped up to make a short fiberglass/plastic flagstick-style impact.
+
+Water
+- Freesound 737233 "Small Water Splash" by qubodup
+- https://freesound.org/people/qubodup/sounds/737233/
+- License: Creative Commons 0
+- Trimmed/faded only.
