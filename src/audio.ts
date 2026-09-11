@@ -1,19 +1,36 @@
-type OscillatorShape = OscillatorType;
+import { loadPutterShape, type PutterShapeId } from './putter-shape';
 
 const STORAGE_KEY = 'putt-sound-enabled';
-const EPSILON_GAIN = 0.0001;
+
+const SAMPLE_URLS = {
+  impact: new URL('./audio-assets/putt-impact.mp3', import.meta.url).href,
+  flagstick: new URL('./audio-assets/flagstick.mp3', import.meta.url).href,
+  cup: new URL('./audio-assets/cup-in.mp3', import.meta.url).href,
+  water: new URL('./audio-assets/water.mp3', import.meta.url).href,
+} as const;
+
+type SampleName = keyof typeof SAMPLE_URLS;
 
 /**
- * Putt の短い効果音を Web Audio API だけで作る。
- * 音声ファイルを配らないので、読み込み待ちや追加アセットなしで鳴らせる。
- *
- * このブランチでは音色を実機で選ぶため、合成値はここへ閉じ込めている。
- * 音が確定したら恒久ルールに従って調整値を CONFIG へ移す。
+ * パターの見た目による音の差。性能・当たり判定には影響しない。
+ * L字だけは、選んだ違いが耳でも分かるよう意図的に高めにする。
+ */
+const PUTTER_PLAYBACK_RATE: Record<PutterShapeId, number> = {
+  pin: 1,
+  blade: 1.4,
+  mallet: 0.9,
+  fang: 1.06,
+};
+
+/**
+ * CC0 の実録素材を Web Audio API で鳴らす。
+ * 素材と出典は audio-assets/SOURCES.txt を参照。
  */
 export class PuttAudio {
   private context: AudioContext | null = null;
   private enabled = this.loadEnabled();
-  private noiseBuffer: AudioBuffer | null = null;
+  private readonly buffers = new Map<SampleName, AudioBuffer>();
+  private loading: Promise<void> | null = null;
 
   isEnabled(): boolean {
     return this.enabled;
@@ -39,197 +56,93 @@ export class PuttAudio {
       try {
         await context.resume();
       } catch {
-        // 音が許可されない環境ではゲーム自体はそのまま続ける。
+        return;
       }
     }
+    if (context.state === 'running') void this.preloadSamples(context);
   }
 
-  /** 芯=1、フェース端付近≈0.55。ズレるほど鈍く小さい打撃音にする。 */
+  /**
+   * 芯=1、フェース端付近≈0.55。
+   * パター形状の音色差に加え、芯から外れるほど少し低く・小さくして実録感を保つ。
+   */
   playImpact(mishitGain: number): void {
-    const context = this.readyContext();
-    if (!context) return;
     const quality = this.clamp((mishitGain - 0.55) / 0.45, 0, 1);
-    const now = context.currentTime;
-
-    this.tone(context, {
-      at: now,
-      duration: 0.1,
-      frequency: 135 + 45 * quality,
-      gain: 0.19 + 0.07 * quality,
-      decay: 0.03,
-      shape: 'triangle',
-    });
-    this.tone(context, {
-      at: now,
-      duration: 0.06,
-      frequency: 720 + 700 * quality,
-      gain: 0.07 + 0.06 * quality,
-      decay: 0.014,
-      shape: 'sine',
-    });
-    this.noise(context, {
-      at: now,
-      duration: 0.045,
-      gain: 0.025 + 0.018 * quality,
-      decay: 0.01,
-      filter: 'highpass',
-      cutoff: 500,
+    const shape = loadPutterShape();
+    const shapeRate = PUTTER_PLAYBACK_RATE[shape];
+    const mishitRate = 0.93 + 0.07 * quality;
+    const gain = 0.62 + 0.38 * quality;
+    this.playSample('impact', {
+      playbackRate: shapeRate * mishitRate,
+      gain,
     });
   }
 
-  playWhiff(): void {
-    const context = this.readyContext();
-    if (!context) return;
-    this.noise(context, {
-      at: context.currentTime,
-      duration: 0.095,
-      gain: 0.12,
-      decay: 0.025,
-      filter: 'bandpass',
-      cutoff: 1700,
-      q: 0.7,
-    });
-  }
+  /** 空振りは実在する接触音がないため、リアル寄り版ではあえて鳴らさない。 */
+  playWhiff(): void {}
 
   playFlagstick(): void {
-    const context = this.readyContext();
-    if (!context) return;
-    const now = context.currentTime;
-    this.tone(context, {
-      at: now,
-      duration: 0.12,
-      frequency: 1450,
-      gain: 0.12,
-      decay: 0.028,
-      shape: 'sine',
-    });
-    this.tone(context, {
-      at: now,
-      duration: 0.1,
-      frequency: 2380,
-      gain: 0.055,
-      decay: 0.02,
-      shape: 'sine',
-    });
-    this.noise(context, {
-      at: now,
-      duration: 0.045,
-      gain: 0.018,
-      decay: 0.012,
-      filter: 'highpass',
-      cutoff: 1200,
-    });
+    this.playSample('flagstick', { gain: 0.9 });
   }
 
-  /** カップの硬い接触→少し遅れて穴へ落ちる低い音、の2段。 */
   playCupIn(delay = 0): void {
-    const context = this.readyContext();
-    if (!context) return;
-    const now = context.currentTime + delay;
-    this.tone(context, {
-      at: now,
-      duration: 0.065,
-      frequency: 520,
-      gain: 0.105,
-      decay: 0.016,
-      shape: 'triangle',
-    });
-    this.tone(context, {
-      at: now,
-      duration: 0.05,
-      frequency: 980,
-      gain: 0.038,
-      decay: 0.012,
-      shape: 'sine',
-    });
-    this.noise(context, {
-      at: now,
-      duration: 0.04,
-      gain: 0.02,
-      decay: 0.01,
-      filter: 'highpass',
-      cutoff: 500,
-    });
-    this.sweep(context, {
-      at: now + 0.055,
-      duration: 0.14,
-      from: 190,
-      to: 105,
-      gain: 0.14,
-      decay: 0.052,
-      shape: 'sine',
-    });
-    this.noise(context, {
-      at: now + 0.055,
-      duration: 0.1,
-      gain: 0.022,
-      decay: 0.035,
-      filter: 'lowpass',
-      cutoff: 900,
-    });
+    this.playSample('cup', { delay, gain: 0.9 });
   }
 
   playWater(): void {
-    const context = this.readyContext();
-    if (!context) return;
-    const now = context.currentTime;
-    this.sweep(context, {
-      at: now,
-      duration: 0.18,
-      from: 155,
-      to: 72,
-      gain: 0.13,
-      decay: 0.055,
-      shape: 'sine',
-    });
-    this.noise(context, {
-      at: now,
-      duration: 0.18,
-      gain: 0.06,
-      decay: 0.055,
-      filter: 'lowpass',
-      cutoff: 1300,
-    });
-    this.noise(context, {
-      at: now,
-      duration: 0.11,
-      gain: 0.025,
-      decay: 0.035,
-      filter: 'bandpass',
-      cutoff: 1600,
-      q: 0.8,
-    });
+    this.playSample('water', { gain: 0.82 });
   }
 
-  playOutOfBounds(): void {
-    const context = this.readyContext();
-    if (!context) return;
-    const now = context.currentTime;
-    this.sweep(context, {
-      at: now,
-      duration: 0.15,
-      from: 115,
-      to: 78,
-      gain: 0.11,
-      decay: 0.043,
-      shape: 'sine',
-    });
-    this.tone(context, {
-      at: now,
-      duration: 0.09,
-      frequency: 210,
-      gain: 0.032,
-      decay: 0.024,
-      shape: 'triangle',
-    });
-    this.noise(context, {
-      at: now,
-      duration: 0.055,
-      gain: 0.016,
-      decay: 0.015,
-      filter: 'lowpass',
-      cutoff: 650,
-    });
+  /** OB 自体には物理的な音がないので、画面上の通知だけにする。 */
+  playOutOfBounds(): void {}
+
+  private playSample(
+    name: SampleName,
+    options: { playbackRate?: number; gain?: number; delay?: number } = {},
+  ): void {
+    if (!this.enabled) return;
+    const context = this.ensureContext();
+    if (context.state !== 'running') return;
+
+    const buffer = this.buffers.get(name);
+    if (!buffer) {
+      void this.preloadSamples(context);
+      return;
+    }
+
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.playbackRate.value = options.playbackRate ?? 1;
+
+    const gain = context.createGain();
+    gain.gain.value = options.gain ?? 1;
+    source.connect(gain).connect(context.destination);
+    source.start(context.currentTime + (options.delay ?? 0));
+  }
+
+  private preloadSamples(context: AudioContext): Promise<void> {
+    if (this.loading) return this.loading;
+
+    this.loading = Promise.all(
+      (Object.entries(SAMPLE_URLS) as Array<[SampleName, string]>).map(async ([name, url]) => {
+        if (this.buffers.has(name)) return;
+        try {
+          const response = await fetch(url);
+          if (!response.ok) return;
+          const data = await response.arrayBuffer();
+          const buffer = await context.decodeAudioData(data);
+          this.buffers.set(name, buffer);
+        } catch {
+          // 音源が読めなくてもゲーム本体はそのまま続ける。
+        }
+      }),
+    )
+      .then(() => undefined)
+      .finally(() => {
+        this.loading = null;
+      });
+
+    return this.loading;
   }
 
   private loadEnabled(): boolean {
@@ -243,112 +156,6 @@ export class PuttAudio {
   private ensureContext(): AudioContext {
     if (!this.context) this.context = new AudioContext();
     return this.context;
-  }
-
-  private readyContext(): AudioContext | null {
-    if (!this.enabled) return null;
-    const context = this.ensureContext();
-    if (context.state !== 'running') return null;
-    return context;
-  }
-
-  private tone(
-    context: AudioContext,
-    options: {
-      at: number;
-      duration: number;
-      frequency: number;
-      gain: number;
-      decay: number;
-      shape: OscillatorShape;
-    },
-  ): void {
-    const oscillator = context.createOscillator();
-    oscillator.type = options.shape;
-    oscillator.frequency.setValueAtTime(options.frequency, options.at);
-    const gain = context.createGain();
-    this.envelope(gain.gain, options.at, options.gain, options.duration, options.decay);
-    oscillator.connect(gain).connect(context.destination);
-    oscillator.start(options.at);
-    oscillator.stop(options.at + options.duration);
-  }
-
-  private sweep(
-    context: AudioContext,
-    options: {
-      at: number;
-      duration: number;
-      from: number;
-      to: number;
-      gain: number;
-      decay: number;
-      shape: OscillatorShape;
-    },
-  ): void {
-    const oscillator = context.createOscillator();
-    oscillator.type = options.shape;
-    oscillator.frequency.setValueAtTime(options.from, options.at);
-    oscillator.frequency.exponentialRampToValueAtTime(options.to, options.at + options.duration);
-    const gain = context.createGain();
-    this.envelope(gain.gain, options.at, options.gain, options.duration, options.decay);
-    oscillator.connect(gain).connect(context.destination);
-    oscillator.start(options.at);
-    oscillator.stop(options.at + options.duration);
-  }
-
-  private noise(
-    context: AudioContext,
-    options: {
-      at: number;
-      duration: number;
-      gain: number;
-      decay: number;
-      filter: BiquadFilterType;
-      cutoff: number;
-      q?: number;
-    },
-  ): void {
-    const source = context.createBufferSource();
-    source.buffer = this.ensureNoiseBuffer(context);
-    const filter = context.createBiquadFilter();
-    filter.type = options.filter;
-    filter.frequency.setValueAtTime(options.cutoff, options.at);
-    filter.Q.setValueAtTime(options.q ?? 0.7, options.at);
-    const gain = context.createGain();
-    this.envelope(gain.gain, options.at, options.gain, options.duration, options.decay);
-    source.connect(filter).connect(gain).connect(context.destination);
-    source.start(options.at, 0, options.duration);
-  }
-
-  private ensureNoiseBuffer(context: AudioContext): AudioBuffer {
-    if (this.noiseBuffer && this.noiseBuffer.sampleRate === context.sampleRate) return this.noiseBuffer;
-    const length = Math.ceil(context.sampleRate * 0.25);
-    const buffer = context.createBuffer(1, length, context.sampleRate);
-    const data = buffer.getChannelData(0);
-    // 毎回音が変わらないよう、固定のLCGでノイズを作る。
-    let state = 0x260910;
-    for (let i = 0; i < data.length; i++) {
-      state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
-      data[i] = (state / 0xffffffff) * 2 - 1;
-    }
-    this.noiseBuffer = buffer;
-    return buffer;
-  }
-
-  private envelope(
-    param: AudioParam,
-    at: number,
-    peak: number,
-    duration: number,
-    decay: number,
-  ): void {
-    const attackEnd = at + Math.min(0.002, duration * 0.2);
-    const end = at + duration;
-    param.setValueAtTime(EPSILON_GAIN, at);
-    param.exponentialRampToValueAtTime(Math.max(peak, EPSILON_GAIN), attackEnd);
-    const decayEnd = Math.min(end, attackEnd + Math.max(decay, 0.001) * 5);
-    param.exponentialRampToValueAtTime(EPSILON_GAIN, decayEnd);
-    if (decayEnd < end) param.setValueAtTime(EPSILON_GAIN, end);
   }
 
   private clamp(value: number, min: number, max: number): number {
