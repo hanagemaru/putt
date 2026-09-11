@@ -17,7 +17,7 @@ type SampleName = keyof typeof SAMPLE_URLS;
  */
 const PUTTER_PLAYBACK_RATE: Record<PutterShapeId, number> = {
   pin: 1,
-  blade: 1.4,
+  blade: 1.85,
   mallet: 0.9,
   fang: 1.06,
 };
@@ -90,7 +90,7 @@ export class PuttAudio {
   }
 
   playWater(): void {
-    this.playSample('water', { gain: 0.82 });
+    this.playSample('water');
   }
 
   /** OB 自体には物理的な音がないので、画面上の通知だけにする。 */

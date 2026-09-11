@@ -10,10 +10,10 @@ Flagstick
 - Freesound 826146 "plasticimpact2.wav" by Mihacappy
 - https://freesound.org/people/Mihacappy/sounds/826146/
 - License: Creative Commons 0
-- Trimmed and sped up to make a short fiberglass/plastic flagstick-style impact.
+- Sped up 1.40x and shortened to make a crisp fiberglass/plastic flagstick-style impact.
 
 Water
-- Freesound 737233 "Small Water Splash" by qubodup
-- https://freesound.org/people/qubodup/sounds/737233/
+- Freesound 530359 "water.wav" by danielpodlovics
+- https://freesound.org/people/danielpodlovics/sounds/530359/
 - License: Creative Commons 0
-- Trimmed/faded only.
+- Used essentially as recorded; only converted to the game audio format.
