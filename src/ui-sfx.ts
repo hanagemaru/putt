@@ -32,8 +32,18 @@ class MenuSfx {
   play(kind: UiSoundKind): void {
     if (!this.enabled) return;
     const context = this.ensureContext();
-    if (context.state !== 'running') return;
+    if (context.state !== 'running') {
+      // 最初のタップとresume完了が競合しても、その最初の操作音を落とさない。
+      void context.resume().then(() => {
+        if (this.enabled && context.state === 'running') this.playNow(kind);
+      }).catch(() => undefined);
+      return;
+    }
+    this.playNow(kind);
+  }
 
+  private playNow(kind: UiSoundKind): void {
+    const context = this.ensureContext();
     const now = context.currentTime;
     switch (kind) {
       case 'confirm':
