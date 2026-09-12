@@ -32,11 +32,14 @@ const IMPACT_TAIL = {
   fadeEndSec: 0.044,
 };
 
-/** 打球初速 [m/s] を音量へ変換する試聴用カーブ。弱いパットも完全には消さない。 */
+/**
+ * 打球初速 [m/s] を音量へ変換する試聴用カーブ。
+ * iPhoneの小型スピーカーでも弱打と強打の差が分かるよう、低速側を明確に下げる。
+ */
 const IMPACT_VOLUME = {
   fullAtSpeedMs: 3,
-  minGain: 0.3,
-  exponent: 0.65,
+  minGain: 0.18,
+  exponent: 1.15,
 };
 
 /**
