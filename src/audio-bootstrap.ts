@@ -10,6 +10,9 @@ import { loadPutterShape, type PutterShapeId } from './putter-shape';
  */
 const patchState = globalThis as typeof globalThis & { __puttAudioPreviewPatched?: boolean };
 
+const DIAGNOSTIC_QUERY_STORAGE_KEY = 'putt-audio-diagnostic-query';
+restoreDiagnosticQuery();
+
 const params = new URLSearchParams(location.search);
 const audioDebugEnabled = params.get('audioDebug') === '1';
 const impactOnly = params.get('audioOnly') === 'impact';
@@ -43,6 +46,47 @@ document.addEventListener('keydown', () => void puttAudio.unlock(), { capture: t
 installMenuSoundToggle();
 const menuObserver = new MutationObserver(installMenuSoundToggle);
 menuObserver.observe(document.body, { childList: true, subtree: true });
+
+/**
+ * 診断URLからトップへ戻ると main.ts が検索パラメータを作り直すため、
+ * 診断条件だけ sessionStorage に退避して同一タブ内の次ページで復元する。
+ */
+function restoreDiagnosticQuery(): void {
+  const keys = ['audioDebug', 'audioOnly', 'impactCutMs'] as const;
+  const current = new URLSearchParams(location.search);
+  const hasDiagnostic = keys.some((key) => current.has(key));
+
+  try {
+    if (hasDiagnostic) {
+      const saved = new URLSearchParams();
+      for (const key of keys) {
+        const value = current.get(key);
+        if (value !== null) saved.set(key, value);
+      }
+      sessionStorage.setItem(DIAGNOSTIC_QUERY_STORAGE_KEY, saved.toString());
+      return;
+    }
+
+    const raw = sessionStorage.getItem(DIAGNOSTIC_QUERY_STORAGE_KEY);
+    if (!raw) return;
+    const saved = new URLSearchParams(raw);
+    let changed = false;
+    for (const key of keys) {
+      const value = saved.get(key);
+      if (value !== null && !current.has(key)) {
+        current.set(key, value);
+        changed = true;
+      }
+    }
+    if (!changed) return;
+
+    const url = new URL(location.href);
+    url.search = current.toString();
+    history.replaceState(null, '', url.toString());
+  } catch {
+    // sessionStorage が使えない環境では、従来どおりURLに残っている間だけ診断する。
+  }
+}
 
 /**
  * 診断用。元音源の同じ時刻で切るため、形状ごとの速度変換率で再生時間を補正する。
