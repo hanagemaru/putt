@@ -22,6 +22,24 @@ const IMPACT_VARIANTS: Record<
 };
 
 /**
+ * putt-impact.mp3 は主打音の後に小さい二次振動が複数残っている。
+ * 波形上は主ピークが約30ms、その後33/38/48ms付近にも小ピークがあるため、
+ * 主打音の直後から滑らかに減衰させて「コッ」の後の別音感を消す。
+ * 形状ごとの速度変換後も元音源上の同じ位置で減衰するよう rate で割る。
+ */
+const IMPACT_TAIL = {
+  fadeStartSec: 0.032,
+  fadeEndSec: 0.044,
+};
+
+/** 打球初速 [m/s] を音量へ変換する試聴用カーブ。弱いパットも完全には消さない。 */
+const IMPACT_VOLUME = {
+  fullAtSpeedMs: 3,
+  minGain: 0.3,
+  exponent: 0.65,
+};
+
+/**
  * CC0 の実録素材を Web Audio API で鳴らす。
  * 素材と出典は audio-assets/SOURCES.txt を参照。
  *
@@ -66,27 +84,40 @@ export class PuttAudio {
     if (context.state === 'running') void this.preloadSamples(context);
   }
 
+  /** 打球初速から、実際に使う打音の音量係数を返す。 */
+  impactVolume(speedMs: number): number {
+    const normalized = this.clamp(speedMs / IMPACT_VOLUME.fullAtSpeedMs, 0, 1);
+    return (
+      IMPACT_VOLUME.minGain +
+      (1 - IMPACT_VOLUME.minGain) * Math.pow(normalized, IMPACT_VOLUME.exponent)
+    );
+  }
+
   /**
    * 芯=1、フェース端付近≈0.55。
-   * 形状差は事前生成したバッファで固定し、ミスヒットは音量とローパスだけで表す。
-   * 再生速度を変えないので、試聴版と本番で音色が変わりにくい。
+   * 音量は打球初速で変え、ミスヒットは主に音色（ローパス）で表す。
+   * 形状差は事前生成したバッファで固定し、再生時の速度変更はしない。
    */
-  playImpact(mishitGain: number): void {
+  playImpact(mishitGain: number, speedMs: number): void {
     if (!this.enabled) return;
     const context = this.ensureContext();
     if (context.state !== 'running') return;
 
     const quality = this.clamp((mishitGain - 0.55) / 0.45, 0, 1);
     const shape = loadPutterShape();
-    const buffer = this.impactBuffers.get(shape) ?? this.buffers.get('impact');
+    const prepared = this.impactBuffers.get(shape);
+    const buffer = prepared ?? this.buffers.get('impact');
     if (!buffer) {
       void this.preloadSamples(context);
       return;
     }
 
+    const rate = prepared ? IMPACT_VARIANTS[shape].rate : 1;
     this.playBuffer(buffer, {
-      gain: 0.62 + 0.38 * quality,
+      gain: this.impactVolume(speedMs),
       lowpassHz: quality < 0.995 ? 2200 + 6200 * quality : undefined,
+      fadeOutStart: IMPACT_TAIL.fadeStartSec / rate,
+      fadeOutEnd: IMPACT_TAIL.fadeEndSec / rate,
     });
   }
 
@@ -127,7 +158,13 @@ export class PuttAudio {
 
   private playBuffer(
     buffer: AudioBuffer,
-    options: { gain?: number; delay?: number; lowpassHz?: number } = {},
+    options: {
+      gain?: number;
+      delay?: number;
+      lowpassHz?: number;
+      fadeOutStart?: number;
+      fadeOutEnd?: number;
+    } = {},
   ): void {
     const context = this.ensureContext();
     if (context.state !== 'running') return;
@@ -136,7 +173,20 @@ export class PuttAudio {
     source.buffer = buffer;
 
     const gain = context.createGain();
-    gain.gain.value = options.gain ?? 1;
+    const startTime = context.currentTime + (options.delay ?? 0);
+    const baseGain = options.gain ?? 1;
+    gain.gain.setValueAtTime(baseGain, startTime);
+
+    if (
+      options.fadeOutStart !== undefined &&
+      options.fadeOutEnd !== undefined &&
+      options.fadeOutEnd > options.fadeOutStart
+    ) {
+      const fadeStart = startTime + options.fadeOutStart;
+      const fadeEnd = startTime + options.fadeOutEnd;
+      gain.gain.setValueAtTime(baseGain, fadeStart);
+      gain.gain.linearRampToValueAtTime(0, fadeEnd);
+    }
 
     if (options.lowpassHz !== undefined) {
       const filter = context.createBiquadFilter();
@@ -148,7 +198,7 @@ export class PuttAudio {
       source.connect(gain).connect(context.destination);
     }
 
-    source.start(context.currentTime + (options.delay ?? 0));
+    source.start(startTime);
   }
 
   private preloadSamples(context: AudioContext): Promise<void> {
