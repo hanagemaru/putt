@@ -18,10 +18,11 @@ type Chord = {
  * BGMでは同時和音を前へ出さず、ベース + 単音PSG + ノイズだけで和声感を作る。
  *
  * トップは短いPSGモチーフ、プレイ中はベース + リズム中心にして、同じ世界観の別アレンジとして明確に分ける。
+ * プレイ中は音数を減らしているため、バス側で十分に持ち上げて効果音の下でも存在感を保つ。
  */
 const MUSIC: Record<MusicScene, MusicSettings> = {
   menu: { bpm: 90, bars: 8, gain: 0.18 },
-  play: { bpm: 76, bars: 6, gain: 0.28 },
+  play: { bpm: 76, bars: 6, gain: 0.50 },
   roundEnd: { bpm: 88, bars: 6, gain: 0.17 },
 };
 
