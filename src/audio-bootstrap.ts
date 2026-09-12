@@ -2,6 +2,7 @@ import { Roller } from './physics';
 import { SwipeMeasure } from './swipe-measure';
 import { puttAudio } from './audio';
 import { puttMusic } from './music';
+import { menuSfx } from './ui-sfx';
 
 /**
  * ゲーム本体の物理・スワイプ計測には手を入れず、確定した結果を観測して効果音を鳴らす。
@@ -25,10 +26,12 @@ if (gameRoute) installRoundEndMusic();
 const unlockAudio = (): void => {
   void puttAudio.unlock();
   void puttMusic.unlock();
+  if (!gameRoute) void menuSfx.unlock();
 };
 document.addEventListener('pointerdown', unlockAudio, { capture: true });
 document.addEventListener('keydown', unlockAudio, { capture: true });
 
+installMenuButtonAudio();
 installMenuSoundToggle();
 const menuObserver = new MutationObserver(installMenuSoundToggle);
 menuObserver.observe(document.body, { childList: true, subtree: true });
@@ -105,6 +108,33 @@ function installRollAudio(): void {
   } as typeof originalAdvance;
 }
 
+/** トップ・コース選択・パター選択のボタンへ、軽い操作音を共通で付ける。 */
+function installMenuButtonAudio(): void {
+  document.addEventListener(
+    'click',
+    (event) => {
+      const target = event.target instanceof Element
+        ? event.target.closest<HTMLElement>('#menu-root button, #menu-root a')
+        : null;
+      if (!target) return;
+
+      // 選択済み言語は押しても状態が変わらないため鳴らさない。
+      if (target.matches('.language-button[aria-pressed="true"]')) return;
+
+      if (target.matches('[data-putt-sound-toggle], .language-button')) {
+        menuSfx.play('toggle');
+      } else if (target.matches('.menu-back')) {
+        menuSfx.play('back');
+      } else if (target.matches('.course-action, .menu-button:not(.menu-button-sub)')) {
+        menuSfx.play('confirm');
+      } else {
+        menuSfx.play('normal');
+      }
+    },
+    { capture: true },
+  );
+}
+
 /** トップメニューに音のON/OFFを置き、選択はゲーム中も維持する。 */
 function installMenuSoundToggle(): void {
   const panel = document.querySelector<HTMLElement>('#menu-root .menu-panel');
@@ -119,6 +149,9 @@ function installMenuSoundToggle(): void {
     const enabled = !puttAudio.isEnabled();
     puttAudio.setEnabled(enabled);
     puttMusic.setEnabled(enabled);
+    menuSfx.setEnabled(enabled);
+    // OFF→ON は capture 時点では無音なので、AudioContextを起こしてからON音を返す。
+    if (enabled) void menuSfx.unlock().then(() => menuSfx.play('toggle'));
     updateSoundToggle(button);
   });
   updateSoundToggle(button);
