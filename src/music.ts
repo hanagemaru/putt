@@ -19,9 +19,10 @@ type Chord = {
  *
  * トップは短いPSGモチーフ、プレイ中はベース + リズム中心にして、同じ世界観の別アレンジとして明確に分ける。
  * プレイ中は音数を減らしているため、バス側で十分に持ち上げて効果音の下でも存在感を保つ。
+ * トップも同じ方向で前へ出すが、音数が多いためプレイ中より低いバス音量で聴感を揃える。
  */
 const MUSIC: Record<MusicScene, MusicSettings> = {
-  menu: { bpm: 90, bars: 8, gain: 0.18 },
+  menu: { bpm: 90, bars: 8, gain: 0.34 },
   play: { bpm: 76, bars: 6, gain: 0.90 },
   roundEnd: { bpm: 88, bars: 6, gain: 0.17 },
 };
