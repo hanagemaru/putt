@@ -92,8 +92,8 @@ function installRollAudio(): void {
       if (status === 'holed') {
         // 同じ物理更新内で旗竿に当たって入ったときだけ、旗竿音の直後に落下音を置く。
         puttAudio.playCupIn(hitFlagstick ? 0.045 : 0);
-        // カップ音を先に聞かせてから、BGMと同じPSG音色の短いジングルを置く。
-        puttMusic.playHoleOutJingle(hitFlagstick ? 0.38 : 0.32);
+        // カップ音の余韻を聞かせてから約1秒後にジングルを置く。
+        puttMusic.playHoleOutJingle(hitFlagstick ? 1.05 : 1);
       } else if (status === 'water') {
         puttAudio.playWater();
       } else if (status === 'outOfBounds') {
