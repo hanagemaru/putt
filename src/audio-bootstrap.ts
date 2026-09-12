@@ -1,6 +1,7 @@
 import { Roller } from './physics';
 import { SwipeMeasure } from './swipe-measure';
 import { puttAudio } from './audio';
+import { puttMusic } from './music';
 
 /**
  * ゲーム本体の物理・スワイプ計測には手を入れず、確定した結果を観測して効果音を鳴らす。
@@ -14,14 +15,49 @@ if (!patchState.__puttAudioPatched) {
   installRollAudio();
 }
 
+const routeParams = new URLSearchParams(location.search);
+const gameRoute = isGameRoute(routeParams);
+puttMusic.setScene(gameRoute ? 'play' : 'menu');
+if (gameRoute) installRoundEndMusic();
+
 // iOS Safari はユーザー操作なしの AudioContext 再生を止める。
 // capture で最初の操作を拾い、ゲーム側の入力処理より先に resume しておく。
-document.addEventListener('pointerdown', () => void puttAudio.unlock(), { capture: true });
-document.addEventListener('keydown', () => void puttAudio.unlock(), { capture: true });
+const unlockAudio = (): void => {
+  void puttAudio.unlock();
+  void puttMusic.unlock();
+};
+document.addEventListener('pointerdown', unlockAudio, { capture: true });
+document.addEventListener('keydown', unlockAudio, { capture: true });
 
 installMenuSoundToggle();
 const menuObserver = new MutationObserver(installMenuSoundToggle);
 menuObserver.observe(document.body, { childList: true, subtree: true });
+
+function isGameRoute(search: URLSearchParams): boolean {
+  if (search.get('tour') !== null) return true;
+  const mode = search.get('mode');
+  if (mode === 'tour' || mode === 'practice') return true;
+  if (search.get('seed') !== null) return true;
+  if (search.get('course') === 'prototype') return true;
+  return false;
+}
+
+/** 9ホール完走カードへ入ったときだけ、プレイ曲からラウンド終了曲へ切り替える。 */
+function installRoundEndMusic(): void {
+  const scoreTitle = document.getElementById('score-title');
+  if (!scoreTitle) return;
+
+  const sync = (): void => {
+    puttMusic.setScene(scoreTitle.dataset.screen === 'round-end' ? 'roundEnd' : 'play');
+  };
+  sync();
+
+  const observer = new MutationObserver(sync);
+  observer.observe(scoreTitle, {
+    attributes: true,
+    attributeFilter: ['data-screen'],
+  });
+}
 
 function installSwipeAudio(): void {
   const originalAdd = SwipeMeasure.prototype.add;
@@ -56,6 +92,8 @@ function installRollAudio(): void {
       if (status === 'holed') {
         // 同じ物理更新内で旗竿に当たって入ったときだけ、旗竿音の直後に落下音を置く。
         puttAudio.playCupIn(hitFlagstick ? 0.045 : 0);
+        // カップ音の余韻を聞かせてから約1秒後にジングルを置く。
+        puttMusic.playHoleOutJingle(hitFlagstick ? 1.05 : 1);
       } else if (status === 'water') {
         puttAudio.playWater();
       } else if (status === 'outOfBounds') {
@@ -78,7 +116,9 @@ function installMenuSoundToggle(): void {
   button.dataset.puttSoundToggle = 'true';
   button.className = 'putt-sound-toggle';
   button.addEventListener('click', () => {
-    puttAudio.setEnabled(!puttAudio.isEnabled());
+    const enabled = !puttAudio.isEnabled();
+    puttAudio.setEnabled(enabled);
+    puttMusic.setEnabled(enabled);
     updateSoundToggle(button);
   });
   updateSoundToggle(button);
