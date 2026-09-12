@@ -130,9 +130,12 @@ function installSwipeAudio(): void {
         activeImpactCutSeconds === null
           ? ''
           : ` cut=${Math.round(activeImpactCutSeconds * 1000)}ms`;
-      debugAudioEvent(`IMPACT ${shape} gain=${result.gain.toFixed(2)}${cutLabel}`);
+      const volume = puttAudio.impactVolume(result.speedMs);
+      debugAudioEvent(
+        `IMPACT ${shape} v=${result.speedMs.toFixed(2)}m/s vol=${volume.toFixed(2)} gain=${result.gain.toFixed(2)}${cutLabel}`,
+      );
       try {
-        puttAudio.playImpact(result.gain);
+        puttAudio.playImpact(result.gain, result.speedMs);
       } finally {
         activeImpactCutSeconds = null;
       }
