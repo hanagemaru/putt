@@ -17,12 +17,11 @@ type Chord = {
  * 試聴で確定した「大人っぽいゴルフ感 + チープなゲーム音色」を Web Audio で組み立てる。
  * BGMでは同時和音を前へ出さず、ベース + 単音PSG + ノイズだけで和声感を作る。
  *
- * 効果音をゲームの主役にするため、BGMはトップ > 終了画面 > プレイ中の順に小さくする。
- * プレイ中は打音・旗竿・カップ・水音が明瞭に聞こえつつ、BGMの存在感も消えない余白を残す。
+ * 効果音をゲームの主役にしつつ、プレイ中もBGMが痩せて聞こえない程度の存在感を残す。
  */
 const MUSIC: Record<MusicScene, MusicSettings> = {
   menu: { bpm: 90, bars: 8, gain: 0.18 },
-  play: { bpm: 76, bars: 6, gain: 0.16 },
+  play: { bpm: 76, bars: 6, gain: 0.28 },
   roundEnd: { bpm: 88, bars: 6, gain: 0.17 },
 };
 

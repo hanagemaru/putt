@@ -21,14 +21,21 @@ const gameRoute = isGameRoute(routeParams);
 puttMusic.setScene(gameRoute ? 'play' : 'menu');
 if (gameRoute) installRoundEndMusic();
 
+// ブラウザ側が許可している環境では、読み込み直後から再生開始を試す。
+// iOS Safariなど自動再生を禁止する環境では失敗してもそのまま待ち、最初の操作で解除する。
+void puttAudio.unlock();
+void puttMusic.unlock();
+if (!gameRoute) void menuSfx.unlock();
+
 // iOS Safari はユーザー操作なしの AudioContext 再生を止める。
-// capture で最初の操作を拾い、ゲーム側の入力処理より先に resume しておく。
+// 最初のタッチ/ポインタ操作をcaptureで拾い、画面遷移より前にresumeを開始する。
 const unlockAudio = (): void => {
   void puttAudio.unlock();
   void puttMusic.unlock();
   if (!gameRoute) void menuSfx.unlock();
 };
 document.addEventListener('pointerdown', unlockAudio, { capture: true });
+document.addEventListener('touchstart', unlockAudio, { capture: true, passive: true });
 document.addEventListener('keydown', unlockAudio, { capture: true });
 
 installMenuButtonAudio();
@@ -110,8 +117,9 @@ function installRollAudio(): void {
 
 /** トップ・コース選択・パター選択のボタンへ、軽い操作音を共通で付ける。 */
 function installMenuButtonAudio(): void {
+  // clickより早いpointerdownで鳴らし始め、初回操作や別画面への遷移でも音を落としにくくする。
   document.addEventListener(
-    'click',
+    'pointerdown',
     (event) => {
       const target = event.target instanceof Element
         ? event.target.closest<HTMLElement>('#menu-root button, #menu-root a')
@@ -150,7 +158,7 @@ function installMenuSoundToggle(): void {
     puttAudio.setEnabled(enabled);
     puttMusic.setEnabled(enabled);
     menuSfx.setEnabled(enabled);
-    // OFF→ON は capture 時点では無音なので、AudioContextを起こしてからON音を返す。
+    // OFF→ON はpointerdown時点では無音なので、AudioContextを起こしてからON音を返す。
     if (enabled) void menuSfx.unlock().then(() => menuSfx.play('toggle'));
     updateSoundToggle(button);
   });
