@@ -12,8 +12,14 @@ const patchState = globalThis as typeof globalThis & { __puttAudioPreviewPatched
 const params = new URLSearchParams(location.search);
 const audioDebugEnabled = params.get('audioDebug') === '1';
 const impactOnly = params.get('audioOnly') === 'impact';
+const impactCutMsRaw = Number(params.get('impactCutMs'));
+const impactCutSeconds =
+  Number.isFinite(impactCutMsRaw) && impactCutMsRaw > 0 ? impactCutMsRaw / 1000 : null;
+let cuttingImpact = false;
 let impactEpoch: number | null = null;
 const debugLines: string[] = [];
+
+installImpactCutDiagnostic();
 
 if (!patchState.__puttAudioPreviewPatched) {
   patchState.__puttAudioPreviewPatched = true;
@@ -30,6 +36,30 @@ installMenuSoundToggle();
 const menuObserver = new MutationObserver(installMenuSoundToggle);
 menuObserver.observe(document.body, { childList: true, subtree: true });
 
+/**
+ * 診断用。playImpact が同期的に AudioBufferSourceNode.start() を呼ぶ間だけ、
+ * 指定した長さで強制停止する。これで「別イベント」ではなく打音ファイル後半に
+ * 余計な音が入っているかを実機で切り分けられる。
+ */
+function installImpactCutDiagnostic(): void {
+  if (impactCutSeconds === null || typeof AudioBufferSourceNode === 'undefined') return;
+  const proto = AudioBufferSourceNode.prototype;
+  const originalStart = proto.start;
+  proto.start = function (
+    this: AudioBufferSourceNode,
+    when = 0,
+    offset = 0,
+    duration?: number,
+  ): void {
+    if (cuttingImpact) {
+      originalStart.call(this, when, offset, impactCutSeconds);
+      return;
+    }
+    if (duration === undefined) originalStart.call(this, when, offset);
+    else originalStart.call(this, when, offset, duration);
+  } as typeof proto.start;
+}
+
 function installSwipeAudio(): void {
   const originalAdd = SwipeMeasure.prototype.add;
   SwipeMeasure.prototype.add = function (
@@ -43,7 +73,12 @@ function installSwipeAudio(): void {
     } else if (result !== null && typeof result === 'object') {
       impactEpoch = performance.now();
       debugAudioEvent(`IMPACT gain=${result.gain.toFixed(2)}`);
-      puttAudio.playImpact(result.gain);
+      cuttingImpact = impactCutSeconds !== null;
+      try {
+        puttAudio.playImpact(result.gain);
+      } finally {
+        cuttingImpact = false;
+      }
     }
     return result;
   } as typeof originalAdd;
@@ -117,7 +152,8 @@ function renderAudioDebug(): void {
     document.body.append(root);
   }
   const mode = impactOnly ? 'impact only' : 'all events';
-  root.textContent = `AUDIO DEBUG (${mode})\n${debugLines.join('\n') || 'waiting...'}`;
+  const cut = impactCutSeconds === null ? '' : `, cut ${Math.round(impactCutSeconds * 1000)}ms`;
+  root.textContent = `AUDIO DEBUG (${mode}${cut})\n${debugLines.join('\n') || 'waiting...'}`;
 }
 
 /**
