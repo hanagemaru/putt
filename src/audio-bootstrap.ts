@@ -1,6 +1,7 @@
 import { Roller } from './physics';
 import { SwipeMeasure } from './swipe-measure';
 import { puttAudio } from './audio';
+import { loadPutterShape, type PutterShapeId } from './putter-shape';
 
 /**
  * 音の実機比較用の薄い配線。
@@ -13,9 +14,16 @@ const params = new URLSearchParams(location.search);
 const audioDebugEnabled = params.get('audioDebug') === '1';
 const impactOnly = params.get('audioOnly') === 'impact';
 const impactCutMsRaw = Number(params.get('impactCutMs'));
-const impactCutSeconds =
+/** 元の putt-impact 音源上で何msまで残すか。形状ごとの速度差を補正して再生時間へ換算する。 */
+const impactSourceCutSeconds =
   Number.isFinite(impactCutMsRaw) && impactCutMsRaw > 0 ? impactCutMsRaw / 1000 : null;
-let cuttingImpact = false;
+const IMPACT_RATE: Record<PutterShapeId, number> = {
+  pin: 1,
+  blade: 1.85,
+  mallet: 0.9,
+  fang: 1.06,
+};
+let activeImpactCutSeconds: number | null = null;
 let impactEpoch: number | null = null;
 const debugLines: string[] = [];
 
@@ -37,12 +45,11 @@ const menuObserver = new MutationObserver(installMenuSoundToggle);
 menuObserver.observe(document.body, { childList: true, subtree: true });
 
 /**
- * 診断用。playImpact が同期的に AudioBufferSourceNode.start() を呼ぶ間だけ、
- * 指定した長さで強制停止する。これで「別イベント」ではなく打音ファイル後半に
- * 余計な音が入っているかを実機で切り分けられる。
+ * 診断用。元音源の同じ時刻で切るため、形状ごとの速度変換率で再生時間を補正する。
+ * 例: 元音源120msまで残す場合、1.85x相当のL字は約65msで止める。
  */
 function installImpactCutDiagnostic(): void {
-  if (impactCutSeconds === null || typeof AudioBufferSourceNode === 'undefined') return;
+  if (impactSourceCutSeconds === null || typeof AudioBufferSourceNode === 'undefined') return;
   const proto = AudioBufferSourceNode.prototype;
   const originalStart = proto.start;
   proto.start = function (
@@ -51,8 +58,8 @@ function installImpactCutDiagnostic(): void {
     offset = 0,
     duration?: number,
   ): void {
-    if (cuttingImpact) {
-      originalStart.call(this, when, offset, impactCutSeconds);
+    if (activeImpactCutSeconds !== null) {
+      originalStart.call(this, when, offset, activeImpactCutSeconds);
       return;
     }
     if (duration === undefined) originalStart.call(this, when, offset);
@@ -72,12 +79,18 @@ function installSwipeAudio(): void {
       if (!impactOnly) puttAudio.playWhiff();
     } else if (result !== null && typeof result === 'object') {
       impactEpoch = performance.now();
-      debugAudioEvent(`IMPACT gain=${result.gain.toFixed(2)}`);
-      cuttingImpact = impactCutSeconds !== null;
+      const shape = loadPutterShape();
+      activeImpactCutSeconds =
+        impactSourceCutSeconds === null ? null : impactSourceCutSeconds / IMPACT_RATE[shape];
+      const cutLabel =
+        activeImpactCutSeconds === null
+          ? ''
+          : ` cut=${Math.round(activeImpactCutSeconds * 1000)}ms`;
+      debugAudioEvent(`IMPACT ${shape} gain=${result.gain.toFixed(2)}${cutLabel}`);
       try {
         puttAudio.playImpact(result.gain);
       } finally {
-        cuttingImpact = false;
+        activeImpactCutSeconds = null;
       }
     }
     return result;
@@ -152,7 +165,10 @@ function renderAudioDebug(): void {
     document.body.append(root);
   }
   const mode = impactOnly ? 'impact only' : 'all events';
-  const cut = impactCutSeconds === null ? '' : `, cut ${Math.round(impactCutSeconds * 1000)}ms`;
+  const cut =
+    impactSourceCutSeconds === null
+      ? ''
+      : `, source cut ${Math.round(impactSourceCutSeconds * 1000)}ms`;
   root.textContent = `AUDIO DEBUG (${mode}${cut})\n${debugLines.join('\n') || 'waiting...'}`;
 }
 
