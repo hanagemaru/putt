@@ -18,10 +18,12 @@ type Chord = {
  * BGMでは同時和音を前へ出さず、ベース + 単音PSG + ノイズだけで和声感を作る。
  *
  * トップは短いPSGモチーフ、プレイ中はベース + リズム中心にして、同じ世界観の別アレンジとして明確に分ける。
+ * プレイ中は音数を減らしているため、バス側で十分に持ち上げて効果音の下でも存在感を保つ。
+ * トップも同じ方向で前へ出すが、音数が多いためプレイ中より低いバス音量で聴感を揃える。
  */
 const MUSIC: Record<MusicScene, MusicSettings> = {
-  menu: { bpm: 90, bars: 8, gain: 0.18 },
-  play: { bpm: 76, bars: 6, gain: 0.28 },
+  menu: { bpm: 90, bars: 8, gain: 0.34 },
+  play: { bpm: 76, bars: 6, gain: 0.90 },
   roundEnd: { bpm: 88, bars: 6, gain: 0.17 },
 };
 
@@ -37,8 +39,8 @@ const LOOK_AHEAD_SEC = 10;
 const SCHEDULER_MS = 2500;
 const SCENE_FADE_SEC = 0.35;
 const MIN_GAIN = 0.0001;
-const JINGLE_GAIN = 0.58;
-const JINGLE_DUCK_RATIO = 0.45;
+const JINGLE_GAIN = 0.28;
+const JINGLE_DUCK_RATIO = 0.78;
 
 export class PuttMusic {
   private context: AudioContext | null = null;
@@ -109,7 +111,7 @@ export class PuttMusic {
     }
     this.scheduleNoise(start + 0.34, 0.03, 0.01, jingleBus, 2600, 0.8, 7);
 
-    // ジングルだけ少し前へ出す。ただしBGMを消し切らず、曲の流れは保つ。
+    // ジングル時もプレイBGMを大きく引っ込めず、曲の流れを保つ。
     if (this.bus && this.activeScene) {
       const base = MUSIC[this.activeScene].gain;
       const gain = this.bus.gain;
