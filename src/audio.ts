@@ -42,10 +42,11 @@ const IMPACT_VOLUME = {
   exponent: 1.75,
 };
 
-// 旗竿・カップは録音素材のピークが強いため、BGMと打音の中で飛び出さないよう個別に抑える。
-const FLAGSTICK_GAIN = 0.33;
-const FLAGSTICK_LOWPASS_HZ = 4200;
-const CUP_GAIN = 0.48;
+// 旗竿はゲーム進行上の補助音に留め、カップ音より明確に奥へ置く。
+// 元素材の鋭い高域がiPhoneで目立つため、音量を大きく絞りつつローパスも強める。
+const FLAGSTICK_GAIN = 0.11;
+const FLAGSTICK_LOWPASS_HZ = 3200;
+const CUP_GAIN = 0.28;
 
 /**
  * CC0 の実録素材を Web Audio API で鳴らす。
@@ -133,7 +134,6 @@ export class PuttAudio {
   playWhiff(): void {}
 
   playFlagstick(): void {
-    // 元素材の高域がiPhoneでザラついて聞こえるため、音量だけでなく高域も少し丸める。
     this.playSample('flagstick', {
       gain: FLAGSTICK_GAIN,
       lowpassHz: FLAGSTICK_LOWPASS_HZ,
