@@ -16,11 +16,14 @@ type Chord = {
 /**
  * 試聴で確定した「大人っぽいゴルフ感 + チープなゲーム音色」を Web Audio で組み立てる。
  * BGMでは同時和音を前へ出さず、ベース + 単音PSG + ノイズだけで和声感を作る。
+ *
+ * 効果音をゲームの主役にするため、BGMはトップ > 終了画面 > プレイ中の順に小さくする。
+ * プレイ中は打音・旗竿・カップ・水音が常に明瞭に聞こえる余白を残す。
  */
 const MUSIC: Record<MusicScene, MusicSettings> = {
-  menu: { bpm: 90, bars: 8, gain: 0.23 },
-  play: { bpm: 76, bars: 6, gain: 0.16 },
-  roundEnd: { bpm: 88, bars: 6, gain: 0.22 },
+  menu: { bpm: 90, bars: 8, gain: 0.18 },
+  play: { bpm: 76, bars: 6, gain: 0.11 },
+  roundEnd: { bpm: 88, bars: 6, gain: 0.17 },
 };
 
 const PROGRESSION: readonly Chord[] = [
@@ -35,6 +38,8 @@ const LOOK_AHEAD_SEC = 10;
 const SCHEDULER_MS = 2500;
 const SCENE_FADE_SEC = 0.35;
 const MIN_GAIN = 0.0001;
+const JINGLE_GAIN = 0.58;
+const JINGLE_DUCK_RATIO = 0.45;
 
 export class PuttMusic {
   private context: AudioContext | null = null;
@@ -80,16 +85,17 @@ export class PuttMusic {
 
   /**
    * ホールアウトだけは選定済みB案を残す。
-   * 低いピックアップ + C6/9の短いコードスタブを2回だけ鳴らし、BGM側の常時和音とは分離する。
+   * 低いピックアップ + C6/9の短いコードスタブを2回だけ鳴らす。
+   * カップ音の余韻を十分に聞かせてから入るため、既定は約1秒遅らせる。
    */
-  playHoleOutJingle(delay = 0.32): void {
+  playHoleOutJingle(delay = 1): void {
     if (!this.enabled) return;
     const context = this.ensureContext();
     if (context.state !== 'running') return;
 
     const start = context.currentTime + delay;
     const jingleBus = context.createGain();
-    jingleBus.gain.value = 0.72;
+    jingleBus.gain.value = JINGLE_GAIN;
     jingleBus.connect(context.destination);
 
     this.scheduleTriangle(48, start, 0.3, 0.055, jingleBus);
@@ -104,17 +110,19 @@ export class PuttMusic {
     }
     this.scheduleNoise(start + 0.34, 0.03, 0.01, jingleBus, 2600, 0.8, 7);
 
+    // ジングルだけ少し前へ出す。ただしBGMを消し切らず、曲の流れは保つ。
     if (this.bus && this.activeScene) {
       const base = MUSIC[this.activeScene].gain;
       const gain = this.bus.gain;
-      gain.cancelScheduledValues(start);
-      gain.setValueAtTime(base, start);
-      gain.linearRampToValueAtTime(base * 0.58, start + 0.05);
-      gain.setValueAtTime(base * 0.58, start + 0.55);
+      const duckStart = Math.max(context.currentTime, start - 0.06);
+      gain.cancelScheduledValues(duckStart);
+      gain.setValueAtTime(base, duckStart);
+      gain.linearRampToValueAtTime(base * JINGLE_DUCK_RATIO, start + 0.04);
+      gain.setValueAtTime(base * JINGLE_DUCK_RATIO, start + 0.55);
       gain.linearRampToValueAtTime(base, start + 0.95);
     }
 
-    window.setTimeout(() => jingleBus.disconnect(), Math.ceil((delay + 1.2) * 1000));
+    window.setTimeout(() => jingleBus.disconnect(), Math.ceil((delay + 1.25) * 1000));
   }
 
   private startRequestedScene(): void {
