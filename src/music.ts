@@ -21,7 +21,7 @@ type Chord = {
  */
 const MUSIC: Record<MusicScene, MusicSettings> = {
   menu: { bpm: 90, bars: 8, gain: 0.18 },
-  play: { bpm: 76, bars: 6, gain: 0.20 },
+  play: { bpm: 76, bars: 6, gain: 0.28 },
   roundEnd: { bpm: 88, bars: 6, gain: 0.17 },
 };
 
