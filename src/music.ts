@@ -17,7 +17,7 @@ type Chord = {
  * 試聴で確定した「大人っぽいゴルフ感 + チープなゲーム音色」を Web Audio で組み立てる。
  * BGMでは同時和音を前へ出さず、ベース + 単音PSG + ノイズだけで和声感を作る。
  *
- * 効果音をゲームの主役にしつつ、プレイ中もBGMが痩せて聞こえない程度の存在感を残す。
+ * トップは短いPSGモチーフ、プレイ中はベース + リズム中心にして、同じ世界観の別アレンジとして明確に分ける。
  */
 const MUSIC: Record<MusicScene, MusicSettings> = {
   menu: { bpm: 90, bars: 8, gain: 0.18 },
@@ -183,10 +183,13 @@ export class PuttMusic {
       const bassline =
         scene === 'play'
           ? [
-              [0, chord.root, 0.052],
-              [1.5, chord.root + 7, 0.033],
-              [2.25, chord.root + 5, 0.029],
-              [3, chord.root, 0.041],
+              // プレイ中はトップと明確に分け、短いシンコペーション主体のベースにする。
+              [0, chord.root, 0.056],
+              [0.75, chord.root + 12, 0.031],
+              [1.5, chord.root + 7, 0.043],
+              [2.5, chord.root, 0.052],
+              [3.25, chord.root + 7, 0.038],
+              [3.75, chord.root + 12, 0.028],
             ]
           : [
               [0, chord.root, 0.064],
@@ -199,45 +202,55 @@ export class PuttMusic {
         this.scheduleTriangle(note, barStart + offset * beat, beat * 0.5, amount, bus);
       }
 
-      // 和音は同時に鳴らさず、コード構成音を1音ずつ短く置く。
-      const sequence = [
-        chord.voicing[0],
-        chord.voicing[2],
-        chord.voicing[1],
-        chord.voicing[3],
-      ];
-      for (let k = 0; k < 8; k++) {
-        if (scene === 'play' && k % 2 === 1) continue;
-        this.scheduleSquare(
-          sequence[k % sequence.length],
-          barStart + k * beat * 0.5,
-          beat * 0.11,
-          scene === 'play' ? 0.005 : 0.0065,
-          bus,
-          2500,
-        );
-      }
+      if (scene !== 'play') {
+        // トップ/終了だけ、コード構成音を1音ずつ置いて和声をはっきり聞かせる。
+        const sequence = [
+          chord.voicing[0],
+          chord.voicing[2],
+          chord.voicing[1],
+          chord.voicing[3],
+        ];
+        for (let k = 0; k < 8; k++) {
+          this.scheduleSquare(
+            sequence[k % sequence.length],
+            barStart + k * beat * 0.5,
+            beat * 0.11,
+            0.0065,
+            bus,
+            2500,
+          );
+        }
 
-      this.scheduleKick(barStart, 0.038 * (scene === 'play' ? 0.75 : 1), bus);
-      this.scheduleNoise(
-        barStart + 2 * beat,
-        0.075,
-        scene === 'play' ? 0.006 : 0.008,
-        bus,
-        2400,
-        0.7,
-        b + 31,
-      );
-      for (let half = 1; half < 8; half++) {
-        this.scheduleNoise(
-          barStart + half * beat * 0.5,
-          0.032,
-          scene === 'play' ? 0.0025 : 0.0035,
-          bus,
-          6200,
-          1.5,
-          b * 11 + half,
-        );
+        this.scheduleKick(barStart, 0.038, bus);
+        this.scheduleNoise(barStart + 2 * beat, 0.075, 0.008, bus, 2400, 0.7, b + 31);
+        for (let half = 1; half < 8; half++) {
+          this.scheduleNoise(
+            barStart + half * beat * 0.5,
+            0.032,
+            0.0035,
+            bus,
+            6200,
+            1.5,
+            b * 11 + half,
+          );
+        }
+      } else {
+        // プレイ中はメロディ/分散和音を外し、ベースと乾いたリズムだけに寄せる。
+        this.scheduleKick(barStart, 0.032, bus);
+        this.scheduleKick(barStart + 2.5 * beat, 0.022, bus);
+        this.scheduleNoise(barStart + 1.5 * beat, 0.055, 0.0048, bus, 2200, 0.8, b + 41);
+        this.scheduleNoise(barStart + 3.5 * beat, 0.055, 0.0048, bus, 2200, 0.8, b + 47);
+        for (const half of [1, 3, 5, 7]) {
+          this.scheduleNoise(
+            barStart + half * beat * 0.5,
+            0.028,
+            0.0028,
+            bus,
+            5900,
+            1.6,
+            b * 13 + half,
+          );
+        }
       }
     }
 
@@ -248,12 +261,7 @@ export class PuttMusic {
         this.scheduleSquare(MOTIF[k] + 12, base + k * beat * 0.5, beat * 0.2, 0.008, bus, 3300);
       }
     } else if (scene === 'play') {
-      for (const baseBars of [1.2, 4]) {
-        const base = start + baseBars * bar;
-        for (let k = 0; k < 4; k++) {
-          this.scheduleSquare(MOTIF[k] + 12, base + k * beat * 0.62, beat * 0.18, 0.0035, bus, 3100);
-        }
-      }
+      // プレイ中はトップのモチーフを鳴らさず、同じ世界観の「伴奏版」として区別する。
     } else {
       for (let k = 0; k < MOTIF.length; k++) {
         this.scheduleSquare(MOTIF[k] + 12, start + k * beat * 0.5, beat * 0.2, 0.009, bus, 3300);
