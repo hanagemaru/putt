@@ -42,11 +42,10 @@ const IMPACT_VOLUME = {
   exponent: 1.75,
 };
 
-// 旗竿はゲーム進行上の補助音に留め、カップ音より明確に奥へ置く。
-// 元素材の鋭い高域がiPhoneで目立つため、音量を大きく絞りつつローパスも強める。
-const FLAGSTICK_GAIN = 0.11;
+// 旗竿/カップはBGMを遮らない補助音として、前版からさらに約半分まで下げる。
+const FLAGSTICK_GAIN = 0.055;
 const FLAGSTICK_LOWPASS_HZ = 3200;
-const CUP_GAIN = 0.28;
+const CUP_GAIN = 0.14;
 
 /**
  * CC0 の実録素材を Web Audio API で鳴らす。
