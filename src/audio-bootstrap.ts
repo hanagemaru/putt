@@ -9,6 +9,12 @@ import { puttAudio } from './audio';
  */
 const patchState = globalThis as typeof globalThis & { __puttAudioPreviewPatched?: boolean };
 
+const params = new URLSearchParams(location.search);
+const audioDebugEnabled = params.get('audioDebug') === '1';
+const impactOnly = params.get('audioOnly') === 'impact';
+let impactEpoch: number | null = null;
+const debugLines: string[] = [];
+
 if (!patchState.__puttAudioPreviewPatched) {
   patchState.__puttAudioPreviewPatched = true;
   installSwipeAudio();
@@ -32,8 +38,11 @@ function installSwipeAudio(): void {
   ) {
     const result = originalAdd.apply(this, args);
     if (result === 'whiff') {
-      puttAudio.playWhiff();
+      debugAudioEvent('WHIFF');
+      if (!impactOnly) puttAudio.playWhiff();
     } else if (result !== null && typeof result === 'object') {
+      impactEpoch = performance.now();
+      debugAudioEvent(`IMPACT gain=${result.gain.toFixed(2)}`);
       puttAudio.playImpact(result.gain);
     }
     return result;
@@ -51,21 +60,64 @@ function installRollAudio(): void {
     const status = originalAdvance.apply(this, args);
     const hitFlagstick = this.flagstickHits > beforeHits;
 
-    if (hitFlagstick) puttAudio.playFlagstick();
+    if (hitFlagstick) {
+      debugAudioEvent(`FLAG hits=${beforeHits}->${this.flagstickHits}`);
+      if (!impactOnly) puttAudio.playFlagstick();
+    }
 
     if (status !== beforeStatus) {
       if (status === 'holed') {
-        // 同じ物理更新内で旗竿に当たって入ったときだけ、金属音の直後に落下音を置く。
-        puttAudio.playCupIn(hitFlagstick ? 0.045 : 0);
+        debugAudioEvent(`CUP ${beforeStatus}->${status}`);
+        if (!impactOnly) puttAudio.playCupIn(hitFlagstick ? 0.045 : 0);
       } else if (status === 'water') {
-        puttAudio.playWater();
+        debugAudioEvent(`WATER ${beforeStatus}->${status}`);
+        if (!impactOnly) puttAudio.playWater();
       } else if (status === 'outOfBounds') {
-        puttAudio.playOutOfBounds();
+        debugAudioEvent(`OB ${beforeStatus}->${status}`);
+        if (!impactOnly) puttAudio.playOutOfBounds();
+      } else if (audioDebugEnabled) {
+        debugAudioEvent(`STATUS ${beforeStatus}->${status}`);
       }
     }
 
     return status;
   } as typeof originalAdvance;
+}
+
+function debugAudioEvent(label: string): void {
+  if (!audioDebugEnabled) return;
+  const now = performance.now();
+  const elapsed = impactEpoch === null ? 0 : now - impactEpoch;
+  const prefix = impactEpoch === null || label.startsWith('IMPACT') ? '+0ms' : `+${Math.round(elapsed)}ms`;
+  debugLines.push(`${prefix} ${label}`);
+  while (debugLines.length > 8) debugLines.shift();
+  renderAudioDebug();
+}
+
+function renderAudioDebug(): void {
+  if (!audioDebugEnabled) return;
+  let root = document.getElementById('putt-audio-debug');
+  if (!root) {
+    root = document.createElement('pre');
+    root.id = 'putt-audio-debug';
+    root.style.cssText = [
+      'position:fixed',
+      'left:8px',
+      'top:8px',
+      'z-index:99999',
+      'margin:0',
+      'padding:7px 9px',
+      'max-width:calc(100vw - 16px)',
+      'background:rgba(0,0,0,.82)',
+      'color:#fff',
+      'font:12px/1.35 monospace',
+      'white-space:pre-wrap',
+      'pointer-events:none',
+    ].join(';');
+    document.body.append(root);
+  }
+  const mode = impactOnly ? 'impact only' : 'all events';
+  root.textContent = `AUDIO DEBUG (${mode})\n${debugLines.join('\n') || 'waiting...'}`;
 }
 
 /**
@@ -139,3 +191,5 @@ function ensureSoundToggleStyle(): void {
   `;
   document.head.append(style);
 }
+
+if (audioDebugEnabled) renderAudioDebug();
