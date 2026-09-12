@@ -3,14 +3,13 @@ import { SwipeMeasure } from './swipe-measure';
 import { puttAudio } from './audio';
 
 /**
- * 音の実機比較用の薄い配線。
- * 物理やスワイプ計測の戻り値は一切変えず、公開メソッドの結果だけを観測して鳴らす。
- * 音色が確定したら main / stroke-view の明示的なコールバックへ移す前提の試聴ブランチ。
+ * ゲーム本体の物理・スワイプ計測には手を入れず、確定した結果を観測して効果音を鳴らす。
+ * 物理や戻り値は変更しない。
  */
-const patchState = globalThis as typeof globalThis & { __puttAudioPreviewPatched?: boolean };
+const patchState = globalThis as typeof globalThis & { __puttAudioPatched?: boolean };
 
-if (!patchState.__puttAudioPreviewPatched) {
-  patchState.__puttAudioPreviewPatched = true;
+if (!patchState.__puttAudioPatched) {
+  patchState.__puttAudioPatched = true;
   installSwipeAudio();
   installRollAudio();
 }
@@ -34,7 +33,7 @@ function installSwipeAudio(): void {
     if (result === 'whiff') {
       puttAudio.playWhiff();
     } else if (result !== null && typeof result === 'object') {
-      puttAudio.playImpact(result.gain);
+      puttAudio.playImpact(result.gain, result.speedMs);
     }
     return result;
   } as typeof originalAdd;
@@ -55,7 +54,7 @@ function installRollAudio(): void {
 
     if (status !== beforeStatus) {
       if (status === 'holed') {
-        // 同じ物理更新内で旗竿に当たって入ったときだけ、金属音の直後に落下音を置く。
+        // 同じ物理更新内で旗竿に当たって入ったときだけ、旗竿音の直後に落下音を置く。
         puttAudio.playCupIn(hitFlagstick ? 0.045 : 0);
       } else if (status === 'water') {
         puttAudio.playWater();
@@ -68,10 +67,7 @@ function installRollAudio(): void {
   } as typeof originalAdvance;
 }
 
-/**
- * 試聴中でも消音できるよう、トップメニューだけに小さいON/OFFを追加する。
- * 選択は localStorage へ保存され、ゲームへ入ってもその設定を使う。
- */
+/** トップメニューに音のON/OFFを置き、選択はゲーム中も維持する。 */
 function installMenuSoundToggle(): void {
   const panel = document.querySelector<HTMLElement>('#menu-root .menu-panel');
   if (!panel || !panel.querySelector('.menu-title')) return;
