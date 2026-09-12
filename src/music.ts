@@ -22,7 +22,7 @@ type Chord = {
  * トップも同じ方向で前へ出すが、音数が多いためプレイ中より低いバス音量で聴感を揃える。
  */
 const MUSIC: Record<MusicScene, MusicSettings> = {
-  menu: { bpm: 90, bars: 8, gain: 0.34 },
+  menu: { bpm: 90, bars: 8, gain: 0.55 },
   play: { bpm: 76, bars: 6, gain: 0.90 },
   roundEnd: { bpm: 88, bars: 6, gain: 0.17 },
 };
