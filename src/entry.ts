@@ -15,11 +15,17 @@ import {
   savePutterShape,
   type PutterShapeId,
 } from './putter-shape';
+import { registerSW } from 'virtual:pwa-register';
 
 const HUB_ORIGIN = 'https://hanage.app';
 const HOW_TO_PATH = '/games/putt/how-to-play/';
 const PRIVACY_PATH = '/privacy/';
 const params = new URLSearchParams(window.location.search);
+
+// 一度開けば、次からは電波がなくても遊べる。
+// 新しい版は裏で用意されるだけで、当たるのは次の起動から。ラウンドの途中で
+// 読み込み直さないため。dev サーバーでは何もしない。
+registerSW({ immediate: true });
 
 // index.html は日本語を初期値として持つ。英語ならここで一度だけ差し替える
 applyStaticUiText();
