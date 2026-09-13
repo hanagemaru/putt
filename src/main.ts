@@ -1128,6 +1128,8 @@ function loadHole(next: number): void {
   trailGeometry.setDrawRange(0, 0);
   updateBallMesh();
   enterAddress(true);
+  // ティーに着いてから紹介を出す。距離はティーからカップまでになる
+  showHoleIntro();
 }
 
 /**
@@ -1327,6 +1329,8 @@ renderer.setAnimationLoop((now) => {
     return;
   }
 
+  updateHoleIntro(dt);
+
   const transitioning = rig.update(dt);
 
   switch (state) {
@@ -1427,7 +1431,13 @@ const hud = {
   state: document.getElementById('hud-state')!,
   view: document.getElementById('hud-view')!,
   aim: document.getElementById('hud-aim')!,
-  shots: document.getElementById('hud-shots')!,
+  progressHole: document.getElementById('hud-progress-hole')!,
+  progressShot: document.getElementById('hud-progress-shot')!,
+  progressDistance: document.getElementById('hud-progress-distance')!,
+  progressTotal: document.getElementById('hud-progress-total')!,
+  holeIntro: document.getElementById('hole-intro')!,
+  holeIntroNumber: document.getElementById('hole-intro-number')!,
+  holeIntroDetail: document.getElementById('hole-intro-detail')!,
   swing: document.getElementById('hud-swing')!,
   result: document.getElementById('hud-result')!,
   notice: document.getElementById('hud-notice')!,
@@ -1876,24 +1886,68 @@ function updateControls(): void {
 }
 
 /**
- * プレイ中に常時出す1行。ホール・PAR・打数・スコア・カップまでの距離だけを並べる。
- *
- * HUDが画面を食うとプレイの邪魔になるので、これ以上は増やさない。
- * 視点名・方角・直前の結果・スワイプの数値は `?debug=1` のときだけ出す。
- * パー差はホールアウト済みのぶんだけで、プレイ中のホールは打数の側に出る
+ * ホール入り口の紹介表示の残り時間 [s]。0 になったらフェードで消す。
+ * `setTimeout` ではなくフレームの経過時間で数え、タブが止まっている間は進めない
  */
-function progressText(): string {
-  const distance = `${distanceToCup().toFixed(2)}m`;
-  // 「・」で区切ると横幅が足りず2行になる。区切りは空白だけにして1行に収める
-  if (!round) return i18n.practiceProgressText(course.par, shots, distance);
-  return i18n.progressText(
-    round.holeNumber,
-    round.holeCount,
+let holeIntroRemaining = 0;
+
+/**
+ * ホールの入り口で一度だけ、何ホール目・PAR・ティーからカップまでを大きく見せる。
+ * 中継のホール紹介にあたる。**ツアーだけ**（練習は同じホールを打ち直すので出さない）
+ */
+function showHoleIntro(): void {
+  if (!round) return;
+  hud.holeIntroNumber.textContent = i18n.holeIntroNumber(round.holeNumber);
+  hud.holeIntroDetail.textContent = i18n.holeIntroDetail(
     course.par,
-    shots,
-    formatToPar(round.toPar),
-    distance,
+    `${distanceToCup().toFixed(1)}m`,
   );
+  hud.holeIntro.style.transitionDuration = `${G.round.holeIntro.fade}s`;
+  hud.holeIntro.classList.add('show');
+  holeIntroRemaining = G.round.holeIntro.duration;
+}
+
+function updateHoleIntro(dt: number): void {
+  if (holeIntroRemaining <= 0) return;
+  holeIntroRemaining -= dt;
+  if (holeIntroRemaining <= 0) hud.holeIntro.classList.remove('show');
+}
+
+/**
+ * 今どの一打の話をしているか。中継の「第2打」に当たる。
+ * 構えている間はこれから打つ一打、転がってから停止までは今打った一打を指す
+ */
+function currentShotNumber(): number {
+  if (state === 'ADDRESS' || state === 'STROKE') return shots + 1;
+  return Math.max(shots, 1);
+}
+
+/**
+ * プレイ中に常時出す1行。ホール・PAR・打数・カップまでの距離・通算パー差を並べる。
+ *
+ * HUDが画面を食うとプレイの邪魔になるので、**行はこれ以上増やさない**。
+ * 代わりに中継と同じく、今の打数だけを大きく出して他を従属させる（見た目は index.html）。
+ * 視点名・方角・直前の結果・スワイプの数値は `?debug=1` のときだけ出す。
+ * 通算パー差はホールアウト済みのぶんだけなので、打数から離して語を付ける
+ */
+function updateProgress(hidden: boolean): void {
+  if (hidden) {
+    hud.progressHole.textContent = '';
+    hud.progressShot.textContent = '';
+    hud.progressDistance.textContent = '';
+    hud.progressTotal.textContent = '';
+    return;
+  }
+  hud.progressHole.textContent = round
+    ? i18n.progressHole(round.holeNumber, round.holeCount, course.par)
+    : i18n.practiceProgressHole(course.par);
+  hud.progressShot.textContent = i18n.progressShot(currentShotNumber());
+  hud.progressDistance.textContent = `${distanceToCup().toFixed(2)}m`;
+  // 練習はホールを進めないので通算が無い
+  hud.progressTotal.textContent = round ? i18n.progressTotal(formatToPar(round.toPar)) : '';
+  const toPar = round ? round.toPar : 0;
+  hud.progressTotal.classList.toggle('under', round !== null && toPar < 0);
+  hud.progressTotal.classList.toggle('over', round !== null && toPar > 0);
 }
 
 function updateHud(): void {
@@ -1932,7 +1986,7 @@ function updateHud(): void {
     hud.aim.textContent = '';
   }
   // カードが同じことを言うので、ホールアウト中は進行の1行も引っ込める
-  hud.shots.textContent = showingScore ? '' : progressText();
+  updateProgress(showingScore);
   // 直前の結果とスワイプの数値は帯が伸びるので開発用だけに出す
   hud.swing.textContent = debugEnabled && !showingScore ? lastSwing : '';
   hud.result.textContent = debugEnabled && !showingScore ? lastResult : '';
@@ -1993,3 +2047,4 @@ roller.place(course.tee.x, course.tee.z);
 ball.set(roller.x, roller.z);
 updateBallMesh();
 enterAddress(true);
+showHoleIntro();

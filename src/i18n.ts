@@ -270,30 +270,42 @@ export function strokesHeadline(strokes: number, toPar: string): string {
 }
 
 /**
- * プレイ中に常時出す1行（ツアー）。
- * **HUDの帯は折り返さず切り落とす**（index.html の `#hud .row`）ので、
- * 区切りは日本語と同じく空白だけにして横幅を増やさない
+ * プレイ中に常時出す進行表示。ゴルフ中継と同じように、**役割ごとに別の欄へ分ける**。
+ * 見た目の大きさと色は index.html の `#hud .progress` が受け持つ。
+ * **帯は折り返さず切り落とす**ので、語を足して横幅を増やさない
  */
-export function progressText(
-  holeNumber: number,
-  holeCount: number,
-  par: number,
-  strokes: number,
-  toPar: string,
-  distance: string,
-): string {
-  return en(
-    `HOLE ${holeNumber}/${holeCount}  PAR ${par}  ${strokes} ${toPar}  ${distance}`,
-    `HOLE ${holeNumber}/${holeCount}  PAR ${par}  ${strokes}打 ${toPar}  ${distance}`,
-  );
+
+/** 左端の従属情報。「HOLE 3/9  PAR 4」 */
+export function progressHole(holeNumber: number, holeCount: number, par: number): string {
+  return `HOLE ${holeNumber}/${holeCount}  PAR ${par}`;
 }
 
-/** 練習の1行。ホールを進めないので PAR と打数と距離だけ */
-export function practiceProgressText(par: number, strokes: number, distance: string): string {
-  return en(
-    `PAR ${par}  ${strokes}  ${distance}`,
-    `PAR ${par}  ${strokes}打  ${distance}`,
-  );
+/** 練習は同じホールを打ち直すので、ホール番号を出さない。「PAR 4」 */
+export function practiceProgressHole(par: number): string {
+  return `PAR ${par}`;
+}
+
+/** 主役。今が何打目か。「3打目」 */
+export function progressShot(shotNumber: number): string {
+  return en(`SHOT ${shotNumber}`, `${shotNumber}打目`);
+}
+
+/**
+ * 右端の通算パー差。**このホールの成績ではなく、ホールアウト済みのぶんの合計**。
+ * 打数の隣に置くと取り違えるので、語を付けて離して出す
+ */
+export function progressTotal(toPar: string): string {
+  return en(`TOTAL ${toPar}`, `通算 ${toPar}`);
+}
+
+/** ホール入り口の紹介（中継のホール紹介）。上段は「HOLE 3」 */
+export function holeIntroNumber(holeNumber: number): string {
+  return `HOLE ${holeNumber}`;
+}
+
+/** ホール入り口の紹介。下段は「PAR 4・12.4m」 */
+export function holeIntroDetail(par: number, distance: string): string {
+  return en(`PAR ${par} · ${distance}`, `PAR ${par}・${distance}`);
 }
 
 export function resumeNotice(tourName: string, holeNumber: number): string {

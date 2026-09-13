@@ -111,6 +111,48 @@
       #hud .row:first-child {
         padding-right: 66px;
       }
+      /*
+       * 進行の表示。ゴルフ中継と同じで、**今の打数を主役にして他を従属させる**。
+       * 通算パー差は打数の隣に置くと「このホールで+1」と読まれるので、右端へ離す。
+       * 大きさが混ざっても帯の高さが動かないよう、行の高さは1行ぶんに固定する
+       */
+      #hud .progress {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        line-height: 1;
+      }
+      #hud .progress > span:empty {
+        display: none;
+      }
+      #hud .progress-hole {
+        /* 320px幅では右上の「トップ」に当たるので、狭い画面だけ1段落とす */
+        font-size: clamp(10px, 3vw, 11px);
+        color: #9db69a;
+      }
+      /* 今が何打目か。1行の中で一番大きく、白で出す */
+      #hud .progress-shot {
+        font-size: clamp(17px, 5.5vw, 20px);
+        color: #ffffff;
+      }
+      #hud .progress-distance {
+        font-size: clamp(11px, 3.3vw, 12px);
+        color: #cfe0cd;
+      }
+      /*
+       * 通算パー差。中継の規約に合わせ、アンダーは赤、オーバーは青で出す。
+       * 色が読めない場合でも `+` `-` の記号で分かるようにしておく
+       */
+      #hud .progress-total {
+        font-size: clamp(11px, 3.3vw, 12px);
+        color: #cfe0cd;
+      }
+      #hud .progress-total.under {
+        color: #ff8a7a;
+      }
+      #hud .progress-total.over {
+        color: #9dc2ff;
+      }
       #hud .state {
         font-size: 16px;
         color: #9ede8a;
@@ -203,6 +245,51 @@
       }
       #result-alert:empty {
         display: none;
+      }
+
+      /*
+       * ホールの入り口で一度だけ出す紹介（中継のホール紹介にあたる）。
+       * 打つ場所を隠さないよう画面の上寄りへ置き、時間で自動的に消す。
+       * 表示時間とフェードは `src/config.ts` の `round.holeIntro`
+       */
+      #hole-intro {
+        position: fixed;
+        top: 17%;
+        left: 0;
+        right: 0;
+        z-index: 18;
+        display: grid;
+        justify-items: center;
+        gap: 8px;
+        pointer-events: none;
+        font-family: var(--pixel-font);
+        color: #eef7ec;
+        text-align: center;
+        opacity: 0;
+        transition: opacity 0.5s linear;
+      }
+      #hole-intro.show {
+        opacity: 1;
+      }
+      .hole-intro-number {
+        font-size: clamp(30px, 10vw, 44px);
+        line-height: 1;
+        text-shadow:
+          4px 4px 0 #16210f,
+          -2px -2px 0 #16210f,
+          2px -2px 0 #16210f,
+          -2px 2px 0 #16210f;
+      }
+      /* 小さい文字に大きな影を付けると輪郭が潰れるので、影は1ドットぶんに留める */
+      .hole-intro-detail {
+        font-size: clamp(13px, 4.5vw, 18px);
+        line-height: 1;
+        color: #dfeade;
+        text-shadow:
+          2px 2px 0 #16210f,
+          -1px -1px 0 #16210f,
+          1px -1px 0 #16210f,
+          -1px 1px 0 #16210f;
       }
 
       /* 練習用のパター反発調整。入口はSTROKE中だけ表示する */
@@ -716,13 +803,22 @@
     <div id="app"></div>
     <canvas id="stroke"></canvas>
     <div id="result-alert" role="status" aria-live="polite"></div>
+    <div id="hole-intro" aria-hidden="true">
+      <div class="hole-intro-number" id="hole-intro-number"></div>
+      <div class="hole-intro-detail" id="hole-intro-detail"></div>
+    </div>
 
     <div id="hud">
       <div class="row">
         <span class="state" id="hud-state">ADDRESS</span>
         <span id="hud-view"></span>
         <span id="hud-aim"></span>
-        <span id="hud-shots"></span>
+        <span class="progress">
+          <span class="progress-hole" id="hud-progress-hole"></span>
+          <span class="progress-shot" id="hud-progress-shot"></span>
+          <span class="progress-distance" id="hud-progress-distance"></span>
+          <span class="progress-total" id="hud-progress-total"></span>
+        </span>
       </div>
       <div class="row" id="hud-swing"></div>
       <div class="result" id="hud-result"></div>
