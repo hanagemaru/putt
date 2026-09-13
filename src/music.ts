@@ -1,3 +1,5 @@
+import { discardContext, isContextDead, resumeContext } from './audio-context';
+
 const STORAGE_KEY = 'putt-sound-enabled';
 
 export type MusicScene = 'menu' | 'play' | 'roundEnd';
@@ -41,6 +43,8 @@ const SCENE_FADE_SEC = 0.35;
 const MIN_GAIN = 0.0001;
 const JINGLE_GAIN = 0.28;
 const JINGLE_DUCK_RATIO = 0.78;
+/** 中断明けに、過去へずれた予約位置を現在時刻の少し先まで引き戻す余裕。 */
+const RESUME_LEAD_SEC = 0.05;
 
 export class PuttMusic {
   private context: AudioContext | null = null;
@@ -71,17 +75,40 @@ export class PuttMusic {
   async unlock(): Promise<void> {
     if (!this.enabled) return;
     const context = this.ensureContext();
-    if (context.state === 'suspended') {
-      try {
-        await context.resume();
-      } catch {
-        return;
-      }
+    if (!(await resumeContext(context))) return;
+
+    if (!this.bus || this.activeScene !== this.requestedScene) {
+      this.startRequestedScene();
+      return;
     }
-    if (context.state === 'running') {
-      if (!this.bus || this.activeScene !== this.requestedScene) this.startRequestedScene();
-      else this.ensureScheduled();
-    }
+    this.ensureScheduled();
+    this.ensureScheduler();
+  }
+
+  /**
+   * バックグラウンドから戻ったときに呼ぶ。
+   * まず resume を試し、それでも復帰しない context だけ作り直して同じシーンを鳴らし直す。
+   */
+  async revive(): Promise<void> {
+    if (!this.enabled) return;
+    await this.unlock();
+
+    const context = this.context;
+    if (!context) return;
+    if (!(await isContextDead(context))) return;
+
+    this.discard();
+    await this.unlock();
+  }
+
+  private discard(): void {
+    this.stopScheduler();
+    discardContext(this.context);
+    this.context = null;
+    this.bus = null;
+    this.activeScene = null;
+    this.scheduledUntil = 0;
+    this.noiseBuffer = null;
   }
 
   /**
@@ -139,10 +166,7 @@ export class PuttMusic {
       window.setTimeout(() => oldBus.disconnect(), Math.ceil((SCENE_FADE_SEC + 0.1) * 1000));
     }
 
-    if (this.scheduler !== null) {
-      window.clearInterval(this.scheduler);
-      this.scheduler = null;
-    }
+    this.stopScheduler();
 
     const now = context.currentTime;
     const bus = context.createGain();
@@ -152,9 +176,20 @@ export class PuttMusic {
 
     this.bus = bus;
     this.activeScene = this.requestedScene;
-    this.scheduledUntil = now + 0.05;
+    this.scheduledUntil = now + RESUME_LEAD_SEC;
     this.ensureScheduled();
+    this.ensureScheduler();
+  }
+
+  private ensureScheduler(): void {
+    if (this.scheduler !== null) return;
     this.scheduler = window.setInterval(() => this.ensureScheduled(), SCHEDULER_MS);
+  }
+
+  private stopScheduler(): void {
+    if (this.scheduler === null) return;
+    window.clearInterval(this.scheduler);
+    this.scheduler = null;
   }
 
   private ensureScheduled(): void {
@@ -162,6 +197,11 @@ export class PuttMusic {
     const bus = this.bus;
     const scene = this.activeScene;
     if (!context || context.state !== 'running' || !bus || !scene) return;
+
+    // 中断中に時計だけ進んだ場合、過去ぶんをまとめて鳴らさずに現在位置から続ける。
+    if (this.scheduledUntil < context.currentTime) {
+      this.scheduledUntil = context.currentTime + RESUME_LEAD_SEC;
+    }
 
     const settings = MUSIC[scene];
     const cycleSec = settings.bars * 4 * (60 / settings.bpm);

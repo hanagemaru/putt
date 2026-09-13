@@ -10,6 +10,9 @@ import { menuSfx } from './ui-sfx';
  */
 const patchState = globalThis as typeof globalThis & { __puttAudioPatched?: boolean };
 
+/** 復帰時は visibilitychange / pageshow / focus が続けて飛ぶため、まとめて1回にする。 */
+const REVIVE_DEBOUNCE_MS = 80;
+
 if (!patchState.__puttAudioPatched) {
   patchState.__puttAudioPatched = true;
   installSwipeAudio();
@@ -38,10 +41,44 @@ document.addEventListener('pointerdown', unlockAudio, { capture: true });
 document.addEventListener('touchstart', unlockAudio, { capture: true, passive: true });
 document.addEventListener('keydown', unlockAudio, { capture: true });
 
+// ブラウザを一度閉じる・他アプリへ切り替えるなどで、iOS SafariはAudioContextを中断する。
+// 画面が戻った時点でresumeを試し、それでも戻らないcontextだけ作り直す。
+// ここで復帰できない環境でも、上のタッチ経路で次の操作から鳴り直す。
+let reviveTimer: number | null = null;
+let reviving = false;
+
+const scheduleRevive = (): void => {
+  if (document.visibilityState === 'hidden') return;
+  if (reviveTimer !== null) window.clearTimeout(reviveTimer);
+  reviveTimer = window.setTimeout(() => {
+    reviveTimer = null;
+    void reviveAudio();
+  }, REVIVE_DEBOUNCE_MS);
+};
+
+document.addEventListener('visibilitychange', scheduleRevive);
+window.addEventListener('pageshow', scheduleRevive);
+window.addEventListener('focus', scheduleRevive);
+
 installMenuButtonAudio();
 installMenuSoundToggle();
 const menuObserver = new MutationObserver(installMenuSoundToggle);
 menuObserver.observe(document.body, { childList: true, subtree: true });
+
+/** 復帰処理は生存確認の待ち時間を含むため、重ねて走らせない。 */
+async function reviveAudio(): Promise<void> {
+  if (reviving) return;
+  reviving = true;
+  try {
+    await Promise.all([
+      puttAudio.revive(),
+      puttMusic.revive(),
+      gameRoute ? Promise.resolve() : menuSfx.revive(),
+    ]);
+  } finally {
+    reviving = false;
+  }
+}
 
 function isGameRoute(search: URLSearchParams): boolean {
   if (search.get('tour') !== null) return true;
