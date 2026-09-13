@@ -25,6 +25,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+        env:
+          # Cloudflare Web Analytics のサイトトークン。未設定ならビーコンは出力されない。
+          VITE_CF_BEACON_TOKEN: ${{ vars.CF_BEACON_TOKEN }}
       # 初回のみ Settings → Pages → Source を「GitHub Actions」にしておくこと
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

@@ -8,6 +8,7 @@ declare const process: { env: Record<string, string | undefined> };
 // - Cloudflare Workers（putt.hanage.app）: 独自ドメインの直下なので `/`
 // 既定は GitHub Pages。Cloudflare 向けのビルドだけ `PUTT_BASE=/` を渡す。
 const base = process.env.PUTT_BASE ?? '/putt/';
+const cfBeaconToken = process.env.VITE_CF_BEACON_TOKEN;
 
 const MANIFEST_FILE = 'manifest.webmanifest';
 
@@ -89,9 +90,32 @@ function puttPwa(basePath: string): Plugin {
   };
 }
 
+// Cloudflare Web Analytics は本番ビルド時だけHTMLへ入れる。
+// リポジトリ変数 CF_BEACON_TOKEN が未設定なら何も追加しない。
+function cloudflareWebAnalytics(token: string | undefined): Plugin {
+  return {
+    name: 'cloudflare-web-analytics',
+    apply: 'build',
+    transformIndexHtml() {
+      if (!token) return [];
+      return [
+        {
+          tag: 'script',
+          attrs: {
+            defer: true,
+            src: 'https://static.cloudflareinsights.com/beacon.min.js',
+            'data-cf-beacon': JSON.stringify({ token }),
+          },
+          injectTo: 'head',
+        },
+      ];
+    },
+  };
+}
+
 export default defineConfig({
   base,
-  plugins: [puttPwa(base)],
+  plugins: [puttPwa(base), cloudflareWebAnalytics(cfBeaconToken)],
   build: {
     rollupOptions: {
       // マルチページ構成。パスは root からの相対
