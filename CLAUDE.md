@@ -8,6 +8,9 @@
 
 - Vite + TypeScript + three.js（物理エンジンは使わない）
 - 調整UIは lil-gui
+- PWA（マニフェスト・Service Worker）は `vite-plugin-pwa`。構成は `docs/pwa.md`
+- 音は Web Audio。BGMと操作音は合成、打音・カップ・旗竿・水は `src/audio-assets/` の実録素材
+  （CC0）。素材を足したら `src/audio-assets/SOURCES.txt` に出典とライセンスを書く
 - 依存は最小限に。新しいライブラリを入れる前に必ず確認を取ること
 
 ## 座標系と単位

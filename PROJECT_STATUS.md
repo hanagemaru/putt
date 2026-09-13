@@ -1,6 +1,6 @@
 # 現在地 / Project Status
 
-最終更新: 2026-09-10（**実機確認待ちを全て解消。P0-3の一巡まで完了し、Putt側はAdSense審査へ載せる状態**）
+最終更新: 2026-09-13（**サウンドとオフライン（PWA）を実装し、どちらも実機確認済み。実機確認待ちはない。Putt側はAdSense審査へ載せる状態のまま**）
 
 このファイルは **Claude / ChatGPT / Codex 共通の短い引き継ぎ用「現在地」**です。
 新しいセッションでは、長い履歴を最初から読み直す前にまずここを確認します。
@@ -163,16 +163,28 @@ AdSense申請全体・ハブ側の準備は `hanage-hub` の正本に従う。
 - **Cloudflare Workers へ切り替え済み（2026-09-06）**
   - 本番は `https://putt.hanage.app/`。実機（iPhone）でトップメニューから
     通常ツアー・遊び方・プライバシーまで確認済み
-  - GitHub Pages（`https://hanagemaru.github.io/putt/`）は退避先として当面併走する。
-    `main` への push で両方に配信される
+  - GitHub Pages（`https://hanagemaru.github.io/putt/`）は退避先として併走する。
+    `main` への push で両方に配信される。**2026-09-13: 当面そのまま残すと決めた**（期限なし）
   - hanage-hub の `GAME_URLS.putt` も新URLへ差し替え済み
-  - 設定値・ロールバック・残作業（Pages の停止）は `DEPLOY.md`
+  - 設定値・ロールバックは `DEPLOY.md`
 
-- **PWA: 実装済み・実機確認待ち**
-  - マニフェスト（`standalone` / `portrait`）とドット絵アイコン（192/512・マスカブル・apple 180）
-    は実機確認OK。`start_url` / `scope` / アイコンのパスは配信先のベースに追従する
-  - Service Worker（`vite-plugin-pwa`）を追加。一度開けばオフラインで遊べる。
-    新しい版は待機させ、次の起動で入れ替わる。**実機確認はまだ**（構成は `docs/pwa.md`）
+- **PWA: 実装済み・実機確認OK**
+  - マニフェスト（`standalone` / `portrait`）とドット絵アイコン（192/512・マスカブル・apple 180）。
+    `start_url` / `scope` / アイコンのパスは配信先のベースに追従する
+  - Service Worker（`vite-plugin-pwa`）を追加。一度開けばオフラインで遊べることを実機で確認済み。
+    新しい版は待機させ、次の起動で入れ替わる（構成は `docs/pwa.md`）
+  - 検証ページ（`swipe-test/` / `green-test/`）はキャッシュしない
+
+- **サウンド: 実装済み・実機確認OK**
+  - BGMはトップ・プレイ中・ラウンド終了で別アレンジ。効果音は打音・カップ・旗竿・水と
+    メニューの操作音。すべて Web Audio で鳴らす（`src/audio.ts` / `music.ts` / `ui-sfx.ts`）
+  - 打音・カップ・旗竿・水は Freesound のCC0素材を加工したもの。**このリポジトリで初めての
+    外部アセット**で、出典とライセンスは `src/audio-assets/SOURCES.txt` に置く
+  - 打音は打球初速で音量が変わり、パター形状で再生速度とフィルタが変わる。
+    音が変わるだけで性能差は付けない（形状選択の約束どおり）
+  - バックグラウンドから戻ったときの復帰を `src/audio-context.ts` で扱う
+    （iOS Safari の `interrupted` を含む）。Multicolor Sweeper 側も同じ不具合を同じ日に直した
+  - 仕様は `docs/spec.md` §6「サウンド」を正とする
 
 ## 今回記録した未確定改善
 
@@ -251,6 +263,10 @@ AdSense申請全体・ハブ側の準備は `hanage-hub` の正本に従う。
 - `docs/spec.md` §4に旧「手元を見る」ボタン前提の記述が一部残る。次に§4を触るときに現実装へ揃える
 - 生成器が「ティー側から到達できない芝」を作ることがある（シード66・107・149の3/200）。現在は転がって到達できず無害だが、池配置や `waterFringe` を触るときは検証条件へ追加する
 - **実機のスワイプ速度の上下限が未実測。** `speedK` やパター感度を今後調整するときは `/swipe-test/` で実測する
+- 音のチューニング値が `src/config.ts` に集約されていない（`audio.ts` / `music.ts` / `ui-sfx.ts` の
+  モジュール定数）。`CLAUDE.md` の「チューニング可能な数値は全て `src/config.ts`」から外れているので、
+  次に音を触るときに寄せるか、音は例外と決める
+- 音のオン/オフは `putt-sound-enabled`（`localStorage`）を読むだけで、書く画面がない。既定は有効
 
 ## まだ未実装の主なもの
 

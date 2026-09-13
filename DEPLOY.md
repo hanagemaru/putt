@@ -51,8 +51,9 @@ PWAのマニフェストとアイコンも同じベースに追従する。詳�
 
 ### 残っている作業
 
-- しばらく様子を見てから、GitHub Pages のワークフロー（`.github/workflows/deploy.yml`）を止める。
-  止めたら `TASKS.md` と `docs/tour-hole-candidates.md` に残る `github.io` のリンクも差し替える
+- GitHub Pages のワークフロー（`.github/workflows/deploy.yml`）は、**2026-09-13に当面そのまま残すと決めた。**
+  併走しても他へ影響がないため、止める期限は決めない。
+  止めるときは `TASKS.md` と `docs/tour-hole-candidates.md` に残る `github.io` のリンクも差し替える
 
 ## ブランチのプレビュー（Cloudflare）
 
