@@ -1,3 +1,5 @@
+import { discardContext, isContextDead, resumeContext } from './audio-context';
+
 const STORAGE_KEY = 'putt-sound-enabled';
 
 export type UiSoundKind = 'normal' | 'confirm' | 'back' | 'toggle';
@@ -19,14 +21,24 @@ class MenuSfx {
 
   async unlock(): Promise<void> {
     if (!this.enabled) return;
-    const context = this.ensureContext();
-    if (context.state === 'suspended') {
-      try {
-        await context.resume();
-      } catch {
-        return;
-      }
-    }
+    await resumeContext(this.ensureContext());
+  }
+
+  /**
+   * バックグラウンドから戻ったときに呼ぶ。
+   * まず resume を試し、それでも復帰しない context だけ作り直す。
+   */
+  async revive(): Promise<void> {
+    if (!this.enabled) return;
+    await this.unlock();
+
+    const context = this.context;
+    if (!context) return;
+    if (!(await isContextDead(context))) return;
+
+    discardContext(context);
+    this.context = null;
+    await this.unlock();
   }
 
   play(kind: UiSoundKind): void {
