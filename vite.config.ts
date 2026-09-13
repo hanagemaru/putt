@@ -1,4 +1,5 @@
 import { defineConfig, type Plugin } from 'vite';
+import { VitePWA } from 'vite-plugin-pwa';
 
 // Node の型は入れていないので、ここで使う分だけ宣言する
 declare const process: { env: Record<string, string | undefined> };
@@ -91,7 +92,36 @@ function puttPwa(basePath: string): Plugin {
 
 export default defineConfig({
   base,
-  plugins: [puttPwa(base)],
+  plugins: [
+    puttPwa(base),
+    // オフラインで開けるようにする。マニフェストは上の puttPwa が作るので生成させない。
+    // 検証ページ（swipe-test / green-test）はキャッシュしない。本編だけを持ち歩く。
+    VitePWA({
+      base,
+      scope: base,
+      manifest: false,
+      // 新しい版は待機させ、次の起動で入れ替える。ラウンド中に読み込み直さないため。
+      // 登録は src/entry.ts で行う（検証ページには登録しない）
+      registerType: 'prompt',
+      injectRegister: false,
+      workbox: {
+        globPatterns: [
+          'index.html',
+          'manifest.webmanifest',
+          'assets/**/*.{js,css,woff2,mp3}',
+          'icons/*.png',
+        ],
+        // 除外するのは検証ページのHTMLと、その入口チャンクだけ。
+        // swipe-measure は本編（stroke-view / audio-bootstrap）も使う共有チャンクなので、
+        // 名前が似ていても外さない。外すとオフラインでストロークが動かなくなる
+        globIgnores: ['swipe-test/**', 'green-test/**', 'assets/swipeTest-*', 'assets/greenTest-*'],
+        // 単独URLで開かれても本編のHTMLを返す。検証ページはネットワークのまま
+        navigateFallback: `${base}index.html`,
+        navigateFallbackDenylist: [/\/swipe-test\//, /\/green-test\//],
+        cleanupOutdatedCaches: true,
+      },
+    }),
+  ],
   build: {
     rollupOptions: {
       // マルチページ構成。パスは root からの相対
