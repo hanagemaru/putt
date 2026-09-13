@@ -1452,6 +1452,8 @@ const courseShuffle = document.getElementById('course-shuffle') as HTMLButtonEle
 const giveUpControl = document.getElementById('giveup-control')!;
 const giveUpButton = document.getElementById('giveup') as HTMLButtonElement;
 const giveUpFill = document.getElementById('giveup-fill') as HTMLSpanElement;
+const giveUpSizeIdle = document.getElementById('giveup-size-idle') as HTMLSpanElement;
+const giveUpSizeHolding = document.getElementById('giveup-size-holding') as HTMLSpanElement;
 const giveUpLabel = document.getElementById('giveup-label') as HTMLSpanElement;
 const strokeControls = document.getElementById('stroke-controls')!;
 const strokeBack = document.getElementById('stroke-back') as HTMLButtonElement;
@@ -1842,11 +1844,10 @@ function updateControls(): void {
   giveUpControl.style.display = showGiveUp ? 'block' : 'none';
   // 押し続けないと決まらないことは、ボタンの中で先に言っておく。
   // 帯（#giveup-fill）はもう押している人にしか見えないので、それだけでは気づけない
-  giveUpLabel.textContent = holdingGiveUp()
-    ? t().giveUpHolding
-    : round
-      ? t().giveUp
-      : t().giveUpToTee;
+  const idleGiveUpLabel = round ? t().giveUp : t().giveUpToTee;
+  giveUpSizeIdle.textContent = idleGiveUpLabel;
+  giveUpSizeHolding.textContent = t().giveUpHolding;
+  giveUpLabel.textContent = holdingGiveUp() ? t().giveUpHolding : idleGiveUpLabel;
   giveUpFill.style.width = `${(giveUpHoldProgress() * 100).toFixed(1)}%`;
 
   const inAddress = state === 'ADDRESS';
