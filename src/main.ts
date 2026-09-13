@@ -929,7 +929,14 @@ function enterResult(): void {
   cardElapsed = 0;
   resultReady = false;
   lastResult = describeResult();
+  // 池・OBは音を切っていても分かるよう、通常プレイの知らせ欄にも出す。
+  // 次の一打へ進むと enterAddress() が通常の案内へ戻すため、このRESULTの間だけ表示される。
+  notice = penaltyResultPending() ? lastResult : '';
   ballMesh.visible = roller.status !== 'holed';
+}
+
+function penaltyResultPending(): boolean {
+  return roller.status === 'water' || roller.status === 'outOfBounds';
 }
 
 /** 結果テキスト（§3）。打ち出しラインへの射影で オーバー／ショート と左右のズレを出す */
@@ -1383,7 +1390,8 @@ renderer.setAnimationLoop((now) => {
           syncLineVisibility();
           rig.transition(resultPose(shotStart, ball, cup, visualGreen), G.result.transition);
           // カップイン後は終了カードへ移るので、次の一打の案内は出さない
-          notice = holeOutPending() || practiceEndPending() ? '' : t().noticeNextPutt;
+          if (holeOutPending() || practiceEndPending()) notice = '';
+          else if (!penaltyResultPending()) notice = t().noticeNextPutt;
         }
       } else if (holeOutPending() || practiceEndPending()) {
         // 最後の一打の軌跡を見せてからカードを重ねる
