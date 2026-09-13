@@ -29,13 +29,13 @@
 | H | シード | PAR | 難易度 | 形 | 地形 | 全長 | 遠回り率 | 池 |
 |---:|---:|---:|---|---|---|---:|---:|---:|
 | 1 | [553](https://hanagemaru.github.io/putt/?seed=553) | 3 | やさしい | S字 | ポテトチップ | 9.23m | 1.02 | 0 |
-| 2 | [848](https://hanagemaru.github.io/putt/?seed=848) | 4 | むずかしい | ストレート | ポテトチップ | 20.36m | 1.00 | 0 |
-| 3 | [44](https://hanagemaru.github.io/putt/?seed=44) | 4 | むずかしい | ストレート | 片流れ | 20.84m | 1.01 | 0 |
+| 2 | [924](https://hanagemaru.github.io/putt/?seed=924) | 4 | むずかしい | ドッグレッグ | 2段グリーン | 20.93m | 1.23 | 1 |
+| 3 | [232](https://hanagemaru.github.io/putt/?seed=232) | 4 | むずかしい | ストレート | ランダム | 21.99m | 1.01 | 0 |
 | 4 | [468](https://hanagemaru.github.io/putt/?seed=468) | 3 | やさしい | ドッグレッグ | 片流れ | 11.60m | 1.03 | 0 |
-| 5 | [798](https://hanagemaru.github.io/putt/?seed=798) | 4 | むずかしい | ストレート | 受けグリーン | 21.59m | 1.00 | 0 |
-| 6 | [354](https://hanagemaru.github.io/putt/?seed=354) | 5 | むずかしい | ストレート | 2段グリーン | 24.65m | 1.00 | 0 |
-| 7 | [977](https://hanagemaru.github.io/putt/?seed=977) | 4 | むずかしい | ストレート | 2段グリーン | 21.74m | 1.00 | 0 |
-| 8 | [232](https://hanagemaru.github.io/putt/?seed=232) | 4 | むずかしい | ストレート | ランダム | 21.99m | 1.01 | 0 |
+| 5 | [848](https://hanagemaru.github.io/putt/?seed=848) | 4 | むずかしい | ストレート | ポテトチップ | 20.36m | 1.00 | 0 |
+| 6 | [728](https://hanagemaru.github.io/putt/?seed=728) | 5 | むずかしい | ドッグレッグ | ランダム | 25.72m | 1.30 | 1 |
+| 7 | [44](https://hanagemaru.github.io/putt/?seed=44) | 4 | むずかしい | ストレート | 片流れ | 20.84m | 1.01 | 0 |
+| 8 | [423](https://hanagemaru.github.io/putt/?seed=423) | 4 | むずかしい | ドッグレッグ | 受けグリーン | 20.14m | 1.32 | 1 |
 | 9 | [185](https://hanagemaru.github.io/putt/?seed=185) | 5 | むずかしい | ストレート | 2段グリーン | 26.16m | 1.00 | 0 |
 
 ### [曲がりの森をプレイ](https://hanagemaru.github.io/putt/?tour=forest)
