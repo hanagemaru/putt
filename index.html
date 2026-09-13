@@ -183,6 +183,28 @@
         color: #ffd08a;
       }
 
+      /* OBになったことを、上部HUDを探さなくても分かるよう画面中央へ大きく出す */
+      #result-alert {
+        position: fixed;
+        inset: 0;
+        z-index: 19;
+        display: grid;
+        place-items: center;
+        pointer-events: none;
+        font-family: var(--pixel-font);
+        font-size: clamp(36px, 12vw, 56px);
+        line-height: 1;
+        color: #ffb0b0;
+        text-shadow:
+          4px 4px 0 #5a2020,
+          -2px -2px 0 #16210f,
+          2px -2px 0 #16210f,
+          -2px 2px 0 #16210f;
+      }
+      #result-alert:empty {
+        display: none;
+      }
+
       /* 練習用のパター反発調整。入口はSTROKE中だけ表示する */
       #tuning-panel {
         position: fixed;
@@ -684,6 +706,7 @@
   <body>
     <div id="app"></div>
     <canvas id="stroke"></canvas>
+    <div id="result-alert" role="status" aria-live="polite"></div>
 
     <div id="hud">
       <div class="row">

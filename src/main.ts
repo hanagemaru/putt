@@ -1422,6 +1422,7 @@ ensurePixelFont(language());
 
 const hud = {
   root: document.getElementById('hud')!,
+  resultAlert: document.getElementById('result-alert')!,
   state: document.getElementById('hud-state')!,
   view: document.getElementById('hud-view')!,
   aim: document.getElementById('hud-aim')!,
@@ -1872,6 +1873,8 @@ function progressText(): string {
 function updateHud(): void {
   // スコアカードを出している間は、同じことを言うHUDを引っ込めてカードだけ読ませる
   const showingScore = state === 'HOLE_OUT' || state === 'ROUND_END';
+  hud.resultAlert.textContent =
+    state === 'RESULT' && roller.status === 'outOfBounds' ? t().outOfBoundsAlert : '';
   // 文字が消えるときは、後ろの帯も一緒に消す（空の帯だけが残らないように）
   hud.root.classList.toggle('quiet', showingScore);
   // 状態名は英語の内部名なので、通常のプレイ画面には出さない
