@@ -1704,6 +1704,7 @@ for (const button of cameraButtons) {
  */
 let giveUpTimer: number | null = null;
 let giveUpStartedAt = 0;
+let giveUpPointerId: number | null = null;
 
 function giveUpHoldProgress(): number {
   if (giveUpTimer === null) return 0;
@@ -1715,11 +1716,23 @@ function holdingGiveUp(): boolean {
   return giveUpTimer !== null;
 }
 
+function releaseGiveUpPointer(): void {
+  const id = giveUpPointerId;
+  giveUpPointerId = null;
+  if (id === null || !giveUpButton.hasPointerCapture(id)) return;
+  try {
+    giveUpButton.releasePointerCapture(id);
+  } catch {
+    // 捕捉がすでに解除されているだけなので無視する
+  }
+}
+
 function cancelGiveUpHold(): void {
   if (giveUpTimer !== null) {
     clearTimeout(giveUpTimer);
     giveUpTimer = null;
   }
+  releaseGiveUpPointer();
   giveUpFill.style.width = '0%';
 }
 
@@ -1728,8 +1741,16 @@ function startGiveUpHold(e: PointerEvent): void {
   if (!canGiveUp()) return;
   e.preventDefault();
   giveUpStartedAt = performance.now();
+  giveUpPointerId = e.pointerId;
+  try {
+    // PCでも押下中の見た目移動や微小なマウス移動で長押しが途切れないようにする
+    giveUpButton.setPointerCapture(e.pointerId);
+  } catch {
+    // 捕捉できない環境では従来のイベント処理へフォールバックする
+  }
   giveUpTimer = window.setTimeout(() => {
     giveUpTimer = null;
+    releaseGiveUpPointer();
     giveUpFill.style.width = '0%';
     giveUp();
   }, G.round.giveUpHoldMs);
@@ -1738,7 +1759,10 @@ function startGiveUpHold(e: PointerEvent): void {
 giveUpButton.addEventListener('pointerdown', startGiveUpHold);
 giveUpButton.addEventListener('pointerup', cancelGiveUpHold);
 giveUpButton.addEventListener('pointercancel', cancelGiveUpHold);
-giveUpButton.addEventListener('pointerleave', cancelGiveUpHold);
+giveUpButton.addEventListener('pointerleave', (e) => {
+  // 捕捉中は下のpointermoveで実座標を判定する。CSSの押下移動だけでは取り消さない
+  if (!giveUpButton.hasPointerCapture(e.pointerId)) cancelGiveUpHold();
+});
 // タッチは押した要素へ暗黙に捕捉されるので、指がボタンから外れても pointerleave が来ない。
 // 位置を見て自分で取り消す。押したまま指をずらせば、決まる前にやめられる
 giveUpButton.addEventListener('pointermove', (e) => {
