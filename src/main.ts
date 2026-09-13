@@ -1394,8 +1394,9 @@ renderer.setAnimationLoop((now) => {
           else if (!penaltyResultPending()) notice = t().noticeNextPutt;
         }
       } else if (holeOutPending() || practiceEndPending()) {
-        // 最後の一打の軌跡を見せてからカードを重ねる
-        cardElapsed += dt;
+        // 最後の一打の軌跡を見せてからカードを重ねる。
+        // 遷移中に数え始めると、俯瞰でラインが見える前にカードが重なってしまう
+        if (!rig.transitioning) cardElapsed += dt;
         if (cardElapsed >= G.round.cardDelay) {
           if (holeOutPending()) enterHoleOut();
           else enterPracticeEnd();
