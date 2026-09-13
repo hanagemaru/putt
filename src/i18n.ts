@@ -79,6 +79,7 @@ const COPY = {
     noticeNoBackswing: 'バックスイングなし — 無効',
     noticeFewSamples: 'スイングを読めません — 無効',
     noticeNotPulledRight: '右へ引いていません — 無効',
+    outOfBoundsAlert: 'OB',
 
     // --- スコア表示（main.ts） ---
     gaveUpMark: '・ギブアップ',
@@ -165,6 +166,7 @@ const COPY = {
     noticeNoBackswing: 'No backswing — no stroke',
     noticeFewSamples: "Couldn't read the swing — no stroke",
     noticeNotPulledRight: 'Not taken back — no stroke',
+    outOfBoundsAlert: 'OUT OF BOUNDS',
 
     gaveUpMark: ' · GAVE UP',
     gaveUpNote: ' · * GAVE UP',
