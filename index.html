@@ -183,6 +183,28 @@
         color: #ffd08a;
       }
 
+      /* OBになったことを、上部HUDを探さなくても分かるよう画面中央へ大きく出す */
+      #result-alert {
+        position: fixed;
+        inset: 0;
+        z-index: 19;
+        display: grid;
+        place-items: center;
+        pointer-events: none;
+        font-family: var(--pixel-font);
+        font-size: clamp(36px, 12vw, 56px);
+        line-height: 1;
+        color: #eef7ec;
+        text-shadow:
+          4px 4px 0 #16210f,
+          -2px -2px 0 #16210f,
+          2px -2px 0 #16210f,
+          -2px 2px 0 #16210f;
+      }
+      #result-alert:empty {
+        display: none;
+      }
+
       /* 練習用のパター反発調整。入口はSTROKE中だけ表示する */
       #tuning-panel {
         position: fixed;
@@ -386,6 +408,7 @@
       /* ラウンドを1ホール捨てる側は赤い縁で他のボタンと分ける */
       #giveup {
         position: relative;
+        display: grid;
         overflow: hidden;
         border-color: #ffb0b0 #5a2020 #5a2020 #ffb0b0;
         color: #f0d8d8;
@@ -400,8 +423,16 @@
         background: rgba(255, 140, 140, 0.45);
         pointer-events: none;
       }
+      #giveup-size-idle,
+      #giveup-size-holding,
       #giveup-label {
+        grid-area: 1 / 1;
         position: relative;
+      }
+      /* 文言を切り替えても、長い方の幅をボタン内に確保して大きさを変えない */
+      #giveup-size-idle,
+      #giveup-size-holding {
+        visibility: hidden;
       }
 
       #debug-controls[hidden] {
@@ -684,6 +715,7 @@
   <body>
     <div id="app"></div>
     <canvas id="stroke"></canvas>
+    <div id="result-alert" role="status" aria-live="polite"></div>
 
     <div id="hud">
       <div class="row">
@@ -743,6 +775,8 @@
     <div id="giveup-control">
       <button type="button" id="giveup">
         <span id="giveup-fill"></span>
+        <span id="giveup-size-idle" aria-hidden="true">長押しでギブアップ</span>
+        <span id="giveup-size-holding" aria-hidden="true">押したまま…</span>
         <span id="giveup-label">ギブアップ</span>
       </button>
     </div>

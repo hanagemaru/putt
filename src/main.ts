@@ -929,7 +929,14 @@ function enterResult(): void {
   cardElapsed = 0;
   resultReady = false;
   lastResult = describeResult();
+  // 池・OBは音を切っていても分かるよう、通常プレイの知らせ欄にも出す。
+  // 次の一打へ進むと enterAddress() が通常の案内へ戻すため、このRESULTの間だけ表示される。
+  notice = penaltyResultPending() ? lastResult : '';
   ballMesh.visible = roller.status !== 'holed';
+}
+
+function penaltyResultPending(): boolean {
+  return roller.status === 'water' || roller.status === 'outOfBounds';
 }
 
 /** 結果テキスト（§3）。打ち出しラインへの射影で オーバー／ショート と左右のズレを出す */
@@ -1383,7 +1390,8 @@ renderer.setAnimationLoop((now) => {
           syncLineVisibility();
           rig.transition(resultPose(shotStart, ball, cup, visualGreen), G.result.transition);
           // カップイン後は終了カードへ移るので、次の一打の案内は出さない
-          notice = holeOutPending() || practiceEndPending() ? '' : t().noticeNextPutt;
+          if (holeOutPending() || practiceEndPending()) notice = '';
+          else if (!penaltyResultPending()) notice = t().noticeNextPutt;
         }
       } else if (holeOutPending() || practiceEndPending()) {
         // 最後の一打の軌跡を見せてからカードを重ねる
@@ -1414,6 +1422,7 @@ ensurePixelFont(language());
 
 const hud = {
   root: document.getElementById('hud')!,
+  resultAlert: document.getElementById('result-alert')!,
   state: document.getElementById('hud-state')!,
   view: document.getElementById('hud-view')!,
   aim: document.getElementById('hud-aim')!,
@@ -1443,6 +1452,8 @@ const courseShuffle = document.getElementById('course-shuffle') as HTMLButtonEle
 const giveUpControl = document.getElementById('giveup-control')!;
 const giveUpButton = document.getElementById('giveup') as HTMLButtonElement;
 const giveUpFill = document.getElementById('giveup-fill') as HTMLSpanElement;
+const giveUpSizeIdle = document.getElementById('giveup-size-idle') as HTMLSpanElement;
+const giveUpSizeHolding = document.getElementById('giveup-size-holding') as HTMLSpanElement;
 const giveUpLabel = document.getElementById('giveup-label') as HTMLSpanElement;
 const strokeControls = document.getElementById('stroke-controls')!;
 const strokeBack = document.getElementById('stroke-back') as HTMLButtonElement;
@@ -1695,6 +1706,7 @@ for (const button of cameraButtons) {
  */
 let giveUpTimer: number | null = null;
 let giveUpStartedAt = 0;
+let giveUpPointerId: number | null = null;
 
 function giveUpHoldProgress(): number {
   if (giveUpTimer === null) return 0;
@@ -1706,11 +1718,23 @@ function holdingGiveUp(): boolean {
   return giveUpTimer !== null;
 }
 
+function releaseGiveUpPointer(): void {
+  const id = giveUpPointerId;
+  giveUpPointerId = null;
+  if (id === null || !giveUpButton.hasPointerCapture(id)) return;
+  try {
+    giveUpButton.releasePointerCapture(id);
+  } catch {
+    // 捕捉がすでに解除されているだけなので無視する
+  }
+}
+
 function cancelGiveUpHold(): void {
   if (giveUpTimer !== null) {
     clearTimeout(giveUpTimer);
     giveUpTimer = null;
   }
+  releaseGiveUpPointer();
   giveUpFill.style.width = '0%';
 }
 
@@ -1719,8 +1743,16 @@ function startGiveUpHold(e: PointerEvent): void {
   if (!canGiveUp()) return;
   e.preventDefault();
   giveUpStartedAt = performance.now();
+  giveUpPointerId = e.pointerId;
+  try {
+    // PCでも押下中の見た目移動や微小なマウス移動で長押しが途切れないようにする
+    giveUpButton.setPointerCapture(e.pointerId);
+  } catch {
+    // 捕捉できない環境では従来のイベント処理へフォールバックする
+  }
   giveUpTimer = window.setTimeout(() => {
     giveUpTimer = null;
+    releaseGiveUpPointer();
     giveUpFill.style.width = '0%';
     giveUp();
   }, G.round.giveUpHoldMs);
@@ -1729,7 +1761,10 @@ function startGiveUpHold(e: PointerEvent): void {
 giveUpButton.addEventListener('pointerdown', startGiveUpHold);
 giveUpButton.addEventListener('pointerup', cancelGiveUpHold);
 giveUpButton.addEventListener('pointercancel', cancelGiveUpHold);
-giveUpButton.addEventListener('pointerleave', cancelGiveUpHold);
+giveUpButton.addEventListener('pointerleave', (e) => {
+  // 捕捉中は下のpointermoveで実座標を判定する。CSSの押下移動だけでは取り消さない
+  if (!giveUpButton.hasPointerCapture(e.pointerId)) cancelGiveUpHold();
+});
 // タッチは押した要素へ暗黙に捕捉されるので、指がボタンから外れても pointerleave が来ない。
 // 位置を見て自分で取り消す。押したまま指をずらせば、決まる前にやめられる
 giveUpButton.addEventListener('pointermove', (e) => {
@@ -1809,11 +1844,10 @@ function updateControls(): void {
   giveUpControl.style.display = showGiveUp ? 'block' : 'none';
   // 押し続けないと決まらないことは、ボタンの中で先に言っておく。
   // 帯（#giveup-fill）はもう押している人にしか見えないので、それだけでは気づけない
-  giveUpLabel.textContent = holdingGiveUp()
-    ? t().giveUpHolding
-    : round
-      ? t().giveUp
-      : t().giveUpToTee;
+  const idleGiveUpLabel = round ? t().giveUp : t().giveUpToTee;
+  giveUpSizeIdle.textContent = idleGiveUpLabel;
+  giveUpSizeHolding.textContent = t().giveUpHolding;
+  giveUpLabel.textContent = holdingGiveUp() ? t().giveUpHolding : idleGiveUpLabel;
   giveUpFill.style.width = `${(giveUpHoldProgress() * 100).toFixed(1)}%`;
 
   const inAddress = state === 'ADDRESS';
@@ -1864,6 +1898,13 @@ function progressText(): string {
 function updateHud(): void {
   // スコアカードを出している間は、同じことを言うHUDを引っ込めてカードだけ読ませる
   const showingScore = state === 'HOLE_OUT' || state === 'ROUND_END';
+  hud.resultAlert.textContent =
+    state === 'RESULT' &&
+    resultReady &&
+    !rig.transitioning &&
+    roller.status === 'outOfBounds'
+      ? t().outOfBoundsAlert
+      : '';
   // 文字が消えるときは、後ろの帯も一緒に消す（空の帯だけが残らないように）
   hud.root.classList.toggle('quiet', showingScore);
   // 状態名は英語の内部名なので、通常のプレイ画面には出さない
