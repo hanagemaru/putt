@@ -553,6 +553,14 @@ function ensureBestScoreStyles(): void {
   const style = document.createElement('style');
   style.id = 'best-score-styles';
   style.textContent = `
+    /*
+     * **id セレクタで display を指定すると hidden 属性が効かなくなる。**
+     * ここを閉じておかないと、中身が空の黄色い箱がカードに残り、
+     * 一度ラウンド終了で出したベストがホール間のカードにも出続ける
+     */
+    #tour-best-result[hidden] {
+      display: none;
+    }
     #tour-best-result {
       display: inline-block;
       margin: 12px 0 0;

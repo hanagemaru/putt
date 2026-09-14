@@ -321,8 +321,8 @@ export function holeBadgePar(par: number): string {
 export const LABEL_SHOT = 'SHOT';
 
 /**
- * 通算パー差の見出し。**このホールの成績ではなく、ホールアウト済みのぶんの合計**。
- * 打数の隣に並ぶので、語を付けて取り違えを防ぐ
+ * パー差の見出し。**このホールの成績ではなく、ホールアウト済みのぶんの合計**。
+ * 英語のリーダーボードと同じで、`TOTAL` が指すのは打数の合計ではなくパー差
  */
 export const LABEL_TOTAL = 'TOTAL';
 
@@ -337,6 +337,12 @@ export const LABEL_PAR = 'PAR';
 
 /** ラウンド終了のカードで使うホール数の見出し */
 export const LABEL_HOLES = 'HOLES';
+
+/**
+ * 打数の合計の見出し。英語のリーダーボードでは `TOTAL` はパー差の列で、
+ * **打数の合計は別列の `STROKES`**。ここを取り違えると意味が逆になる
+ */
+export const LABEL_STROKES = 'STROKES';
 
 /** ホール入り口の紹介（中継のホール紹介）。上段は「HOLE 3」 */
 export function holeIntroNumber(holeNumber: number): string {

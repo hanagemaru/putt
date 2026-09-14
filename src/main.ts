@@ -1572,7 +1572,7 @@ function hideScoreOverlay(): void {
  * カードの見出し。**HUDと同じ組み方**で、見出しを小さく沈めて数字を明るく出す。
  * パー差は中継の規約に合わせ、アンダーを赤、オーバーを青にする
  */
-function readoutNode(label: string, value: string, diff?: number): HTMLElement {
+function readoutNode(label: string, value: string, tone?: number): HTMLElement {
   const root = document.createElement('span');
   root.className = 'readout';
   const labelNode = document.createElement('span');
@@ -1580,16 +1580,9 @@ function readoutNode(label: string, value: string, diff?: number): HTMLElement {
   labelNode.textContent = label;
   const valueNode = document.createElement('span');
   valueNode.className = 'readout-value';
+  if (tone !== undefined && tone !== 0) valueNode.classList.add(tone < 0 ? 'under' : 'over');
   valueNode.textContent = value;
   root.append(labelNode, valueNode);
-  // パー差は打数と別物なので、同じ欄の中でも色と間を分ける
-  if (diff !== undefined) {
-    const diffNode = document.createElement('span');
-    diffNode.className = 'readout-value diff';
-    if (diff !== 0) diffNode.classList.add(diff < 0 ? 'under' : 'over');
-    diffNode.textContent = i18n.formatDiff(diff);
-    root.append(diffNode);
-  }
   return root;
 }
 
@@ -1609,9 +1602,11 @@ function showHoleOutCard(current: Round): void {
   // PARはそのホールの素性なので、ホール番号と同じ行に置く
   scoreTitle.textContent = i18n.holeCardTitle(last.number, current.holeCount, last.par);
   showVerdict(last.strokes, last.par, last.holedOut);
-  // このホールの結果と取り違えないよう、通算は離して語を付ける
+  // パー差と打数の合計は別物なので、欄を分けて離す。
+  // 英語のリーダーボードと同じく、`TOTAL` が指すのはパー差のほう
   scoreSub.replaceChildren(
-    readoutNode(i18n.LABEL_TOTAL, String(current.totalStrokes), current.toPar),
+    readoutNode(i18n.LABEL_TOTAL, i18n.formatDiff(current.toPar), current.toPar),
+    readoutNode(i18n.LABEL_STROKES, String(current.totalStrokes)),
   );
   scoreNote.textContent = '';
   scoreTable.hidden = true;
