@@ -288,26 +288,20 @@ export function holeBadgePar(par: number): string {
   return `PAR ${par}`;
 }
 
-/** 今が何打目か。「SHOT 3」 */
-export function progressShot(shotNumber: number): string {
-  return `SHOT ${shotNumber}`;
-}
+/** 打数の見出し。中継の「第2打」に当たる */
+export const PROGRESS_SHOT_LABEL = 'SHOT';
 
 /**
- * 今の通算パー差。**このホールの成績ではなく、ホールアウト済みのぶんの合計**。
- * 打数の隣に置くので、語を付けて取り違えを防ぐ
+ * 通算パー差の見出し。**このホールの成績ではなく、ホールアウト済みのぶんの合計**。
+ * 打数の隣に並ぶので、語を付けて取り違えを防ぐ
  */
-export function progressTotal(toPar: string): string {
-  return `TOTAL ${toPar}`;
-}
+export const PROGRESS_TOTAL_LABEL = 'TOTAL';
 
 /**
- * カップまでの残り。「TO PIN 3.42m」。
- * 中継の「152 YDS TO PIN」と同じ言い方にする（`LEFT` は会話では使うが表示の語ではない）
+ * カップまでの残りの見出し。中継の「152 YDS TO PIN」と同じ言い方にする
+ * （`LEFT` は会話では使うが、表示の語ではない）
  */
-export function progressDistance(distance: string): string {
-  return `TO PIN ${distance}`;
-}
+export const PROGRESS_PIN_LABEL = 'TO PIN';
 
 /**
  * 帯の中のパー差。英語のゴルフ表記ではイーブンは `E` なので、`±0` ではなくこちらを出す。

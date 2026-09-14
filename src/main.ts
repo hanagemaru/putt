@@ -1434,9 +1434,14 @@ const hud = {
   holeNumber: document.getElementById('hud-hole-number')!,
   holeLength: document.getElementById('hud-hole-length')!,
   holePar: document.getElementById('hud-hole-par')!,
-  progressShot: document.getElementById('hud-progress-shot')!,
-  progressDistance: document.getElementById('hud-progress-distance')!,
-  progressTotal: document.getElementById('hud-progress-total')!,
+  progress: document.querySelector<HTMLElement>('#hud .progress')!,
+  shotLabel: document.getElementById('hud-shot-label')!,
+  shotValue: document.getElementById('hud-shot-value')!,
+  totalRow: document.getElementById('hud-total')!,
+  totalLabel: document.getElementById('hud-total-label')!,
+  totalValue: document.getElementById('hud-total-value')!,
+  pinLabel: document.getElementById('hud-pin-label')!,
+  pinValue: document.getElementById('hud-pin-value')!,
   holeIntro: document.getElementById('hole-intro')!,
   holeIntroNumber: document.getElementById('hole-intro-number')!,
   holeIntroDetail: document.getElementById('hole-intro-detail')!,
@@ -1945,26 +1950,21 @@ function currentShotNumber(): number {
  * 通算パー差はホールアウト済みのぶんだけなので、打数から離して語を付ける
  */
 function updateProgress(hidden: boolean): void {
-  if (hidden) {
-    hud.holeNumber.textContent = '';
-    hud.holeLength.textContent = '';
-    hud.holePar.textContent = '';
-    hud.progressShot.textContent = '';
-    hud.progressDistance.textContent = '';
-    hud.progressTotal.textContent = '';
-    return;
-  }
+  hud.progress.classList.toggle('is-off', hidden);
+  if (hidden) return;
   // 練習はホールを進めないので、ホール番号も通算も出さない
   hud.holeNumber.textContent = round ? i18n.holeBadgeNumber(round.holeNumber) : '';
   // ホール全長は中継のヤード表記と同じく整数で出す。残り距離（小数2桁）と桁を合わせない
   hud.holeLength.textContent = `${Math.round(holeLength())}m`;
   hud.holePar.textContent = i18n.holeBadgePar(course.par);
-  hud.progressShot.textContent = i18n.progressShot(currentShotNumber());
-  hud.progressDistance.textContent = i18n.progressDistance(`${distanceToCup().toFixed(2)}m`);
-  hud.progressTotal.textContent = round ? i18n.progressTotal(i18n.progressToPar(round.toPar)) : '';
-  const toPar = round ? round.toPar : 0;
-  hud.progressTotal.classList.toggle('under', round !== null && toPar < 0);
-  hud.progressTotal.classList.toggle('over', round !== null && toPar > 0);
+  hud.shotValue.textContent = String(currentShotNumber());
+  hud.pinValue.textContent = `${distanceToCup().toFixed(2)}m`;
+  hud.totalRow.classList.toggle('is-off', round === null);
+  if (round) {
+    hud.totalValue.textContent = i18n.progressToPar(round.toPar);
+    hud.totalValue.classList.toggle('under', round.toPar < 0);
+    hud.totalValue.classList.toggle('over', round.toPar > 0);
+  }
 }
 
 function updateHud(): void {
@@ -2056,6 +2056,11 @@ resize();
 window.addEventListener('resize', resize);
 
 // --- 開始 -----------------------------------------------------------------
+
+// 帯の見出しは言語で変わらないので、一度だけ入れる
+hud.shotLabel.textContent = i18n.PROGRESS_SHOT_LABEL;
+hud.totalLabel.textContent = i18n.PROGRESS_TOTAL_LABEL;
+hud.pinLabel.textContent = i18n.PROGRESS_PIN_LABEL;
 
 buildTerrain();
 applyPixelMode();

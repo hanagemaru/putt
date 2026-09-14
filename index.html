@@ -119,10 +119,15 @@
       #hud .progress {
         display: flex;
         align-items: baseline;
-        gap: clamp(5px, 2vw, 8px);
+        /* 隣り合う読み取りがつながって見えないよう、欄の間は広めに取る */
+        gap: clamp(10px, 4vw, 18px);
         line-height: 1;
       }
       #hud .progress > span:empty {
+        display: none;
+      }
+      /* スコアカードを出している間は、同じことを言う進行表示を丸ごと引っ込める */
+      #hud .progress.is-off {
         display: none;
       }
       /*
@@ -173,28 +178,41 @@
       #hud .hole-badge-number:empty + .hole-badge-stack {
         border-left: 1px solid #4d6b48;
       }
-      /* 残り距離。打った後にピンを越えたかを読むので、転がっている間も出し続ける */
-      #hud .progress-distance {
+      /*
+       * 打数・通算・残り距離。隣同士がつながって見えないよう、
+       * **見出しは小さく沈め、数字だけを明るく**出す。欄の間も語の中の空きより広く取る
+       */
+      #hud .readout {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 4px;
         font-size: clamp(11px, 3.6vw, 14px);
-        color: #b9cdb7;
       }
-      /* 今が何打目か */
-      #hud .progress-shot {
-        font-size: clamp(11px, 3.6vw, 14px);
+      #hud .readout.is-off {
+        display: none;
+      }
+      #hud .readout-label {
+        font-size: 0.78em;
+        color: #85a482;
+      }
+      #hud .readout-value.shot {
         color: #ffffff;
+      }
+      /* 残り距離。打った後にピンを越えたかを読むので、転がっている間も出し続ける */
+      #hud .readout-value.pin {
+        color: #dfeade;
       }
       /*
        * 通算パー差。中継の規約に合わせ、アンダーは赤、オーバーは青で出す。
        * 色が読めない場合でも `+` `-` の記号で分かるようにしておく
        */
-      #hud .progress-total {
-        font-size: clamp(11px, 3.6vw, 14px);
-        color: #cfe0cd;
+      #hud .readout-value.total {
+        color: #dfeade;
       }
-      #hud .progress-total.under {
+      #hud .readout-value.total.under {
         color: #ff8a7a;
       }
-      #hud .progress-total.over {
+      #hud .readout-value.total.over {
         color: #9dc2ff;
       }
       #hud .state {
@@ -865,9 +883,18 @@
               <span class="hole-badge-par" id="hud-hole-par"></span>
             </span>
           </span>
-          <span class="progress-shot" id="hud-progress-shot"></span>
-          <span class="progress-total" id="hud-progress-total"></span>
-          <span class="progress-distance" id="hud-progress-distance"></span>
+          <span class="readout" id="hud-shot">
+            <span class="readout-label" id="hud-shot-label"></span>
+            <span class="readout-value shot" id="hud-shot-value"></span>
+          </span>
+          <span class="readout" id="hud-total">
+            <span class="readout-label" id="hud-total-label"></span>
+            <span class="readout-value total" id="hud-total-value"></span>
+          </span>
+          <span class="readout" id="hud-pin">
+            <span class="readout-label" id="hud-pin-label"></span>
+            <span class="readout-value pin" id="hud-pin-value"></span>
+          </span>
         </span>
       </div>
       <div class="row" id="hud-swing"></div>
