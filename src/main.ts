@@ -30,7 +30,7 @@ import { CourseMapMarker } from './course-map-marker';
 import { ensurePixelFont } from './pixel-font';
 import * as i18n from './i18n';
 import { language, t } from './i18n';
-import { Round, formatToPar, type HoleScore } from './round';
+import { Round, type HoleScore } from './round';
 import { RoundProgressStore } from './round-storage';
 import { SmoothLineOverlay, type BallOccluder } from './smooth-line-overlay';
 import { StrokeView } from './stroke-view';
@@ -1541,7 +1541,9 @@ const scoreOverlay = document.getElementById('score-overlay') as HTMLDivElement;
 const scoreCard = document.getElementById('score-card') as HTMLDivElement;
 const scoreTitle = document.getElementById('score-title')!;
 const scoreHeadline = document.getElementById('score-headline')!;
+const scoreStrokes = document.getElementById('score-strokes')!;
 const scoreSub = document.getElementById('score-sub')!;
+const scoreNote = document.getElementById('score-note')!;
 const scoreTable = document.getElementById('score-table') as HTMLTableElement;
 const scoreRows = document.getElementById('score-rows')!;
 const scoreHint = document.getElementById('score-hint') as HTMLDivElement;
@@ -1566,23 +1568,52 @@ function hideScoreOverlay(): void {
   scoreCard.classList.remove('list');
 }
 
-/** 打数とパー差の見出し。「3 打 ±0」 */
-function strokesHeadline(strokes: number, par: number): string {
-  return i18n.strokesHeadline(strokes, formatToPar(strokes - par));
+/**
+ * カードの見出し。**HUDと同じ組み方**で、見出しを小さく沈めて数字を明るく出す。
+ * パー差は中継の規約に合わせ、アンダーを赤、オーバーを青にする
+ */
+function readoutNode(label: string, value: string, diff?: number): HTMLElement {
+  const root = document.createElement('span');
+  root.className = 'readout';
+  const labelNode = document.createElement('span');
+  labelNode.className = 'readout-label';
+  labelNode.textContent = label;
+  const valueNode = document.createElement('span');
+  valueNode.className = 'readout-value';
+  valueNode.textContent = value;
+  root.append(labelNode, valueNode);
+  // パー差は打数と別物なので、同じ欄の中でも色と間を分ける
+  if (diff !== undefined) {
+    const diffNode = document.createElement('span');
+    diffNode.className = 'readout-value diff';
+    if (diff !== 0) diffNode.classList.add(diff < 0 ? 'under' : 'over');
+    diffNode.textContent = i18n.formatDiff(diff);
+    root.append(diffNode);
+  }
+  return root;
+}
+
+/** 判定語（BIRDIE など）を、パー差の色付きで見出しへ入れる */
+function showVerdict(strokes: number, par: number, holedOut: boolean): void {
+  const diff = strokes - par;
+  scoreHeadline.className = 'verdict';
+  if (diff !== 0) scoreHeadline.classList.add(diff < 0 ? 'under' : 'over');
+  scoreHeadline.textContent = i18n.holeVerdict(strokes, par, holedOut);
+  scoreStrokes.textContent = i18n.strokesText(strokes);
 }
 
 /** ホールアウトのカード。今のホールの結果と、ここまでの合計を出す */
 function showHoleOutCard(current: Round): void {
   const last = current.scores[current.scores.length - 1];
   scoreTitle.dataset.screen = 'hole-out';
-  scoreTitle.textContent = `HOLE ${last.number} / ${current.holeCount}`;
-  scoreHeadline.textContent = strokesHeadline(last.strokes, last.par);
-  scoreSub.textContent = i18n.holeOutSub(
-    last.par,
-    last.holedOut,
-    current.totalStrokes,
-    formatToPar(current.toPar),
+  // PARはそのホールの素性なので、ホール番号と同じ行に置く
+  scoreTitle.textContent = i18n.holeCardTitle(last.number, current.holeCount, last.par);
+  showVerdict(last.strokes, last.par, last.holedOut);
+  // このホールの結果と取り違えないよう、通算は離して語を付ける
+  scoreSub.replaceChildren(
+    readoutNode(i18n.LABEL_TOTAL, String(current.totalStrokes), current.toPar),
   );
+  scoreNote.textContent = '';
   scoreTable.hidden = true;
   scoreRows.replaceChildren();
   scoreHint.hidden = false;
@@ -1598,8 +1629,16 @@ function showRoundEndCard(current: Round): void {
   const gaveUp = current.scores.some((hole) => !hole.holedOut);
   scoreTitle.dataset.screen = 'round-end';
   scoreTitle.textContent = i18n.roundEndTitle(selectedTour.name[language()]);
-  scoreHeadline.textContent = strokesHeadline(current.totalStrokes, current.totalPar);
-  scoreSub.textContent = i18n.roundEndSub(current.holeCount, current.totalPar, gaveUp);
+  // ラウンドには判定語が無いので、主役は中継のリーダーボードと同じく通算パー差にする
+  scoreHeadline.className = 'verdict';
+  if (current.toPar !== 0) scoreHeadline.classList.add(current.toPar < 0 ? 'under' : 'over');
+  scoreHeadline.textContent = i18n.formatDiff(current.toPar);
+  scoreStrokes.textContent = i18n.strokesText(current.totalStrokes);
+  scoreSub.replaceChildren(
+    readoutNode(i18n.LABEL_HOLES, String(current.holeCount)),
+    readoutNode(i18n.LABEL_PAR, String(current.totalPar)),
+  );
+  scoreNote.textContent = gaveUp ? t().gaveUpNote : '';
   scoreRows.replaceChildren(
     scoreHeaderRow(),
     ...current.scores.map(scoreRow),
@@ -1619,9 +1658,11 @@ function showRoundEndCard(current: Round): void {
 /** 練習のカップイン後。結果と、打ち直すかトップへ戻るかの選択を出す */
 function showPracticeEndCard(): void {
   scoreTitle.dataset.screen = 'practice-end';
-  scoreTitle.textContent = t().practiceEnd;
-  scoreHeadline.textContent = strokesHeadline(shots, course.par);
-  scoreSub.textContent = `PAR ${course.par}`;
+  // 練習はホールを進めないので、ホール番号の代わりに「練習終了」とPARを並べる
+  scoreTitle.textContent = `${t().practiceEnd}   ${i18n.holeBadgePar(course.par)}`;
+  showVerdict(shots, course.par, true);
+  scoreSub.replaceChildren();
+  scoreNote.textContent = '';
   scoreTable.hidden = true;
   scoreRows.replaceChildren();
   scoreHint.hidden = true;
@@ -1658,7 +1699,7 @@ function scoreRow(hole: HoleScore): HTMLTableRowElement {
     scoreCell('td', String(hole.par)),
     // ギブアップしたホールは印を付けて、カップインしたホールと区別する
     scoreCell('td', hole.holedOut ? String(hole.strokes) : `${hole.strokes}*`),
-    scoreCell('td', formatToPar(hole.strokes - hole.par), 'diff'),
+    scoreCell('td', i18n.formatDiff(hole.strokes - hole.par), 'diff'),
   );
   return row;
 }
@@ -1670,7 +1711,7 @@ function scoreTotalRow(current: Round): HTMLTableRowElement {
     scoreCell('th', t().colTotal),
     scoreCell('td', String(current.totalPar)),
     scoreCell('td', String(current.totalStrokes)),
-    scoreCell('td', formatToPar(current.toPar), 'diff'),
+    scoreCell('td', i18n.formatDiff(current.toPar), 'diff'),
   );
   return row;
 }
@@ -1961,7 +2002,7 @@ function updateProgress(hidden: boolean): void {
   hud.pinValue.textContent = `${distanceToCup().toFixed(2)}m`;
   hud.totalRow.classList.toggle('is-off', round === null);
   if (round) {
-    hud.totalValue.textContent = i18n.progressToPar(round.toPar);
+    hud.totalValue.textContent = i18n.formatDiff(round.toPar);
     hud.totalValue.classList.toggle('under', round.toPar < 0);
     hud.totalValue.classList.toggle('over', round.toPar > 0);
   }
@@ -2058,9 +2099,9 @@ window.addEventListener('resize', resize);
 // --- 開始 -----------------------------------------------------------------
 
 // 帯の見出しは言語で変わらないので、一度だけ入れる
-hud.shotLabel.textContent = i18n.PROGRESS_SHOT_LABEL;
-hud.totalLabel.textContent = i18n.PROGRESS_TOTAL_LABEL;
-hud.pinLabel.textContent = i18n.PROGRESS_PIN_LABEL;
+hud.shotLabel.textContent = i18n.LABEL_SHOT;
+hud.totalLabel.textContent = i18n.LABEL_TOTAL;
+hud.pinLabel.textContent = i18n.LABEL_PIN;
 
 buildTerrain();
 applyPixelMode();

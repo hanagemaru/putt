@@ -1,7 +1,7 @@
 import { CONFIG } from './config';
 import { TOUR_SETS, tourById, type TourDefinition } from './course/tour-holes';
 import { TourBestScoreStore, type BestScoreUpdate } from './best-score-storage';
-import { Round, formatToPar, onRoundComplete, type RoundResult } from './round';
+import { Round, onRoundComplete, type RoundResult } from './round';
 import { RoundProgressStore } from './round-storage';
 import { ensurePixelFont } from './pixel-font';
 import * as i18n from './i18n';
@@ -99,7 +99,7 @@ function setupTourBestTracking(tour: TourDefinition): void {
     }
 
     const { score, isNewBest } = update;
-    const best = i18n.bestLabel(score.strokes, formatToPar(score.strokes - score.par));
+    const best = i18n.bestLabel(score.strokes, i18n.formatDiff(score.strokes - score.par));
     bestResult.textContent = isNewBest ? i18n.newBestLabel(best) : best;
     bestResult.hidden = false;
   };
@@ -444,7 +444,7 @@ function courseAction(label: string, primary: boolean, onClick: () => void): HTM
 function bestLabel(tour: TourDefinition): string | null {
   const score = new TourBestScoreStore(tour.id, tour.seeds).load();
   if (!score) return null;
-  return i18n.bestLabel(score.strokes, formatToPar(score.strokes - score.par));
+  return i18n.bestLabel(score.strokes, i18n.formatDiff(score.strokes - score.par));
 }
 
 /** 通常ツアー1コースぶんの進行の保存場所。main.ts と同じキーの作り方をする */

@@ -82,7 +82,6 @@ const COPY = {
     outOfBoundsAlert: 'OB',
 
     // --- スコア表示（main.ts） ---
-    gaveUpMark: '・ギブアップ',
     gaveUpNote: '　* はギブアップ',
     hintNextHole: 'タップで次のホールへ',
     hintResult: 'タップでスコアへ',
@@ -168,7 +167,6 @@ const COPY = {
     noticeNotPulledRight: 'Not taken back — no stroke',
     outOfBoundsAlert: 'OUT OF BOUNDS',
 
-    gaveUpMark: ' · GAVE UP',
     gaveUpNote: ' · * GAVE UP',
     hintNextHole: 'Tap for the next hole',
     hintResult: 'Tap for the scorecard',
@@ -259,14 +257,45 @@ const en = (value: string, jaValue: string): string => (language() === 'en' ? va
 // --- 数値が混じる行 -------------------------------------------------------
 // 数字の書式（打数・パー差・距離・角度）は言語で変えない。変えるのは前後の語だけ
 
-/** 「3 打」。カード見出しの打数。英語は1打だけ単数にする（ホールインワンで出る） */
+/**
+ * カードの打数。「6 STROKES」。1打だけ単数にする（ホールインワンで出る）。
+ * **判定語（BIRDIE など）と同じく日本語でも英語のまま**にして、HUDと語を揃える
+ */
 export function strokesText(strokes: number): string {
-  return en(`${strokes} ${strokes === 1 ? 'STROKE' : 'STROKES'}`, `${strokes} 打`);
+  return `${strokes} ${strokes === 1 ? 'STROKE' : 'STROKES'}`;
 }
 
-/** ホール間・ラウンド終了カードの見出し。「3 打  ±0」 */
-export function strokesHeadline(strokes: number, toPar: string): string {
-  return `${strokesText(strokes)}  ${toPar}`;
+/**
+ * ホールの結果を表す語。中継と同じで、**スコアはまず語で言う**。
+ * バーディ・ボギーは日本のゴルフでもそのまま使う語なので、日本語版でも英語のまま出す。
+ * +4以上と−4以下は英語圏でも語で言わないので、数字をそのまま出す
+ */
+export function holeVerdict(strokes: number, par: number, holedOut: boolean): string {
+  if (!holedOut) return 'GAVE UP';
+  if (strokes === 1) return 'HOLE IN ONE';
+  const diff = strokes - par;
+  if (diff === -3) return 'ALBATROSS';
+  if (diff === -2) return 'EAGLE';
+  if (diff === -1) return 'BIRDIE';
+  if (diff === 0) return 'PAR';
+  if (diff === 1) return 'BOGEY';
+  if (diff === 2) return 'DOUBLE BOGEY';
+  if (diff === 3) return 'TRIPLE BOGEY';
+  return formatDiff(diff);
+}
+
+/**
+ * パー差の表示。**ゲーム中で唯一の書き方**にする。
+ * 英語のゴルフ表記に合わせ、イーブンは `±0` ではなく `E`
+ */
+export function formatDiff(diff: number): string {
+  if (diff === 0) return 'E';
+  return diff > 0 ? `+${diff}` : String(diff);
+}
+
+/** ホール間カードの1行目。「HOLE 5 / 9   PAR 4」。PARはそのホールの素性なのでここへ置く */
+export function holeCardTitle(holeNumber: number, holeCount: number, par: number): string {
+  return `HOLE ${holeNumber} / ${holeCount}   ${LABEL_PAR} ${par}`;
 }
 
 /**
@@ -285,32 +314,29 @@ export function holeBadgeNumber(holeNumber: number): string {
 
 /** ホール表示の下段。「PAR 4」 */
 export function holeBadgePar(par: number): string {
-  return `PAR ${par}`;
+  return `${LABEL_PAR} ${par}`;
 }
 
 /** 打数の見出し。中継の「第2打」に当たる */
-export const PROGRESS_SHOT_LABEL = 'SHOT';
+export const LABEL_SHOT = 'SHOT';
 
 /**
  * 通算パー差の見出し。**このホールの成績ではなく、ホールアウト済みのぶんの合計**。
  * 打数の隣に並ぶので、語を付けて取り違えを防ぐ
  */
-export const PROGRESS_TOTAL_LABEL = 'TOTAL';
+export const LABEL_TOTAL = 'TOTAL';
 
 /**
  * カップまでの残りの見出し。中継の「152 YDS TO PIN」と同じ言い方にする
  * （`LEFT` は会話では使うが、表示の語ではない）
  */
-export const PROGRESS_PIN_LABEL = 'TO PIN';
+export const LABEL_PIN = 'TO PIN';
 
-/**
- * 帯の中のパー差。英語のゴルフ表記ではイーブンは `E` なので、`±0` ではなくこちらを出す。
- * カードの中は日本語の表示に合わせて `±0` のままにする
- */
-export function progressToPar(diff: number): string {
-  if (diff === 0) return 'E';
-  return diff > 0 ? `+${diff}` : String(diff);
-}
+/** PARの見出し。HUDのホール表示とカードで共通 */
+export const LABEL_PAR = 'PAR';
+
+/** ラウンド終了のカードで使うホール数の見出し */
+export const LABEL_HOLES = 'HOLES';
 
 /** ホール入り口の紹介（中継のホール紹介）。上段は「HOLE 3」 */
 export function holeIntroNumber(holeNumber: number): string {
@@ -344,27 +370,6 @@ export function newBestLabel(best: string): string {
 
 export function roundEndTitle(tourName: string): string {
   return en(`${tourName} · FINAL`, `${tourName}・ラウンド終了`);
-}
-
-export function roundEndSub(holeCount: number, totalPar: number, gaveUp: boolean): string {
-  const head = en(
-    `${holeCount} HOLES · PAR ${totalPar}`,
-    `${holeCount} ホール ・ PAR ${totalPar}`,
-  );
-  return head + (gaveUp ? t().gaveUpNote : '');
-}
-
-export function holeOutSub(
-  par: number,
-  holedOut: boolean,
-  totalStrokes: number,
-  toPar: string,
-): string {
-  const mark = holedOut ? '' : t().gaveUpMark;
-  return en(
-    `PAR ${par}${mark} · TOTAL ${totalStrokes} ${toPar}`,
-    `PAR ${par}${mark}　ここまで ${totalStrokes} 打 ${toPar}`,
-  );
 }
 
 export function holedResult(strokes: number): string {
