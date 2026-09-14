@@ -2004,8 +2004,10 @@ function updateProgress(hidden: boolean): void {
 }
 
 function updateHud(): void {
-  // スコアカードを出している間は、同じことを言うHUDを引っ込めてカードだけ読ませる
-  const showingScore = state === 'HOLE_OUT' || state === 'ROUND_END';
+  // スコアカードを出している間は、同じことを言うHUDを引っ込めてカードだけ読ませる。
+  // 練習終了もカードを出すので同じ扱いにする（帯の `SHOT 3` とカードの `3 STROKES` が並ばない）
+  const showingScore =
+    state === 'HOLE_OUT' || state === 'ROUND_END' || state === 'PRACTICE_END';
   hud.resultAlert.textContent =
     state === 'RESULT' &&
     resultReady &&
