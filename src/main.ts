@@ -465,8 +465,9 @@ let lineMode: LineMode = 'SMOOTH';
 // --- 状態 -----------------------------------------------------------------
 
 /**
- * HOLE_OUT / ROUND_END / PRACTICE_END は結果を見せるだけの状態（spec §6）。
- * カメラは RESULT の俯瞰のまま止め、DOM のカードを重ねる
+ * HOLE_OUT / ROUND_END は結果を見せるだけの状態（spec §6）。
+ * カメラは RESULT の俯瞰のまま止め、DOM のカードを重ねる。
+ * **練習にはカードを出さない**（同じホールを打ち直すだけなので、RESULT のままタップで戻す）
  */
 type State =
   | 'ADDRESS'
@@ -475,8 +476,7 @@ type State =
   | 'CUP'
   | 'RESULT'
   | 'HOLE_OUT'
-  | 'ROUND_END'
-  | 'PRACTICE_END';
+  | 'ROUND_END';
 /** ADDRESS の中の視点。MAP はコース全体を真上から見渡すマップ */
 type AimView = 'AIM' | 'MAP' | ReadView;
 
@@ -541,7 +541,7 @@ function aimGuideShouldShow(): boolean {
 function trailShouldShow(): boolean {
   // ホールアウトのカードは俯瞰と軌跡を背景に残したまま重ねる（spec §6）
   return (
-    (state === 'RESULT' || state === 'HOLE_OUT' || state === 'PRACTICE_END') &&
+    (state === 'RESULT' || state === 'HOLE_OUT') &&
     resultReady &&
     trailPointCount > 1
   );
@@ -1023,8 +1023,8 @@ function holeOutPending(): boolean {
   return round !== null && holeFinished();
 }
 
-/** 練習で、この RESULT のあと終了カードへ移る場面か */
-function practiceEndPending(): boolean {
+/** 練習で、この RESULT のあとティーへ戻して打ち直す場面か（カードは出さない） */
+function practiceHoledOut(): boolean {
   return round === null && holeFinished();
 }
 
@@ -1065,14 +1065,6 @@ function enterRoundEnd(): void {
   roundStore?.clear();
   notice = '';
   showRoundEndCard(round);
-}
-
-/** 練習のカップイン後。結果を残したまま、打ち直すかトップへ戻るかを選ぶ */
-function enterPracticeEnd(): void {
-  if (round || !holeFinished()) return;
-  state = 'PRACTICE_END';
-  notice = '';
-  showPracticeEndCard();
 }
 
 /** 同じ9ホールを最初からやり直す */
@@ -1189,6 +1181,32 @@ let moved = 0;
 
 const surface = renderer.domElement;
 
+/**
+ * 画面の左右端から始まった指で、ブラウザの「戻る・進む」が発動しないようにする。
+ *
+ * iOS Safari の端スワイプは `touch-action: none` では止まらず、
+ * **`touchstart` を打ち消したときだけ**止まる。ポインターイベントの
+ * `preventDefault()` では効かないので、ここだけ touch イベントを見る。
+ * 端から始まった指だけを対象にし、それ以外の操作には触らない
+ */
+function blockEdgeSwipe(target: HTMLElement): void {
+  target.addEventListener(
+    'touchstart',
+    (e) => {
+      const guard = G.edgeSwipeGuard;
+      for (const touch of Array.from(e.touches)) {
+        if (touch.clientX <= guard || touch.clientX >= window.innerWidth - guard) {
+          e.preventDefault();
+          return;
+        }
+      }
+    },
+    { passive: false },
+  );
+}
+blockEdgeSwipe(surface);
+blockEdgeSwipe(strokeCanvas);
+
 surface.addEventListener('pointerdown', (e) => {
   if (pointerId !== null) return;
   pointerId = e.pointerId;
@@ -1256,7 +1274,8 @@ function pointerEnd(e: PointerEvent): void {
     // ツアーのホールアウトは、待ちが明ける前にタップされたらカードを早出しする。
     // ここで打ち直しにしてしまうと、確定したはずのスコアを飛ばして同じホールが始まる
     if (holeOutPending()) enterHoleOut();
-    else if (practiceEndPending()) enterPracticeEnd();
+    // 練習のカップインは、ティーへ戻して同じホールを打ち直す
+    else if (practiceHoledOut()) restartPracticeHole();
     else nextPutt();
     return;
   }
@@ -1394,23 +1413,21 @@ renderer.setAnimationLoop((now) => {
           syncLineVisibility();
           rig.transition(resultPose(shotStart, ball, cup, visualGreen), G.result.transition);
           // カップイン後は終了カードへ移るので、次の一打の案内は出さない
-          if (holeOutPending() || practiceEndPending()) notice = '';
+          if (holeOutPending()) notice = '';
+          // 練習のカップインは、次が「次の一打」ではなく打ち直しになる
+          else if (practiceHoledOut()) notice = t().noticePracticeReplay;
           else if (!penaltyResultPending()) notice = t().noticeNextPutt;
         }
-      } else if (holeOutPending() || practiceEndPending()) {
+      } else if (holeOutPending()) {
         // 最後の一打の軌跡を見せてからカードを重ねる。
         // 遷移中に数え始めると、俯瞰でラインが見える前にカードが重なってしまう
         if (!rig.transitioning) cardElapsed += dt;
-        if (cardElapsed >= G.round.cardDelay) {
-          if (holeOutPending()) enterHoleOut();
-          else enterPracticeEnd();
-        }
+        if (cardElapsed >= G.round.cardDelay) enterHoleOut();
       }
       break;
 
     case 'HOLE_OUT':
     case 'ROUND_END':
-    case 'PRACTICE_END':
       // カメラは俯瞰のまま。スコア表示はDOM側なので、ここでは何もしない
       break;
   }
@@ -1507,7 +1524,7 @@ function navigateToMenu(target?: 'tour'): void {
 
 function openHomeDialog(): void {
   if (navigationPaused) return;
-  if (state === 'ROUND_END' || state === 'PRACTICE_END') {
+  if (state === 'ROUND_END') {
     navigateToMenu();
     return;
   }
@@ -1555,10 +1572,6 @@ const scoreHome = document.getElementById('score-home') as HTMLButtonElement;
 scoreCourse.addEventListener('click', () => navigateToMenu('tour'));
 scoreAgain.addEventListener('click', () => {
   if (state === 'ROUND_END') restartRound();
-  else if (state === 'PRACTICE_END') {
-    hideScoreOverlay();
-    restartPracticeHole();
-  }
 });
 scoreHome.addEventListener('click', () => navigateToMenu());
 
@@ -1647,25 +1660,6 @@ function showRoundEndCard(current: Round): void {
   scoreActions.hidden = false;
   // 一覧表があるぶん縦に長い。字と余白を詰め、収まらない画面では枠の中をスクロールさせる
   scoreCard.classList.add('list');
-  scoreOverlay.hidden = false;
-}
-
-/** 練習のカップイン後。結果と、打ち直すかトップへ戻るかの選択を出す */
-function showPracticeEndCard(): void {
-  scoreTitle.dataset.screen = 'practice-end';
-  // 練習はホールを進めないので、ホール番号の代わりに「練習終了」とPARを並べる
-  scoreTitle.textContent = `${t().practiceEnd}   ${i18n.holeBadgePar(course.par)}`;
-  showVerdict(shots, course.par, true);
-  scoreSub.replaceChildren();
-  scoreNote.textContent = '';
-  scoreTable.hidden = true;
-  scoreRows.replaceChildren();
-  scoreHint.hidden = true;
-  scoreCourse.hidden = true;
-  scoreAgain.hidden = false;
-  scoreHome.hidden = false;
-  scoreActions.hidden = false;
-  scoreCard.classList.remove('list');
   scoreOverlay.hidden = false;
 }
 
@@ -1957,7 +1951,8 @@ function showHoleIntro(): void {
   hud.holeIntroNumber.textContent = i18n.holeIntroNumber(round.holeNumber);
   // HUDのホール表示と同じ全長を出す。別の数字を見せると混乱する
   hud.holeIntroDetail.textContent = i18n.holeIntroDetail(course.par, `${Math.round(holeLength())}m`);
-  hud.holeIntro.style.transitionDuration = `${G.round.holeIntro.fade}s`;
+  // 出るときはカメラの切り替わりと同時にパッと出す
+  hud.holeIntro.style.transitionDuration = '0s';
   hud.holeIntro.classList.add('show');
   holeIntroRemaining = G.round.holeIntro.duration;
 }
@@ -1965,7 +1960,10 @@ function showHoleIntro(): void {
 function updateHoleIntro(dt: number): void {
   if (holeIntroRemaining <= 0) return;
   holeIntroRemaining -= dt;
-  if (holeIntroRemaining <= 0) hud.holeIntro.classList.remove('show');
+  if (holeIntroRemaining > 0) return;
+  // 消えるときだけフェードさせる
+  hud.holeIntro.style.transitionDuration = `${G.round.holeIntro.fade}s`;
+  hud.holeIntro.classList.remove('show');
 }
 
 /**
@@ -2004,10 +2002,8 @@ function updateProgress(hidden: boolean): void {
 }
 
 function updateHud(): void {
-  // スコアカードを出している間は、同じことを言うHUDを引っ込めてカードだけ読ませる。
-  // 練習終了もカードを出すので同じ扱いにする（帯の `SHOT 3` とカードの `3 STROKES` が並ばない）
-  const showingScore =
-    state === 'HOLE_OUT' || state === 'ROUND_END' || state === 'PRACTICE_END';
+  // スコアカードを出している間は、同じことを言うHUDを引っ込めてカードだけ読ませる
+  const showingScore = state === 'HOLE_OUT' || state === 'ROUND_END';
   hud.resultAlert.textContent =
     state === 'RESULT' &&
     resultReady &&

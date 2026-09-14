@@ -317,19 +317,25 @@
        */
       #hole-intro {
         position: fixed;
-        top: 17%;
+        /* 上に置くと旗竿と重なって一瞬でも邪魔になるので、画面の中ほどへ置く */
+        top: 50%;
         left: 0;
         right: 0;
         z-index: 18;
         display: grid;
         justify-items: center;
         gap: 8px;
+        transform: translateY(-50%);
         pointer-events: none;
         font-family: var(--pixel-font);
         color: #eef7ec;
         text-align: center;
+        /*
+         * 出るときはカメラの切り替わりと同時にパッと出す（フェードしない）。
+         * 消えるときだけフェードさせる。時間は `src/config.ts` の `round.holeIntro.fade`
+         */
         opacity: 0;
-        transition: opacity 0.5s linear;
+        transition: opacity 0s linear;
       }
       #hole-intro.show {
         opacity: 1;
