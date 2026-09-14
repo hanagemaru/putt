@@ -1915,7 +1915,7 @@ function showHoleIntro(): void {
   if (!round) return;
   hud.holeIntroNumber.textContent = i18n.holeIntroNumber(round.holeNumber);
   // HUDのホール表示と同じ全長を出す。別の数字を見せると混乱する
-  hud.holeIntroDetail.textContent = i18n.holeIntroDetail(course.par, `${holeLength().toFixed(1)}m`);
+  hud.holeIntroDetail.textContent = i18n.holeIntroDetail(course.par, `${Math.round(holeLength())}m`);
   hud.holeIntro.style.transitionDuration = `${G.round.holeIntro.fade}s`;
   hud.holeIntro.classList.add('show');
   holeIntroRemaining = G.round.holeIntro.duration;
@@ -1956,11 +1956,12 @@ function updateProgress(hidden: boolean): void {
   }
   // 練習はホールを進めないので、ホール番号も通算も出さない
   hud.holeNumber.textContent = round ? i18n.holeBadgeNumber(round.holeNumber) : '';
-  hud.holeLength.textContent = `${holeLength().toFixed(1)}m`;
+  // ホール全長は中継のヤード表記と同じく整数で出す。残り距離（小数2桁）と桁を合わせない
+  hud.holeLength.textContent = `${Math.round(holeLength())}m`;
   hud.holePar.textContent = i18n.holeBadgePar(course.par);
   hud.progressShot.textContent = i18n.progressShot(currentShotNumber());
   hud.progressDistance.textContent = i18n.progressDistance(`${distanceToCup().toFixed(2)}m`);
-  hud.progressTotal.textContent = round ? i18n.progressTotal(formatToPar(round.toPar)) : '';
+  hud.progressTotal.textContent = round ? i18n.progressTotal(i18n.progressToPar(round.toPar)) : '';
   const toPar = round ? round.toPar : 0;
   hud.progressTotal.classList.toggle('under', round !== null && toPar < 0);
   hud.progressTotal.classList.toggle('over', round !== null && toPar > 0);

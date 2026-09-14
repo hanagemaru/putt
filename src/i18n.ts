@@ -301,9 +301,21 @@ export function progressTotal(toPar: string): string {
   return `TOTAL ${toPar}`;
 }
 
-/** カップまでの残り。「LEFT 3.42m」 */
+/**
+ * カップまでの残り。「TO PIN 3.42m」。
+ * 中継の「152 YDS TO PIN」と同じ言い方にする（`LEFT` は会話では使うが表示の語ではない）
+ */
 export function progressDistance(distance: string): string {
-  return `LEFT ${distance}`;
+  return `TO PIN ${distance}`;
+}
+
+/**
+ * 帯の中のパー差。英語のゴルフ表記ではイーブンは `E` なので、`±0` ではなくこちらを出す。
+ * カードの中は日本語の表示に合わせて `±0` のままにする
+ */
+export function progressToPar(diff: number): string {
+  if (diff === 0) return 'E';
+  return diff > 0 ? `+${diff}` : String(diff);
 }
 
 /** ホール入り口の紹介（中継のホール紹介）。上段は「HOLE 3」 */
