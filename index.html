@@ -119,32 +119,76 @@
       #hud .progress {
         display: flex;
         align-items: baseline;
-        gap: 8px;
+        gap: clamp(5px, 2vw, 8px);
         line-height: 1;
       }
       #hud .progress > span:empty {
         display: none;
       }
-      #hud .progress-hole {
-        /* 320px幅では右上の「トップ」に当たるので、狭い画面だけ1段落とす */
-        font-size: clamp(10px, 3vw, 11px);
-        color: #9db69a;
+      /*
+       * ホール表示は中継のホール紹介と同じ組み方にする。
+       * 大きいホール番号を白地で反転させ、右に全長とPARを2段で添える。
+       * 2段でも1行ぶん（22px）に収め、帯の高さを変えない
+       */
+      #hud .hole-badge {
+        display: inline-flex;
+        align-items: stretch;
+        /* 2段でも1行ぶんに収める。他の欄とはベースラインを共有しない */
+        align-self: center;
+        height: 22px;
       }
-      /* 今が何打目か。1行の中で一番大きく、白で出す */
-      #hud .progress-shot {
-        font-size: clamp(17px, 5.5vw, 20px);
-        color: #ffffff;
+      #hud .hole-badge-number {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        /* 桁が増えても左端の位置が動かないよう、1桁ぶんの幅を確保する */
+        min-width: 16px;
+        padding: 0 3px;
+        background: #eef7ec;
+        color: #16210f;
+        font-size: clamp(16px, 5vw, 18px);
+        line-height: 1;
+        text-shadow: none;
       }
+      #hud .hole-badge-number:empty {
+        display: none;
+      }
+      #hud .hole-badge-stack {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 1px;
+        padding: 0 4px;
+        border: 1px solid #4d6b48;
+        border-left: 0;
+        background: rgba(12, 20, 14, 0.55);
+      }
+      #hud .hole-badge-length,
+      #hud .hole-badge-par {
+        font-size: clamp(8px, 2.6vw, 9px);
+        line-height: 1;
+        color: #dfeade;
+      }
+      /* 練習ではホール番号を出さないので、枠を閉じ直す */
+      #hud .hole-badge-number:empty + .hole-badge-stack {
+        border-left: 1px solid #4d6b48;
+      }
+      /* 残り距離。打った後にピンを越えたかを読むので、転がっている間も出し続ける */
       #hud .progress-distance {
-        font-size: clamp(11px, 3.3vw, 12px);
-        color: #cfe0cd;
+        font-size: clamp(12px, 3.9vw, 14px);
+        color: #b9cdb7;
+      }
+      /* 今が何打目か */
+      #hud .progress-shot {
+        font-size: clamp(12px, 3.9vw, 14px);
+        color: #ffffff;
       }
       /*
        * 通算パー差。中継の規約に合わせ、アンダーは赤、オーバーは青で出す。
        * 色が読めない場合でも `+` `-` の記号で分かるようにしておく
        */
       #hud .progress-total {
-        font-size: clamp(11px, 3.3vw, 12px);
+        font-size: clamp(12px, 3.9vw, 14px);
         color: #cfe0cd;
       }
       #hud .progress-total.under {
@@ -814,10 +858,16 @@
         <span id="hud-view"></span>
         <span id="hud-aim"></span>
         <span class="progress">
-          <span class="progress-hole" id="hud-progress-hole"></span>
+          <span class="hole-badge">
+            <span class="hole-badge-number" id="hud-hole-number"></span>
+            <span class="hole-badge-stack">
+              <span class="hole-badge-length" id="hud-hole-length"></span>
+              <span class="hole-badge-par" id="hud-hole-par"></span>
+            </span>
+          </span>
           <span class="progress-shot" id="hud-progress-shot"></span>
-          <span class="progress-distance" id="hud-progress-distance"></span>
           <span class="progress-total" id="hud-progress-total"></span>
+          <span class="progress-distance" id="hud-progress-distance"></span>
         </span>
       </div>
       <div class="row" id="hud-swing"></div>

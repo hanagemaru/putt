@@ -272,30 +272,38 @@ export function strokesHeadline(strokes: number, toPar: string): string {
 /**
  * プレイ中に常時出す進行表示。ゴルフ中継と同じように、**役割ごとに別の欄へ分ける**。
  * 見た目の大きさと色は index.html の `#hud .progress` が受け持つ。
- * **帯は折り返さず切り落とす**ので、語を足して横幅を増やさない
+ * **帯は折り返さず切り落とす**ので、語を足して横幅を増やさない。
+ *
+ * ここだけは**日本語でも英語のまま**にする。中継のスコア表示と同じ短い語なので
+ * そのまま通じ、幅も一定になる（`SHOT` / `TOTAL` / `LEFT` / `PAR`）
  */
 
-/** 左端の従属情報。「HOLE 3/9  PAR 4」 */
-export function progressHole(holeNumber: number, holeCount: number, par: number): string {
-  return `HOLE ${holeNumber}/${holeCount}  PAR ${par}`;
+/** ホール表示の大きい数字。何ホール目か */
+export function holeBadgeNumber(holeNumber: number): string {
+  return String(holeNumber);
 }
 
-/** 練習は同じホールを打ち直すので、ホール番号を出さない。「PAR 4」 */
-export function practiceProgressHole(par: number): string {
+/** ホール表示の下段。「PAR 4」 */
+export function holeBadgePar(par: number): string {
   return `PAR ${par}`;
 }
 
-/** 主役。今が何打目か。「3打目」 */
+/** 今が何打目か。「SHOT 3」 */
 export function progressShot(shotNumber: number): string {
-  return en(`SHOT ${shotNumber}`, `${shotNumber}打目`);
+  return `SHOT ${shotNumber}`;
 }
 
 /**
- * 右端の通算パー差。**このホールの成績ではなく、ホールアウト済みのぶんの合計**。
- * 打数の隣に置くと取り違えるので、語を付けて離して出す
+ * 今の通算パー差。**このホールの成績ではなく、ホールアウト済みのぶんの合計**。
+ * 打数の隣に置くので、語を付けて取り違えを防ぐ
  */
 export function progressTotal(toPar: string): string {
-  return en(`TOTAL ${toPar}`, `通算 ${toPar}`);
+  return `TOTAL ${toPar}`;
+}
+
+/** カップまでの残り。「LEFT 3.42m」 */
+export function progressDistance(distance: string): string {
+  return `LEFT ${distance}`;
 }
 
 /** ホール入り口の紹介（中継のホール紹介）。上段は「HOLE 3」 */

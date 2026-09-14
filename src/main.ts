@@ -1431,7 +1431,9 @@ const hud = {
   state: document.getElementById('hud-state')!,
   view: document.getElementById('hud-view')!,
   aim: document.getElementById('hud-aim')!,
-  progressHole: document.getElementById('hud-progress-hole')!,
+  holeNumber: document.getElementById('hud-hole-number')!,
+  holeLength: document.getElementById('hud-hole-length')!,
+  holePar: document.getElementById('hud-hole-par')!,
   progressShot: document.getElementById('hud-progress-shot')!,
   progressDistance: document.getElementById('hud-progress-distance')!,
   progressTotal: document.getElementById('hud-progress-total')!,
@@ -1886,6 +1888,20 @@ function updateControls(): void {
 }
 
 /**
+ * ホールの全長 [m]。中継の「499Y」に当たる。
+ * ティーとカップを直線で結んだ距離ではなく、**遊べる芝の中心線（route）に沿った長さ**
+ */
+function holeLength(): number {
+  let total = 0;
+  for (let i = 1; i < course.route.length; i++) {
+    const a = course.route[i - 1];
+    const b = course.route[i];
+    total += Math.hypot(b.x - a.x, b.z - a.z);
+  }
+  return total;
+}
+
+/**
  * ホール入り口の紹介表示の残り時間 [s]。0 になったらフェードで消す。
  * `setTimeout` ではなくフレームの経過時間で数え、タブが止まっている間は進めない
  */
@@ -1898,10 +1914,8 @@ let holeIntroRemaining = 0;
 function showHoleIntro(): void {
   if (!round) return;
   hud.holeIntroNumber.textContent = i18n.holeIntroNumber(round.holeNumber);
-  hud.holeIntroDetail.textContent = i18n.holeIntroDetail(
-    course.par,
-    `${distanceToCup().toFixed(1)}m`,
-  );
+  // HUDのホール表示と同じ全長を出す。別の数字を見せると混乱する
+  hud.holeIntroDetail.textContent = i18n.holeIntroDetail(course.par, `${holeLength().toFixed(1)}m`);
   hud.holeIntro.style.transitionDuration = `${G.round.holeIntro.fade}s`;
   hud.holeIntro.classList.add('show');
   holeIntroRemaining = G.round.holeIntro.duration;
@@ -1932,18 +1946,20 @@ function currentShotNumber(): number {
  */
 function updateProgress(hidden: boolean): void {
   if (hidden) {
-    hud.progressHole.textContent = '';
+    hud.holeNumber.textContent = '';
+    hud.holeLength.textContent = '';
+    hud.holePar.textContent = '';
     hud.progressShot.textContent = '';
     hud.progressDistance.textContent = '';
     hud.progressTotal.textContent = '';
     return;
   }
-  hud.progressHole.textContent = round
-    ? i18n.progressHole(round.holeNumber, round.holeCount, course.par)
-    : i18n.practiceProgressHole(course.par);
+  // 練習はホールを進めないので、ホール番号も通算も出さない
+  hud.holeNumber.textContent = round ? i18n.holeBadgeNumber(round.holeNumber) : '';
+  hud.holeLength.textContent = `${holeLength().toFixed(1)}m`;
+  hud.holePar.textContent = i18n.holeBadgePar(course.par);
   hud.progressShot.textContent = i18n.progressShot(currentShotNumber());
-  hud.progressDistance.textContent = `${distanceToCup().toFixed(2)}m`;
-  // 練習はホールを進めないので通算が無い
+  hud.progressDistance.textContent = i18n.progressDistance(`${distanceToCup().toFixed(2)}m`);
   hud.progressTotal.textContent = round ? i18n.progressTotal(formatToPar(round.toPar)) : '';
   const toPar = round ? round.toPar : 0;
   hud.progressTotal.classList.toggle('under', round !== null && toPar < 0);
