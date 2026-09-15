@@ -41,6 +41,16 @@ import type { CourseDefinition, SurfaceType } from '../src/course/course-types.t
 
 const P = CONFIG.physics;
 
+/** 報告に出すサーフェス名 */
+const SURFACE_LABEL: Record<SurfaceType, string> = {
+  green: '通常芝',
+  rough: 'ラフ',
+  deepRough: 'セカンドカット',
+  bunker: '砂',
+  water: '池',
+  ob: 'OB',
+};
+
 // --- 調査の前提値 ---------------------------------------------------------
 
 /**
@@ -774,7 +784,16 @@ let totalShots = 0;
 let seedsWithIslands = 0;
 let totalIslandArea = 0;
 let seedsTeeCupSplit = 0;
-let maxUphill = { gradient: -1, seed: 0, uphillMove: 0, status: '', bestMove: 0, x: 0, z: 0 };
+let maxUphill = {
+  gradient: -1,
+  seed: 0,
+  surface: 'deepRough' as SurfaceType,
+  uphillMove: 0,
+  status: '',
+  bestMove: 0,
+  x: 0,
+  z: 0,
+};
 let globalMinBestMove = { distance: Infinity, x: 0, z: 0, gradient: 0, seed: 0 };
 const escapeSpeedTotal = new Array<number>(SPEEDS.length).fill(0);
 let noProgressWithinReach = 0;
@@ -814,6 +833,7 @@ for (let seed = ARGS.seedFrom; seed <= ARGS.seedTo; seed++) {
     maxUphill = {
       gradient: report.worstUphill.gradient,
       seed,
+      surface: report.worstUphill.surface,
       uphillMove: report.worstUphill.uphillMove,
       status: report.worstUphill.uphillStatus,
       bestMove: report.worstUphill.bestMove,
@@ -908,12 +928,12 @@ console.log(
 {
   const sorted = [...uphillDisplacements].sort((a, b) => a - b);
   console.log(
-    `各シードのセカンドカット最大上り地点で、いちばん遠くへ動かせた距離: ` +
+    `各シードの「摩擦が重い地面（セカンドカット・砂）」の最大上り地点で、いちばん遠くへ動かせた距離: ` +
       `最小 ${(sorted[0] ?? 0).toFixed(2)}m / 中央 ${(sorted[Math.floor(sorted.length / 2)] ?? 0).toFixed(2)}m / 最大 ${(sorted[sorted.length - 1] ?? 0).toFixed(2)}m`,
   );
 }
 console.log(
-  `セカンドカットの最大上り勾配: ${percent(maxUphill.gradient)}（シード ${maxUphill.seed} / ` +
+  `摩擦が重い地面の最大上り勾配: ${percent(maxUphill.gradient)}（${SURFACE_LABEL[maxUphill.surface]} / シード ${maxUphill.seed} / ` +
     `(${maxUphill.x.toFixed(2)}, ${maxUphill.z.toFixed(2)})）。そこで真上りへ最強の一打 ${ARGS.vmax} m/s: ` +
     `${maxUphill.uphillMove.toFixed(2)}m 動いて ${maxUphill.status} / 全方向の中でいちばん遠くへ動かせた距離 ${maxUphill.bestMove.toFixed(2)}m`,
 );
