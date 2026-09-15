@@ -45,6 +45,14 @@ export interface GreenParams {
    * 省略（v1のコース・green-test）なら地形はこれまでと1mmも変わらない
    */
   heightFeatures?: readonly HeightFeature[];
+  /**
+   * バンカーのすり鉢による高さの変化 [m] を返す関数（`bunkerBasinAt`）。
+   *
+   * 窪みの縁を**砂の輪郭そのもの**にするには、サーフェス側が持っている角度ごとの歪みが要る。
+   * ハイトマップ側でそれを作り直すと二重管理になるので、コース定義を知っている側から
+   * 関数として渡してもらう。省略（v1のコース・green-test）なら地形は変わらない
+   */
+  bunkerBasin?: (x: number, z: number) => number;
 }
 
 export function defaultGreenParams(): GreenParams {
@@ -223,6 +231,7 @@ export class Green {
     // 高さのハザード（生成器v2）。**うねりの正規化より後に足す。**
     // 先に足すと正規化に巻き込まれ、config で指定した高さが出なくなる
     const features = params.heightFeatures ?? [];
+    const basin = params.bunkerBasin;
 
     this.minHeight = Infinity;
     this.maxHeight = -Infinity;
@@ -232,6 +241,7 @@ export class Green {
         const x = -halfWidth + i * this.cellX;
         let h = shapeAt(x, z) + undulation[j * this.resX + i] * scale;
         for (const feature of features) h += heightFeatureAt(feature, x, z);
+        if (basin) h += basin(x, z);
         this.heights[j * this.resX + i] = h;
         if (h < this.minHeight) this.minHeight = h;
         if (h > this.maxHeight) this.maxHeight = h;

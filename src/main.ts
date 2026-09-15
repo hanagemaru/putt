@@ -21,7 +21,7 @@ import {
   defaultShadeParams,
 } from './green';
 import { Roller } from './physics';
-import { surfaceAt } from './course/course-map';
+import { bunkerBasinAt, surfaceAt } from './course/course-map';
 import { PROTOTYPE_COURSE } from './course/prototype-course';
 import { approachDirection, generateCourse } from './course/course-generate';
 import { generateCourseV2 } from './course/course-generate-v2';
@@ -171,6 +171,8 @@ function greenParamsFor(target: CourseDefinition, amplitude: number) {
     },
     // 高さのハザード（生成器v2）。v1のコースは持たないので undefined のまま渡る
     heightFeatures: target.heightFeatures,
+    // バンカーのすり鉢。縁を砂の輪郭に合わせるので、コース定義を知っている側から渡す
+    bunkerBasin: (x: number, z: number) => bunkerBasinAt(target, x, z),
   };
 }
 

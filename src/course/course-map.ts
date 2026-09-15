@@ -168,6 +168,26 @@ function isInsideSand(
 }
 
 /**
+ * バンカーの輪郭までの正規化距離。0 が中心、1 がちょうど砂の縁、1 より大きければ砂の外。
+ * **角度ごとの歪みで割っている**ので、輪郭がどれだけ崩れていても縁がちょうど 1 になる。
+ */
+function sandNormalizedRadius(
+  bunker: SandBunker,
+  outline: AngularHarmonics[],
+  x: number,
+  z: number,
+): number {
+  const baseX = (x - bunker.center.x) / bunker.radiusX;
+  const baseZ = (z - bunker.center.z) / bunker.radiusZ;
+  const r = Math.hypot(baseX, baseZ);
+  if (r === 0) return 0;
+  const theta = Math.atan2(baseZ, baseX);
+  const amplitude = bunker.outline?.amplitude ?? N.bunkerAmplitude;
+  const limit = 1 + amplitude * evalAngularHarmonics(outline, theta);
+  return limit > 0 ? r / limit : Infinity;
+}
+
+/**
  * バンカーの内側か。**v1のコースはバンカーを持たないので、そのまま false を返す。**
  */
 function isInsideBunker(course: CourseDefinition, x: number, z: number): boolean {
@@ -178,6 +198,35 @@ function isInsideBunker(course: CourseDefinition, x: number, z: number): boolean
     if (isInsideSand(bunkers[i], shapes[i], x, z)) return true;
   }
   return false;
+}
+
+/**
+ * バンカーのすり鉢による高さの変化 [m]（0 または負）。
+ *
+ * **窪みの縁は砂の輪郭そのもの。** 形は `1 - q^n`（q は輪郭までの正規化距離）なので
+ *   - q = 1（＝砂の縁）でちょうど 0。外の芝には一切影響しない
+ *   - 傾きは q に比例して**縁でいちばん急**になる（＝縁を起点に落ちる皿）
+ *   - q = 0（中心）で傾きが 0。底は平ら
+ * `(1 - r^2)^2` のような「中心も縁も平らで途中が急」な形とは逆で、
+ * 砂の面全体が縁から落ち込む1枚の皿になる。
+ *
+ * 急になるのは砂の中だけなので、止まれる勾配の上限は芝（7.8%）ではなく砂（62.7%）を見ればよい。
+ */
+export function bunkerBasinAt(course: CourseDefinition, x: number, z: number): number {
+  const bunkers = course.bunkers;
+  if (!bunkers || bunkers.length === 0) return 0;
+  const shapes = bunkerShapes(course);
+  let drop = 0;
+  for (let i = 0; i < bunkers.length; i++) {
+    const bunker = bunkers[i];
+    // 枠の外は角度も歪みも引かずに捨てる（ハイトマップの全点から呼ばれる）
+    const reach = hazardReach(bunker.radiusX, bunker.radiusZ, bunker.outline, N.bunkerAmplitude);
+    if (Math.abs(x - bunker.center.x) > reach || Math.abs(z - bunker.center.z) > reach) continue;
+    const q = sandNormalizedRadius(bunker, shapes[i], x, z);
+    if (q >= 1) continue;
+    drop -= bunker.depth * (1 - Math.pow(q, N.bunkerBasinProfile));
+  }
+  return drop;
 }
 
 /**

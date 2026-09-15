@@ -633,13 +633,8 @@ function placeHeightFeatures(
   rng: () => number,
   count: number,
   draft: CourseDefinition,
-  existing: readonly HeightFeature[] = [],
 ): HeightFeature[] {
-  // バンカーのすり鉢（`existing`）は**間隔の判定に入れない。**
-  // すり鉢は縁で勾配がちょうど0になるので、外の地形と勾配が足し合わさらない。
-  // 判定に入れると 7m 級の除外円ができて、尾根やマウンドがほとんど置けなくなる
-  const placedHere: HeightFeature[] = [];
-  const features: HeightFeature[] = [...existing];
+  const features: HeightFeature[] = [];
   const halfWidth = draft.bounds.width / 2;
   const halfLength = draft.bounds.length / 2;
 
@@ -685,7 +680,7 @@ function placeHeightFeatures(
       // 砂の上も避ける（バンカーは自前のすり鉢を持っているので二重に窪ませない）
       const surface = surfaceAt(draft, center.x, center.z);
       if (surface === 'water' || surface === 'ob' || surface === 'bunker') continue;
-      const tooClose = placedHere.some(
+      const tooClose = features.some(
         (f) =>
           Math.hypot(f.center.x - center.x, f.center.z - center.z) <
           Math.max(f.radiusU, f.radiusV) + maxRadius + H.minSpacing,
@@ -693,10 +688,7 @@ function placeHeightFeatures(
       if (tooClose) continue;
       placed = { kind, center, height, radiusU, radiusV, angle };
     }
-    if (placed) {
-      placedHere.push(placed);
-      features.push(placed);
-    }
+    if (placed) features.push(placed);
   }
   return features;
 }
@@ -717,6 +709,7 @@ function placeBunkers(rng: () => number, count: number, draft: CourseDefinition)
 
   for (let i = 0; i < count; i++) {
     const radiusMajor = pick(rng, B.radius);
+    const pickedDepth = pick(rng, B.depth);
     const { aspect, outline } = pickOutline(rng, B.aspect);
     const radiusX = radiusMajor;
     const radiusZ = radiusMajor * aspect;
@@ -765,34 +758,15 @@ function placeBunkers(rng: () => number, count: number, draft: CourseDefinition)
             B.minSpacing,
       );
       if (tooClose) continue;
-      placed = { center, radiusX, radiusZ, outline };
+      // 深さはホールごとにばらつかせる。小さいバンカーが急になりすぎないよう、
+      // 縁の傾き（深さ × 形の指数 ÷ 短いほうの半径）が上限を超える分だけ削る
+      const depthLimit =
+        (B.maxBasinGradient * Math.min(radiusX, radiusZ)) / N.bunkerBasinProfile;
+      placed = { center, radiusX, radiusZ, outline, depth: Math.min(pickedDepth, depthLimit) };
     }
     if (placed) bunkers.push(placed);
   }
   return bunkers;
-}
-
-/**
- * バンカーをゆるいすり鉢状に窪ませる高さのハザードを作る。
- *
- * 形は他の高さのハザードと同じ `(1 - r^2)^2` なので、**縁で高さも傾きもちょうど0**になる。
- * 急になるのは砂の内側だけで、外の芝には斜面が出ない。だから
- * 芝の「止まれる勾配の上限」（7.8%）ではなく、**砂の上限（62.7%）だけを考えればよく**、
- * `hollowGradient` を芝の上限より大きく取っても「砂で止まらない」は起きない。
- */
-function bunkerHollows(bunkers: readonly SandBunker[]): HeightFeature[] {
-  return bunkers.map((b) => {
-    // **窪みは砂の内側に収める。** 輪郭の歪みは半径を角度ごとに (1 ± amplitude) 倍するので、
-    // どの向きでも砂がある最小の半径は (1 - amplitude) 倍。そこまでに収めておけば、
-    // 窪みの斜面が芝へはみ出さない。
-    // はみ出すと、バンカー脇の芝が「止まれない斜面」になって手前に刻めなくなる
-    // （実測で芝の止まれない面が 2.1% → 4.2% に倍増した）
-    const inside = 1 - (b.outline?.amplitude ?? N.bunkerAmplitude);
-    const radiusU = b.radiusX * inside;
-    const radiusV = b.radiusZ * inside;
-    const depth = (B.hollowGradient * Math.min(radiusU, radiusV)) / BUMP_PEAK_SLOPE;
-    return { kind: 'hollow', center: b.center, height: -depth, radiusU, radiusV, angle: 0 };
-  });
 }
 
 // --- 組み立て -------------------------------------------------------------
@@ -887,12 +861,8 @@ function draftCourseV2(seed: number, options: GenerateOptionsV2): DraftV2 {
   const withBunkers: CourseDefinition = { ...withWater, bunkers };
   const course: CourseDefinition = {
     ...withBunkers,
-    heightFeatures: placeHeightFeatures(
-      rng,
-      heightFeatureCount,
-      withBunkers,
-      bunkerHollows(bunkers),
-    ),
+    // すり鉢はバンカー自身が `depth` として持つので、高さのハザードには混ぜない
+    heightFeatures: placeHeightFeatures(rng, heightFeatureCount, withBunkers),
   };
   return { course, difficulty, plan };
 }
