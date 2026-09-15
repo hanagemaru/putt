@@ -20,12 +20,13 @@
 // 実行ごとに変わる値（時刻・Math.random）は一切使わない。
 
 import { CONFIG } from '../config';
-import { distanceToRoute, surfaceAt } from './course-map';
+import { distanceToRoute, hazardReach, surfaceAt } from './course-map';
 import { validateCourse } from './course-validate';
 import type {
   CourseDefinition,
   CoursePoint,
   EllipseHazard,
+  HazardOutline,
   HeightFeature,
   SandBunker,
   TerrainType,
@@ -35,6 +36,7 @@ const V = CONFIG.course.generatorV2;
 const C = V.curve;
 const H = V.height;
 const B = V.bunker;
+const S = V.hazardShape;
 const N = CONFIG.course.edgeNoise;
 const T = CONFIG.course.terrain;
 
@@ -549,10 +551,11 @@ function placeHazards(
 
   for (let i = 0; i < count; i++) {
     const radiusMajor = pick(rng, V.hazardRadius);
-    const aspect = pick(rng, V.hazardAspect);
+    const { aspect, outline } = pickOutline(rng, V.hazardAspect);
     const radiusX = radiusMajor;
     const radiusZ = radiusMajor * aspect;
-    const maxRadius = Math.max(radiusX, radiusZ);
+    // 歪みを含めた実効半径。ひょうたん型は素の半径より外へ膨らむので、その分も空ける
+    const maxRadius = hazardReach(radiusX, radiusZ, outline, N.waterAmplitude);
     const minRouteDistance = corridor + maxRadius * V.hazardRouteClearance;
 
     let placed: EllipseHazard | null = null;
@@ -579,7 +582,7 @@ function placeHazards(
           Math.max(h.radiusX, h.radiusZ) + maxRadius + 0.8,
       );
       if (tooClose) continue;
-      placed = { type: 'water', center, radiusX, radiusZ };
+      placed = { type: 'water', center, radiusX, radiusZ, outline };
     }
     if (placed) hazards.push(placed);
   }
@@ -593,6 +596,32 @@ function placeHazards(
  */
 const BUMP_PEAK_SLOPE = 8 / (3 * Math.sqrt(3));
 
+/** 決めた輪郭の型と、そこから出る縦横比・歪ませ方 */
+interface OutlineChoice {
+  aspect: number;
+  outline: HazardOutline | undefined;
+}
+
+/**
+ * ハザードの輪郭の型を1つ引く。**池とバンカーで共通。**
+ * 既定は楕円を少し歪ませるだけ（丸に寄る）なので、低い確率で崩れた形を混ぜる。
+ */
+function pickOutline(rng: () => number, roundAspect: Range): OutlineChoice {
+  const shape = pickWeighted(rng, S.weights);
+  // 型に関わらず同じ回数だけ乱数を引く。型を足しても他の配置がずれない
+  const roundValue = pick(rng, roundAspect);
+  const elongated = pick(rng, S.elongatedAspect);
+  const flip = rng() < 0.5;
+  if (shape === 'elongated') {
+    // 細長い側と平たい側の両方を出す
+    return { aspect: flip ? elongated : 1 / elongated, outline: undefined };
+  }
+  if (shape === 'lobed') {
+    return { aspect: roundValue, outline: { ...S.lobed } };
+  }
+  return { aspect: roundValue, outline: undefined };
+}
+
 /**
  * 高さのハザード（マウンド・リッジ・窪地）を置く。
  *
@@ -604,8 +633,13 @@ function placeHeightFeatures(
   rng: () => number,
   count: number,
   draft: CourseDefinition,
+  existing: readonly HeightFeature[] = [],
 ): HeightFeature[] {
-  const features: HeightFeature[] = [];
+  // バンカーのすり鉢（`existing`）は**間隔の判定に入れない。**
+  // すり鉢は縁で勾配がちょうど0になるので、外の地形と勾配が足し合わさらない。
+  // 判定に入れると 7m 級の除外円ができて、尾根やマウンドがほとんど置けなくなる
+  const placedHere: HeightFeature[] = [];
+  const features: HeightFeature[] = [...existing];
   const halfWidth = draft.bounds.width / 2;
   const halfLength = draft.bounds.length / 2;
 
@@ -627,7 +661,8 @@ function placeHeightFeatures(
     for (let attempt = 0; attempt < H.maxAttempts && !placed; attempt++) {
       const at = sampleRoute(draft.route, pick(rng, H.routeRange));
       const side = rng() < 0.5 ? -1 : 1;
-      const offset = pick(rng, H.offset) * side;
+      // 尾根はルートを横切らせたいので線の上へ寄せる。マウンド・窪地は脇でよい
+      const offset = pick(rng, isRidge ? H.ridgeOffset : H.moundOffset) * side;
       const center = {
         x: at.x + at.insideX * offset,
         z: at.z + at.insideZ * offset,
@@ -639,14 +674,18 @@ function placeHeightFeatures(
           ((pick(rng, [-1, 1]) * H.ridgeSkew * Math.PI) / 180)
         : rng() * Math.PI * 2;
 
-      if (Math.abs(center.x) > halfWidth - maxRadius * 0.5) continue;
-      if (Math.abs(center.z) > halfLength - maxRadius * 0.5) continue;
+      // 枠の判定は**短いほうの半径**で見る。長い尾根を長軸で弾くと、
+      // ルートが枠の端へ寄るホールで尾根がほとんど置けなくなる（外へ出た分はOBなので見えない）
+      const edgeMargin = Math.min(radiusU, radiusV) * 0.5;
+      if (Math.abs(center.x) > halfWidth - edgeMargin) continue;
+      if (Math.abs(center.z) > halfLength - edgeMargin) continue;
       if (Math.hypot(center.x - draft.tee.x, center.z - draft.tee.z) < H.teeCupClearance) continue;
       if (Math.hypot(center.x - draft.cup.x, center.z - draft.cup.z) < H.teeCupClearance) continue;
-      // 池やOBの中の起伏は見えないし転がらない。芝の上だけに置く
+      // 池やOBの中の起伏は見えないし転がらない。芝の上だけに置く。
+      // 砂の上も避ける（バンカーは自前のすり鉢を持っているので二重に窪ませない）
       const surface = surfaceAt(draft, center.x, center.z);
-      if (surface === 'water' || surface === 'ob') continue;
-      const tooClose = features.some(
+      if (surface === 'water' || surface === 'ob' || surface === 'bunker') continue;
+      const tooClose = placedHere.some(
         (f) =>
           Math.hypot(f.center.x - center.x, f.center.z - center.z) <
           Math.max(f.radiusU, f.radiusV) + maxRadius + H.minSpacing,
@@ -654,7 +693,10 @@ function placeHeightFeatures(
       if (tooClose) continue;
       placed = { kind, center, height, radiusU, radiusV, angle };
     }
-    if (placed) features.push(placed);
+    if (placed) {
+      placedHere.push(placed);
+      features.push(placed);
+    }
   }
   return features;
 }
@@ -675,13 +717,19 @@ function placeBunkers(rng: () => number, count: number, draft: CourseDefinition)
 
   for (let i = 0; i < count; i++) {
     const radiusMajor = pick(rng, B.radius);
-    const aspect = pick(rng, B.aspect);
+    const { aspect, outline } = pickOutline(rng, B.aspect);
     const radiusX = radiusMajor;
     const radiusZ = radiusMajor * aspect;
-    const maxRadius = Math.max(radiusX, radiusZ);
+    // 歪みを含めた実効半径。ひょうたん型は素の半径より外へ膨らむので、その分も見る
+    const maxRadius = hazardReach(radiusX, radiusZ, outline, N.bunkerAmplitude);
 
-    // 反対側に通れる芝を残せる最小の横ずれ。負なら中心線を跨いでも逃げ道が残る
-    const minOffset = maxRadius + B.minClearWidth - halfWidth;
+    // 横ずれの下限は2つの条件のうち厳しいほう。
+    //   1. 反対側に `minClearWidth` の通れる芝を残す（負なら中心線を跨いでも逃げ道が残る）
+    //   2. 中心線を越えて芝側へ食い込む量を `maxCenterOverlap` までにする
+    const minOffset = Math.max(
+      maxRadius + B.minClearWidth - halfWidth,
+      maxRadius - B.maxCenterOverlap,
+    );
     const maxOffset = halfWidth * B.maxOffset;
     // 芝が狭すぎて逃げ道を作れないなら、このバンカーは諦める
     if (minOffset > maxOffset) continue;
@@ -703,20 +751,42 @@ function placeBunkers(rng: () => number, count: number, draft: CourseDefinition)
       const nearWater = draft.hazards.some(
         (h) =>
           Math.hypot(h.center.x - center.x, h.center.z - center.z) <
-          Math.max(h.radiusX, h.radiusZ) + maxRadius + draft.waterFringe + B.waterClearance,
+          hazardReach(h.radiusX, h.radiusZ, h.outline, N.waterAmplitude) +
+            maxRadius +
+            draft.waterFringe +
+            B.waterClearance,
       );
       if (nearWater) continue;
       const tooClose = bunkers.some(
         (b) =>
           Math.hypot(b.center.x - center.x, b.center.z - center.z) <
-          Math.max(b.radiusX, b.radiusZ) + maxRadius + B.minSpacing,
+          hazardReach(b.radiusX, b.radiusZ, b.outline, N.bunkerAmplitude) +
+            maxRadius +
+            B.minSpacing,
       );
       if (tooClose) continue;
-      placed = { center, radiusX, radiusZ };
+      placed = { center, radiusX, radiusZ, outline };
     }
     if (placed) bunkers.push(placed);
   }
   return bunkers;
+}
+
+/**
+ * バンカーをゆるいすり鉢状に窪ませる高さのハザードを作る。
+ *
+ * 形は他の高さのハザードと同じ `(1 - r^2)^2` なので、**縁で高さも傾きもちょうど0**になる。
+ * 急になるのは砂の内側だけで、外の芝には斜面が出ない。だから
+ * 芝の「止まれる勾配の上限」（7.8%）ではなく、**砂の上限（62.7%）だけを考えればよく**、
+ * `hollowGradient` を芝の上限より大きく取っても「砂で止まらない」は起きない。
+ */
+function bunkerHollows(bunkers: readonly SandBunker[]): HeightFeature[] {
+  return bunkers.map((b) => {
+    const radiusU = b.radiusX;
+    const radiusV = b.radiusZ;
+    const depth = (B.hollowGradient * Math.min(radiusU, radiusV)) / BUMP_PEAK_SLOPE;
+    return { kind: 'hollow', center: b.center, height: -depth, radiusU, radiusV, angle: 0 };
+  });
 }
 
 // --- 組み立て -------------------------------------------------------------
@@ -801,16 +871,22 @@ function draftCourseV2(seed: number, options: GenerateOptionsV2): DraftV2 {
     hazards: [],
   };
 
-  // 池 → 高さのハザード → バンカー の順に置く。後ろの2つは `surfaceAt` で置ける場所を
-  // 確かめるので、前の段階の結果が入ったコース定義を渡す必要がある
+  // 池 → バンカー → 高さのハザード の順に置く。後ろの2つは `surfaceAt` で置ける場所を
+  // 確かめるので、前の段階の結果が入ったコース定義を渡す必要がある。
+  //
+  // **高さのハザードを最後にするのは、バンカーのすり鉢と重ねないため。**
+  // すり鉢も高さのハザードなので、先に入れておけば間隔の判定がそのまま効く
   const withWater: CourseDefinition = { ...base, hazards: placeHazards(rng, hazardCount, base) };
-  const withHeight: CourseDefinition = {
-    ...withWater,
-    heightFeatures: placeHeightFeatures(rng, heightFeatureCount, withWater),
-  };
+  const bunkers = placeBunkers(rng, bunkerCount, withWater);
+  const withBunkers: CourseDefinition = { ...withWater, bunkers };
   const course: CourseDefinition = {
-    ...withHeight,
-    bunkers: placeBunkers(rng, bunkerCount, withHeight),
+    ...withBunkers,
+    heightFeatures: placeHeightFeatures(
+      rng,
+      heightFeatureCount,
+      withBunkers,
+      bunkerHollows(bunkers),
+    ),
   };
   return { course, difficulty, plan };
 }

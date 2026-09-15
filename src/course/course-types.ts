@@ -33,11 +33,28 @@ export interface CourseBounds {
   length: number;
 }
 
+/**
+ * 輪郭の歪ませ方。楕円の半径1を、角度ごとに調和成分で膨らませる量を決める。
+ *
+ * **省略すると config の既定値を使う。** v1のコースは指定しないので形は変わらない。
+ * 波数を 2〜3 に絞って `amplitude` を大きくすると、膨らみが2つできて
+ * ひょうたん・まゆのような輪郭になる。既定（波数2〜5・小さめの振幅）は丸に近い。
+ */
+export interface HazardOutline {
+  /** 半径を歪める割合。0.45 なら半径が ±45% */
+  amplitude: number;
+  /** 歪ませる調和成分の波数の範囲 */
+  orderMin: number;
+  orderMax: number;
+}
+
 export interface EllipseHazard {
   type: 'water';
   center: CoursePoint;
   radiusX: number;
   radiusZ: number;
+  /** 輪郭の歪ませ方。**省略時は config の既定値**（v1のコースは省略する） */
+  outline?: HazardOutline;
 }
 
 /**
@@ -73,6 +90,8 @@ export interface SandBunker {
   center: CoursePoint;
   radiusX: number;
   radiusZ: number;
+  /** 輪郭の歪ませ方。省略時は config の既定値 */
+  outline?: HazardOutline;
 }
 
 /**

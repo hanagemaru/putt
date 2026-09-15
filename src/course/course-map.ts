@@ -3,6 +3,7 @@ import type {
   CourseDefinition,
   CoursePoint,
   EllipseHazard,
+  HazardOutline,
   SandBunker,
   SurfaceType,
 } from './course-types';
@@ -34,6 +35,20 @@ function pointSegmentDistance(point: CoursePoint, a: CoursePoint, b: CoursePoint
   return Math.hypot(point.x - (a.x + dx * t), point.z - (a.z + dz * t));
 }
 
+/**
+ * 輪郭の歪みまで含めた、ハザードの実効的な最大半径 [m]。
+ * 生成器が「どれだけ場所を空けるか」を決めるのに使う。
+ * 歪みを大きくした形（ひょうたん型など）は素の半径より外へ膨らむ。
+ */
+export function hazardReach(
+  radiusX: number,
+  radiusZ: number,
+  outline: HazardOutline | undefined,
+  fallbackAmplitude: number,
+): number {
+  return Math.max(radiusX, radiusZ) * (1 + (outline?.amplitude ?? fallbackAmplitude));
+}
+
 /** ルート（芝の中心線）までの最短距離 [m]。生成器が池を置くときにも使う */
 export function distanceToRoute(course: CourseDefinition, x: number, z: number): number {
   const point = { x, z };
@@ -63,11 +78,11 @@ function hazardShapes(course: CourseDefinition): HazardShape[] {
   const cached = hazardShapeCache.get(course);
   if (cached) return cached;
   const salt = N.streamSalt;
-  const shapes = course.hazards.map((_, index) => ({
+  const shapes = course.hazards.map((hazard, index) => ({
     outline: makeAngularHarmonics(
       (course.seed + salt.water + index) >>> 0,
-      N.waterOrderMin,
-      N.waterOrderMax,
+      hazard.outline?.orderMin ?? N.waterOrderMin,
+      hazard.outline?.orderMax ?? N.waterOrderMax,
     ),
     shore: makeAngularHarmonics(
       (course.seed + salt.shore + index) >>> 0,
@@ -97,7 +112,8 @@ function isInsideHazard(
   const baseZ = (z - hazard.center.z) / hazard.radiusZ;
   if (baseX === 0 && baseZ === 0) return true;
   const theta = Math.atan2(baseZ, baseX);
-  const limit = 1 + N.waterAmplitude * evalAngularHarmonics(shape.outline, theta);
+  const amplitude = hazard.outline?.amplitude ?? N.waterAmplitude;
+  const limit = 1 + amplitude * evalAngularHarmonics(shape.outline, theta);
   if (fringe <= 0) {
     return Math.hypot(baseX, baseZ) <= limit;
   }
@@ -125,11 +141,11 @@ const bunkerShapeCache = new WeakMap<CourseDefinition, AngularHarmonics[][]>();
 function bunkerShapes(course: CourseDefinition): AngularHarmonics[][] {
   const cached = bunkerShapeCache.get(course);
   if (cached) return cached;
-  const shapes = (course.bunkers ?? []).map((_, index) =>
+  const shapes = (course.bunkers ?? []).map((bunker, index) =>
     makeAngularHarmonics(
       (course.seed + N.streamSalt.bunker + index) >>> 0,
-      N.bunkerOrderMin,
-      N.bunkerOrderMax,
+      bunker.outline?.orderMin ?? N.bunkerOrderMin,
+      bunker.outline?.orderMax ?? N.bunkerOrderMax,
     ),
   );
   bunkerShapeCache.set(course, shapes);
@@ -146,7 +162,8 @@ function isInsideSand(
   const baseZ = (z - bunker.center.z) / bunker.radiusZ;
   if (baseX === 0 && baseZ === 0) return true;
   const theta = Math.atan2(baseZ, baseX);
-  const limit = 1 + N.bunkerAmplitude * evalAngularHarmonics(outline, theta);
+  const amplitude = bunker.outline?.amplitude ?? N.bunkerAmplitude;
+  const limit = 1 + amplitude * evalAngularHarmonics(outline, theta);
   return Math.hypot(baseX, baseZ) <= limit;
 }
 
