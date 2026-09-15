@@ -1,7 +1,7 @@
 import { Roller } from './physics';
 import { SwipeMeasure } from './swipe-measure';
 import { puttAudio } from './audio';
-import { puttMusic } from './music';
+import { puttMusic, type HoleOutResult } from './music';
 import { menuSfx } from './ui-sfx';
 
 /**
@@ -22,7 +22,10 @@ if (!patchState.__puttAudioPatched) {
 const routeParams = new URLSearchParams(location.search);
 const gameRoute = isGameRoute(routeParams);
 puttMusic.setScene(gameRoute ? 'play' : 'menu');
-if (gameRoute) installRoundEndMusic();
+if (gameRoute) {
+  installRoundEndMusic();
+  installHoleOutMusic();
+}
 
 // ブラウザ側が許可している環境では、読み込み直後から再生開始を試す。
 // iOS Safariなど自動再生を禁止する環境では失敗してもそのまま待ち、最初の操作で解除する。
@@ -106,6 +109,34 @@ function installRoundEndMusic(): void {
   });
 }
 
+/**
+ * ホールアウトの音。**スコアカードが出るのと同時に**鳴らす。
+ *
+ * BGMとジングルが重なって聞こえるのをやめ、カードの合図でBGMを引いてから
+ * 結果別のジングルを鳴らす。BGMは次のホールが始まる（カードが消える）ときに戻す。
+ * ギブアップはカップインしていないので鳴らさない。
+ */
+function installHoleOutMusic(): void {
+  const scoreTitle = document.getElementById('score-title');
+  const scoreOverlay = document.getElementById('score-overlay');
+  if (!scoreTitle || !scoreOverlay) return;
+
+  const results: readonly HoleOutResult[] = ['eagle', 'birdie', 'par', 'bogey', 'double'];
+
+  const cue = new MutationObserver(() => {
+    const result = scoreTitle.dataset.result as HoleOutResult | undefined;
+    if (!result || !results.includes(result)) return;
+    puttMusic.playHoleOutCue(result);
+  });
+  cue.observe(scoreTitle, { attributes: true, attributeFilter: ['data-result'] });
+
+  const resume = new MutationObserver(() => {
+    // カードが消える＝次のホールが始まる。引いていたBGMをここで戻す
+    if (scoreOverlay.hasAttribute('hidden')) puttMusic.resumeAfterHoleOut();
+  });
+  resume.observe(scoreOverlay, { attributes: true, attributeFilter: ['hidden'] });
+}
+
 function installSwipeAudio(): void {
   const originalAdd = SwipeMeasure.prototype.add;
   SwipeMeasure.prototype.add = function (
@@ -139,8 +170,8 @@ function installRollAudio(): void {
       if (status === 'holed') {
         // 同じ物理更新内で旗竿に当たって入ったときだけ、旗竿音の直後に落下音を置く。
         puttAudio.playCupIn(hitFlagstick ? 0.045 : 0);
-        // カップ音の余韻を聞かせてから約1秒後にジングルを置く。
-        puttMusic.playHoleOutJingle(hitFlagstick ? 1.05 : 1);
+        // ジングルはここでは鳴らさない。スコアカードが出るのに合わせて鳴らす
+        // （`installHoleOutMusic`）。カップ音 → ラインを見る間 → カード＋音、の順にする
       } else if (status === 'water') {
         puttAudio.playWater();
       } else if (status === 'outOfBounds') {
