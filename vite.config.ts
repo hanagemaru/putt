@@ -95,7 +95,7 @@ export default defineConfig({
   plugins: [
     puttPwa(base),
     // オフラインで開けるようにする。マニフェストは上の puttPwa が作るので生成させない。
-    // 検証ページ（swipe-test / green-test）はキャッシュしない。本編だけを持ち歩く。
+    // 検証ページ（swipe-test / green-test / jingle-test）はキャッシュしない。本編だけを持ち歩く。
     VitePWA({
       base,
       scope: base,
@@ -114,10 +114,17 @@ export default defineConfig({
         // 除外するのは検証ページのHTMLと、その入口チャンクだけ。
         // swipe-measure は本編（stroke-view / audio-bootstrap）も使う共有チャンクなので、
         // 名前が似ていても外さない。外すとオフラインでストロークが動かなくなる
-        globIgnores: ['swipe-test/**', 'green-test/**', 'assets/swipeTest-*', 'assets/greenTest-*'],
+        globIgnores: [
+          'swipe-test/**',
+          'green-test/**',
+          'jingle-test/**',
+          'assets/swipeTest-*',
+          'assets/greenTest-*',
+          'assets/jingleTest-*',
+        ],
         // 単独URLで開かれても本編のHTMLを返す。検証ページはネットワークのまま
         navigateFallback: `${base}index.html`,
-        navigateFallbackDenylist: [/\/swipe-test\//, /\/green-test\//],
+        navigateFallbackDenylist: [/\/swipe-test\//, /\/green-test\//, /\/jingle-test\//],
         cleanupOutdatedCaches: true,
       },
     }),
@@ -132,6 +139,8 @@ export default defineConfig({
         swipeTest: 'swipe-test/index.html',
         // グリーンと転がりの検証ページ → <base>green-test/
         greenTest: 'green-test/index.html',
+        // ホールアウトのジングル試聴ページ → <base>jingle-test/
+        jingleTest: 'jingle-test/index.html',
       },
     },
   },

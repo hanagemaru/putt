@@ -55,7 +55,7 @@ node scripts/generate-icons.mjs --preview <出力先>     # 比較用に案A・�
 - **キャッシュ対象。** `index.html` / `manifest.webmanifest` / `assets/*`（js・css・woff2・mp3）/ `icons/*`。
   21ファイル・約720 kB。ゲームが実行時に外へ取りに行くものはこれで全部（音源とフォントは
   ビルドに取り込まれる。3.5 kB の `flagstick.mp3` だけはデータURLで JS に入る）
-- **検証ページは載せない。** `swipe-test/` と `green-test/` のHTMLと入口チャンクは除外する。
+- **検証ページは載せない。** `swipe-test/` / `green-test/` / `jingle-test/` のHTMLと入口チャンクは除外する。
   `navigateFallbackDenylist` にも入れて、オフラインでは本編のHTMLに化けないようにする。
   ただし `swipe-measure` は本編（`stroke-view` / `audio-bootstrap`）も使う共有チャンクなので外さない
 - **更新の反映。** `registerType: 'prompt'` にして、案内は出さない。新しい版は裏で用意されるだけで、
