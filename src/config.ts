@@ -20,13 +20,15 @@ export const CONFIG = {
      */
     color: 0x74cf5c,
     /**
-     * サーフェス別の基準色。芝（green / rough / deepRough）は高さの濃淡を掛けるが、
-     * 池とOBは高さを読む対象ではないので単色で塗る（`flatSurfaces`）。
+     * サーフェス別の基準色。芝（green / rough / deepRough）と砂（bunker）は
+     * 高さの濃淡を掛けるが、池とOBは高さを読む対象ではないので単色で塗る（`flatSurfaces`）。
      */
     surfaceColors: {
       green: 0x74cf5c,
       rough: 0x4f9844,
       deepRough: 0x3a7332,
+      /** 砂。芝の緑とOBの濃緑のどちらとも見間違えない明るさにする */
+      bunker: 0xd8c48a,
       water: 0x3d83bd,
       ob: 0x27431f,
     },
@@ -133,13 +135,13 @@ export const CONFIG = {
       /** 岸（waterFringe）の幅を揺らがせる割合。広い浅瀬と切り立った岸を作る */
       shoreAmplitude: 0.45,
       /**
-       * 深いラフの島（生成器v2）の輪郭を歪める調和成分の波数の範囲と割合。
-       * 池と同じ作りだが、島は芝の中の塊なので池より強く歪ませて輪郭を不定形にする。
-       * **v1のコースは島を持たないので、ここを変えてもv1の形は変わらない**
+       * バンカー（生成器v2）の輪郭を歪める調和成分の波数の範囲と割合。
+       * 池と同じ作りだが、砂は池より輪郭をはっきり不定形にする。
+       * **v1のコースはバンカーを持たないので、ここを変えてもv1の形は変わらない**
        */
-      islandOrderMin: 2,
-      islandOrderMax: 5,
-      islandAmplitude: 0.28,
+      bunkerOrderMin: 2,
+      bunkerOrderMax: 5,
+      bunkerAmplitude: 0.28,
       /**
        * ティーとカップの周囲を必ず通常芝に保つ半径 [m]。
        * どちらもルートの中心線上にあるので通常は揺らぎでも芝のままだが、
@@ -156,7 +158,7 @@ export const CONFIG = {
         deepRough: 0x9b05688c,
         water: 0x510e527f,
         shore: 0x1f4b3a2d,
-        island: 0x2b7e1516,
+        bunker: 0x2b7e1516,
       },
     },
     /**
@@ -314,8 +316,8 @@ export const CONFIG = {
           hazardCount: [0, 1],
           /** マウンド・リッジ・窪地の数 */
           heightFeatureCount: [0, 1],
-          /** 深いラフの島の数 */
-          roughIslandCount: [0, 1],
+          /** バンカーの数 */
+          bunkerCount: [0, 1],
         },
         normal: {
           routeLength: [13, 24],
@@ -324,7 +326,7 @@ export const CONFIG = {
           deepRoughFringe: [2, 2.6],
           hazardCount: [1, 1],
           heightFeatureCount: [1, 2],
-          roughIslandCount: [0, 2],
+          bunkerCount: [1, 2],
         },
         hard: {
           routeLength: [17, 31],
@@ -333,7 +335,7 @@ export const CONFIG = {
           deepRoughFringe: [1.6, 2.2],
           hazardCount: [1, 2],
           heightFeatureCount: [1, 3],
-          roughIslandCount: [1, 2],
+          bunkerCount: [1, 2],
         },
       },
 
@@ -464,25 +466,46 @@ export const CONFIG = {
       },
 
       /**
-       * 深いラフの島。既存のセカンドカットを**帯ではなく塊**として置く。
-       * 島の中でも `surfaceAt` は `deepRough` を返すだけなので、
-       * 罰打も新しいサーフェスも要らず、芝の連結も切れない
+       * バンカー（砂）。**水と違って越えられるので、ルートの線の上に置ける。**
+       * 「強く越えるか、避けて回すか」を、曲がり角を大きくせずに作るための唯一の手段。
+       *
+       * 設計の約束（`docs/course-generator-v2.md` §2-3）
+       * - 罰打なし。止まってもそこから打つ
+       * - 縁を立てない。ハイトマップには一切手を入れず、サーフェスだけを砂にする
+       * - 摩擦はセカンドカットよりさらに高い（`physics.bunkerFrictionMultiplier`）
+       *
+       * **最初に作った「深いラフの島」が失敗した理由をここで踏まえている。**
+       * 島は横ずれの下限が0だったので、294個中87%でルートの中心線が塊の中を通り、
+       * 100%が芝の内側半分を塞いでいた。逃げ道が無いので「選択」にならず、
+       * 実機で「ただのラフが真ん中にあるのと同じで邪魔なだけ」と判断されて外した。
+       * バンカーでは `minClearWidth` で**必ず反対側に通れる芝を残す**ことで、
+       * 「越える / 避ける」の二択が毎回成立するようにしてある
        */
-      roughIsland: {
+      bunker: {
         /** 半径 [m]（長い方） */
-        radius: [1.2, 2.6],
+        radius: [1.1, 2.1],
         /** 縦横比。1 から離れるほど細長い */
-        aspect: [0.6, 1.5],
-        /** ルート中心からの横ずれ。芝の半幅に対する割合（0 で中心、1 で芝の縁） */
-        offset: [0, 0.9],
-        /** 横ずれを曲がりの内側（＝近道側）へ寄せる割合。「近道側だけ重い」を作る */
+        aspect: [0.6, 1.4],
+        /**
+         * バンカーの反対側に必ず残す、通れる通常芝の幅 [m]。
+         * **これが「避けて回す」を成立させる。** 0 にすると芝を塞ぐただの障害物になる
+         */
+        minClearWidth: 1,
+        /** ルート中心から離してよい距離の上限。芝の半幅に対する割合 */
+        maxOffset: 1.1,
+        /** 横ずれを曲がりの内側（＝近道側）へ寄せる割合。「近道を切ると砂」を作る */
         insideBias: 0.7,
         /** 置いてよいルート上の位置（全長に対する割合） */
-        routeRange: [0.15, 0.85],
-        /** ティー・カップから空ける距離 [m] */
-        teeCupClearance: 2,
-        /** 島どうしの縁を離す距離 [m] */
-        minSpacing: 0.8,
+        routeRange: [0.2, 0.8],
+        /**
+         * ティー・カップから空ける距離 [m]。
+         * 打ち出しと最後の1打を素直に保つ。島（2m）より広く取る
+         */
+        teeCupClearance: 3,
+        /** バンカーどうしの縁を離す距離 [m] */
+        minSpacing: 1.2,
+        /** 池の縁から空ける距離 [m]。砂と水が接すると、どちらか分からなくなる */
+        waterClearance: 1,
         /** 1つあたりの配置試行回数 */
         maxAttempts: 24,
       },
@@ -634,6 +657,16 @@ export const CONFIG = {
     roughFrictionMultiplier: 3.5,
     /** セカンドカット上の摩擦倍率。ラフよりはっきり重くする */
     deepRoughFrictionMultiplier: 6,
+    /**
+     * バンカー（砂）上の摩擦倍率。**セカンドカットよりさらに重くする。**
+     *
+     * 罰打が無い代わりに、次の一打が伸びないことで打数を失わせる。
+     * 止まれる勾配の上限はこの倍率に比例する（8倍ならスティンプ10ftで約63%）ので、
+     * 地形の最大勾配（実測26%）ではどこでも必ず止まり、**砂で転がり続けることはない**。
+     * 大きくしすぎるとバンカーから出られなくなる（詰み）ので、
+     * 変えたら必ず `npm run check:stuck` を通すこと
+     */
+    bunkerFrictionMultiplier: 8,
     /**
      * スティンプメーターの解放速度 [m/s]。
      * 「この初速で stimpFeet だけ転がる」から MU = v^2 / (2 * 距離) を出す

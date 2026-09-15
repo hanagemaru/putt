@@ -580,7 +580,7 @@ function ensureBestScoreStyles(): void {
  * 角丸・ぼかし影・アンチエイリアスの効いた装飾は使わず、
  * ドット絵フォント・太い枠・段差のはっきりした影・コースと同じ色だけで作る。
  * 色は config のコース色に対応させている（fairway 0x74cf5c / rough 0x4f9844 /
- * deepRough 0x3a7332 / ob 0x27431f / flag 0xd94f3d / trail 0xffe66d / ball 0xf6f8f4）。
+ * deepRough 0x3a7332 / bunker 0xd8c48a / ob 0x27431f / flag 0xd94f3d / trail 0xffe66d / ball 0xf6f8f4）。
  */
 function ensureMenuStyles(): void {
   ensurePixelFont(language());

@@ -3,7 +3,7 @@ import type {
   CourseDefinition,
   CoursePoint,
   EllipseHazard,
-  RoughIsland,
+  SandBunker,
   SurfaceType,
 } from './course-types';
 import {
@@ -117,48 +117,48 @@ function isInsideWater(course: CourseDefinition, x: number, z: number, fringe = 
 }
 
 /**
- * 深いラフの島（生成器v2）の輪郭の歪み。池と同じ作りで、
+ * バンカー（生成器v2）の輪郭の歪み。池と同じ作りで、
  * コース定義とシードだけから決まるのでキャッシュの有無で結果は変わらない。
  */
-const islandShapeCache = new WeakMap<CourseDefinition, AngularHarmonics[][]>();
+const bunkerShapeCache = new WeakMap<CourseDefinition, AngularHarmonics[][]>();
 
-function islandShapes(course: CourseDefinition): AngularHarmonics[][] {
-  const cached = islandShapeCache.get(course);
+function bunkerShapes(course: CourseDefinition): AngularHarmonics[][] {
+  const cached = bunkerShapeCache.get(course);
   if (cached) return cached;
-  const shapes = (course.roughIslands ?? []).map((_, index) =>
+  const shapes = (course.bunkers ?? []).map((_, index) =>
     makeAngularHarmonics(
-      (course.seed + N.streamSalt.island + index) >>> 0,
-      N.islandOrderMin,
-      N.islandOrderMax,
+      (course.seed + N.streamSalt.bunker + index) >>> 0,
+      N.bunkerOrderMin,
+      N.bunkerOrderMax,
     ),
   );
-  islandShapeCache.set(course, shapes);
+  bunkerShapeCache.set(course, shapes);
   return shapes;
 }
 
-function isInsideIsland(
-  island: RoughIsland,
+function isInsideSand(
+  bunker: SandBunker,
   outline: AngularHarmonics[],
   x: number,
   z: number,
 ): boolean {
-  const baseX = (x - island.center.x) / island.radiusX;
-  const baseZ = (z - island.center.z) / island.radiusZ;
+  const baseX = (x - bunker.center.x) / bunker.radiusX;
+  const baseZ = (z - bunker.center.z) / bunker.radiusZ;
   if (baseX === 0 && baseZ === 0) return true;
   const theta = Math.atan2(baseZ, baseX);
-  const limit = 1 + N.islandAmplitude * evalAngularHarmonics(outline, theta);
+  const limit = 1 + N.bunkerAmplitude * evalAngularHarmonics(outline, theta);
   return Math.hypot(baseX, baseZ) <= limit;
 }
 
 /**
- * 深いラフの島の内側か。**v1のコースは島を持たないので、そのまま false を返す。**
+ * バンカーの内側か。**v1のコースはバンカーを持たないので、そのまま false を返す。**
  */
-function isInsideRoughIsland(course: CourseDefinition, x: number, z: number): boolean {
-  const islands = course.roughIslands;
-  if (!islands || islands.length === 0) return false;
-  const shapes = islandShapes(course);
-  for (let i = 0; i < islands.length; i++) {
-    if (isInsideIsland(islands[i], shapes[i], x, z)) return true;
+function isInsideBunker(course: CourseDefinition, x: number, z: number): boolean {
+  const bunkers = course.bunkers;
+  if (!bunkers || bunkers.length === 0) return false;
+  const shapes = bunkerShapes(course);
+  for (let i = 0; i < bunkers.length; i++) {
+    if (isInsideSand(bunkers[i], shapes[i], x, z)) return true;
   }
   return false;
 }
@@ -226,11 +226,10 @@ export function surfaceAt(course: CourseDefinition, x: number, z: number): Surfa
   if (isInsideWater(course, x, z, course.waterFringe)) return 'rough';
 
   const band = bandSurfaceAt(course, x, z);
-  // 深いラフの島（生成器v2）。**芝とラフだけを一段重くする。**
-  // OBを芝へ変えることはないので、OB面積比も芝の連結も島の有無で変わらない。
-  // v1のコースは島を持たないので、ここは必ず素通りする
-  if ((band === 'green' || band === 'rough') && isInsideRoughIsland(course, x, z)) {
-    return 'deepRough';
-  }
+  // バンカー（生成器v2）。**芝の上だけを砂にする。**
+  // OBを砂へ変えることはないので、OB面積比も芝の連結もバンカーの有無で変わらない
+  // （砂は罰打なしで打てるので、連結の判定では芝と同じ扱い）。
+  // v1のコースはバンカーを持たないので、ここは必ず素通りする
+  if (band !== 'ob' && isInsideBunker(course, x, z)) return 'bunker';
   return band;
 }

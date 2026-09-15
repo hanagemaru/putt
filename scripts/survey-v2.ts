@@ -76,7 +76,9 @@ interface Row {
   obRatio: number;
   greenWidth: number;
   heightFeatures: number;
-  roughIslands: number;
+  bunkers: number;
+  /** バンカーの面積比 */
+  bunkerRatio: number;
   /** ティー側から辿れない芝の面積 [m2] */
   unreachableArea: number;
 }
@@ -118,7 +120,11 @@ function rowFor(seed: number): Row {
     obCellSize === TOPO_CELL
       ? result.areaRatio.ob
       : validateCourse(course, { cellSize: obCellSize }).areaRatio.ob;
-  const playable = result.areaRatio.green + result.areaRatio.rough + result.areaRatio.deepRough;
+  const playable =
+    result.areaRatio.green +
+    result.areaRatio.rough +
+    result.areaRatio.deepRough +
+    result.areaRatio.bunker;
   const area = course.bounds.width * course.bounds.length;
 
   return {
@@ -138,7 +144,8 @@ function rowFor(seed: number): Row {
     obRatio,
     greenWidth: course.greenWidth,
     heightFeatures: course.heightFeatures?.length ?? 0,
-    roughIslands: course.roughIslands?.length ?? 0,
+    bunkers: course.bunkers?.length ?? 0,
+    bunkerRatio: result.areaRatio.bunker,
     unreachableArea: Math.max(0, playable - result.reachableRatio) * area,
   };
 }
@@ -265,5 +272,6 @@ console.log(
   `  むずかしいPAR4のルート全長: ${describe('', rows.filter((r) => r.par === 4 && r.difficulty === (ARGS.gen === 'v2' ? 'hard' : 'むずかしい')).map((r) => r.routeLength), 'm')}`,
 );
 console.log(`  高さのハザード: ${tally(rows.map((r) => r.heightFeatures))}`);
-console.log(`  深いラフの島: ${tally(rows.map((r) => r.roughIslands))}`);
+console.log(`  バンカー: ${tally(rows.map((r) => r.bunkers))}`);
+console.log(`  ${describe('バンカー面積比', rows.map((r) => r.bunkerRatio * 100), '%')}`);
 console.log(`  生成の試行回数: ${describe('', rows.map((r) => r.attempts), '回')}`);

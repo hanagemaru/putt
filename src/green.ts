@@ -439,6 +439,7 @@ export class GreenMesh {
     green: new THREE.Color(C.surfaceColors.green),
     rough: new THREE.Color(C.surfaceColors.rough),
     deepRough: new THREE.Color(C.surfaceColors.deepRough),
+    bunker: new THREE.Color(C.surfaceColors.bunker),
     water: new THREE.Color(C.surfaceColors.water),
     ob: new THREE.Color(C.surfaceColors.ob),
   };

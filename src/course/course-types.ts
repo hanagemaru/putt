@@ -1,8 +1,12 @@
 /**
  * 地面種別。芝は通常芝 → ラフ → セカンドカットの順に重くなり、
  * その外側だけをOBにする。
+ *
+ * `bunker`（砂）は芝の中に置く。**罰打はなく、そこから打つ。**
+ * 摩擦がセカンドカットよりさらに高いので、止まりはするが次の一打が短くなる。
+ * 水と違って越えられるので、**ルートの線の上に置ける唯一の罰則的ハザード**。
  */
-export type SurfaceType = 'green' | 'rough' | 'deepRough' | 'water' | 'ob';
+export type SurfaceType = 'green' | 'rough' | 'deepRough' | 'bunker' | 'water' | 'ob';
 
 /**
  * 地形の性格。ハイトマップの作り方を決める（spec §1）。
@@ -59,11 +63,13 @@ export interface HeightFeature {
 }
 
 /**
- * 深いラフの島（生成器v2）。帯ではなく塊としてルートの中や脇に置く。
- * `surfaceAt` は島の内側で `deepRough` を返すだけなので、
- * **罰打も新しいサーフェスも要らず、芝の連結も切れない**（セカンドカットは打てる）。
+ * バンカー（生成器v2）。楕円の砂地で、輪郭は池と同じ作りで歪ませる。
+ *
+ * **罰打なし。縁を立てない（平らな砂だけ）。** 壁を作ると出られなくなる（詰み）ので、
+ * ハイトマップには一切手を入れず、サーフェスだけを砂に変える。
+ * 高さの濃淡は掛ける（池・OBと違い、砂の上でも地形を読ませたいため）。
  */
-export interface RoughIsland {
+export interface SandBunker {
   center: CoursePoint;
   radiusX: number;
   radiusZ: number;
@@ -100,8 +106,8 @@ export interface CourseDefinition {
    */
   heightFeatures?: readonly HeightFeature[];
   /**
-   * 深いラフの島。**生成器v2だけが入れる任意項目。**
+   * バンカー。**生成器v2だけが入れる任意項目。**
    * 省略（v1のコース）なら `surfaceAt` はこれまでと同じ答えを返す
    */
-  roughIslands?: readonly RoughIsland[];
+  bunkers?: readonly SandBunker[];
 }

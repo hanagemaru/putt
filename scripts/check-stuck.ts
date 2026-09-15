@@ -194,7 +194,14 @@ function buildGreen(course: CourseDefinition): Green {
 }
 
 function isPlayable(surface: SurfaceType): boolean {
-  return surface === 'green' || surface === 'rough' || surface === 'deepRough';
+  return (
+    surface === 'green' ||
+    surface === 'rough' ||
+    surface === 'deepRough' ||
+    // 砂は罰打なしでそこから打つので、止まれるマスに数える。
+    // **「打っても出ない砂」があればここで詰みとして出る**
+    surface === 'bunker'
+  );
 }
 
 /** 地面種別ごとの摩擦 [m/s^2]。physics.ts の frictionMultiplier と同じ */
@@ -202,6 +209,7 @@ function frictionOn(surface: SurfaceType): number {
   const base = frictionFromStimp(P.stimpFeet);
   if (surface === 'rough') return base * P.roughFrictionMultiplier;
   if (surface === 'deepRough') return base * P.deepRoughFrictionMultiplier;
+  if (surface === 'bunker') return base * P.bunkerFrictionMultiplier;
   return base;
 }
 
@@ -650,15 +658,17 @@ function investigate(seed: number, args: Args): SeedReport {
   //   - 36方向 × 初速を全部試したとき、池・OB以外で止まれる中での最大移動距離
   // を見る。後者が小さいほど「打っても前へ進まない」に近い
   phase = 'uphill';
-  const candidates: { x: number; z: number; gradient: number }[] = [];
+  const candidates: { x: number; z: number; surface: SurfaceType; gradient: number }[] = [];
   for (let j = 0; j < grid.nz; j++) {
     for (let i = 0; i < grid.nx; i++) {
       if (!grid.playable[j * grid.nx + i]) continue;
       const x = grid.cellX(i);
       const z = grid.cellZ(j);
-      if (surfaceAt(course, x, z) !== 'deepRough') continue;
+      // 摩擦が重い地面ほど「打っても出ない」に近い。セカンドカットと砂の両方を見る
+      const surface = surfaceAt(course, x, z);
+      if (surface !== 'deepRough' && surface !== 'bunker') continue;
       green.sampleGradient(x, z, grad);
-      candidates.push({ x, z, gradient: Math.hypot(grad.x, grad.z) });
+      candidates.push({ x, z, surface, gradient: Math.hypot(grad.x, grad.z) });
     }
   }
   candidates.sort((a, b) => b.gradient - a.gradient);
@@ -683,7 +693,7 @@ function investigate(seed: number, args: Args): SeedReport {
     if (worst === null || candidate.gradient > worst.gradient) {
       worst = {
         gradient: candidate.gradient,
-        surface: 'deepRough',
+        surface: candidate.surface,
         x: candidate.x,
         z: candidate.z,
         uphillMove,
@@ -744,10 +754,10 @@ console.log(
   `参考: 初速 = スワイプ[px/s] × speedK ${CONFIG.swipeTest.speedK} × 反発（${CONFIG.game.putterTuning.minScale}〜${CONFIG.game.putterTuning.maxScale}倍）× 芯の減衰（${CONFIG.swipeTest.mishitMinGain}〜1.0）`,
 );
 console.log(
-  `摩擦: 通常芝 ${frictionOn('green').toFixed(3)} / ラフ ${frictionOn('rough').toFixed(3)} / セカンドカット ${frictionOn('deepRough').toFixed(3)} m/s^2`,
+  `摩擦: 通常芝 ${frictionOn('green').toFixed(3)} / ラフ ${frictionOn('rough').toFixed(3)} / セカンドカット ${frictionOn('deepRough').toFixed(3)} / 砂 ${frictionOn('bunker').toFixed(3)} m/s^2`,
 );
 console.log(
-  `止まれる勾配の上限: 通常芝 ${percent(criticalGradient(P.stimpFeet))} / ラフ ${percent(criticalGradient(P.stimpFeet) * P.roughFrictionMultiplier)} / セカンドカット ${percent(criticalGradient(P.stimpFeet) * P.deepRoughFrictionMultiplier)}`,
+  `止まれる勾配の上限: 通常芝 ${percent(criticalGradient(P.stimpFeet))} / ラフ ${percent(criticalGradient(P.stimpFeet) * P.roughFrictionMultiplier)} / セカンドカット ${percent(criticalGradient(P.stimpFeet) * P.deepRoughFrictionMultiplier)} / 砂 ${percent(criticalGradient(P.stimpFeet) * P.bunkerFrictionMultiplier)}`,
 );
 console.log('');
 

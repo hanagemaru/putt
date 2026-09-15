@@ -27,14 +27,14 @@ import type {
   CoursePoint,
   EllipseHazard,
   HeightFeature,
-  RoughIsland,
+  SandBunker,
   TerrainType,
 } from './course-types';
 
 const V = CONFIG.course.generatorV2;
 const C = V.curve;
 const H = V.height;
-const I = V.roughIsland;
+const B = V.bunker;
 const N = CONFIG.course.edgeNoise;
 const T = CONFIG.course.terrain;
 
@@ -660,49 +660,63 @@ function placeHeightFeatures(
 }
 
 /**
- * 深いラフの島を置く。**帯ではなく塊**なので、「近道側だけ重い」を作れる。
- * 横ずれは `insideBias` の割合で曲がりの内側へ寄せる。
+ * バンカー（砂）を置く。**水と違って越えられるので、ルートの線の上に置ける。**
+ * 「強く越えるか、避けて回すか」を、曲がり角を大きくせずに作る。
+ *
+ * **要は、必ず逃げ道を残すこと。** 横ずれの下限を、
+ * 「反対側に `minClearWidth` の通常芝が残る」位置から取るので、
+ * 砂がルートの線に掛かっていても脇は必ず通れる。
+ * 最初に作った深いラフの島は横ずれの下限が0で、294個中87%が中心線を塞いでいた。
+ * 逃げ道が無ければ選択にならず、ただの障害物になる。
  */
-function placeRoughIslands(
-  rng: () => number,
-  count: number,
-  draft: CourseDefinition,
-): RoughIsland[] {
-  const islands: RoughIsland[] = [];
+function placeBunkers(rng: () => number, count: number, draft: CourseDefinition): SandBunker[] {
+  const bunkers: SandBunker[] = [];
+  const halfWidth = draft.greenWidth / 2;
 
   for (let i = 0; i < count; i++) {
-    const radiusMajor = pick(rng, I.radius);
-    const aspect = pick(rng, I.aspect);
+    const radiusMajor = pick(rng, B.radius);
+    const aspect = pick(rng, B.aspect);
     const radiusX = radiusMajor;
     const radiusZ = radiusMajor * aspect;
     const maxRadius = Math.max(radiusX, radiusZ);
 
-    let placed: RoughIsland | null = null;
-    for (let attempt = 0; attempt < I.maxAttempts && !placed; attempt++) {
-      const at = sampleRoute(draft.route, pick(rng, I.routeRange));
-      const side = rng() < I.insideBias ? 1 : -1;
-      const offset = pick(rng, I.offset) * (draft.greenWidth / 2) * side;
+    // 反対側に通れる芝を残せる最小の横ずれ。負なら中心線を跨いでも逃げ道が残る
+    const minOffset = maxRadius + B.minClearWidth - halfWidth;
+    const maxOffset = halfWidth * B.maxOffset;
+    // 芝が狭すぎて逃げ道を作れないなら、このバンカーは諦める
+    if (minOffset > maxOffset) continue;
+
+    let placed: SandBunker | null = null;
+    for (let attempt = 0; attempt < B.maxAttempts && !placed; attempt++) {
+      const at = sampleRoute(draft.route, pick(rng, B.routeRange));
+      const side = rng() < B.insideBias ? 1 : -1;
+      const offset = pick(rng, [minOffset, maxOffset]) * side;
       const center = {
         x: at.x + at.insideX * offset,
         z: at.z + at.insideZ * offset,
       };
-      const clearance = I.teeCupClearance + maxRadius;
+      const clearance = B.teeCupClearance + maxRadius;
       if (Math.hypot(center.x - draft.tee.x, center.z - draft.tee.z) < clearance) continue;
       if (Math.hypot(center.x - draft.cup.x, center.z - draft.cup.z) < clearance) continue;
-      // 島は芝とラフを一段重くするだけなので、中心が芝の上にないと何も起きない
-      const surface = surfaceAt(draft, center.x, center.z);
-      if (surface !== 'green' && surface !== 'rough') continue;
-      const tooClose = islands.some(
-        (s) =>
-          Math.hypot(s.center.x - center.x, s.center.z - center.z) <
-          Math.max(s.radiusX, s.radiusZ) + maxRadius + I.minSpacing,
+      // 砂は芝の上だけに置く。OBの中の砂は見えないし、池と接すると区別が付かない
+      if (surfaceAt(draft, center.x, center.z) === 'ob') continue;
+      const nearWater = draft.hazards.some(
+        (h) =>
+          Math.hypot(h.center.x - center.x, h.center.z - center.z) <
+          Math.max(h.radiusX, h.radiusZ) + maxRadius + draft.waterFringe + B.waterClearance,
+      );
+      if (nearWater) continue;
+      const tooClose = bunkers.some(
+        (b) =>
+          Math.hypot(b.center.x - center.x, b.center.z - center.z) <
+          Math.max(b.radiusX, b.radiusZ) + maxRadius + B.minSpacing,
       );
       if (tooClose) continue;
       placed = { center, radiusX, radiusZ };
     }
-    if (placed) islands.push(placed);
+    if (placed) bunkers.push(placed);
   }
-  return islands;
+  return bunkers;
 }
 
 // --- 組み立て -------------------------------------------------------------
@@ -768,7 +782,7 @@ function draftCourseV2(seed: number, options: GenerateOptionsV2): DraftV2 {
   const terrain = options.terrain ?? pickWeighted(rng, T.weights);
   const hazardCount = pickInt(rng, d.hazardCount);
   const heightFeatureCount = pickInt(rng, d.heightFeatureCount);
-  const roughIslandCount = pickInt(rng, d.roughIslandCount);
+  const bunkerCount = pickInt(rng, d.bunkerCount);
 
   const base: CourseDefinition = {
     id: options.id ?? `gen2-${(seed >>> 0).toString(36)}`,
@@ -787,8 +801,8 @@ function draftCourseV2(seed: number, options: GenerateOptionsV2): DraftV2 {
     hazards: [],
   };
 
-  // 池 → 高さのハザード → 島 の順に置く。後ろの2つは `surfaceAt` で置ける場所を確かめるので、
-  // 前の段階の結果が入ったコース定義を渡す必要がある
+  // 池 → 高さのハザード → バンカー の順に置く。後ろの2つは `surfaceAt` で置ける場所を
+  // 確かめるので、前の段階の結果が入ったコース定義を渡す必要がある
   const withWater: CourseDefinition = { ...base, hazards: placeHazards(rng, hazardCount, base) };
   const withHeight: CourseDefinition = {
     ...withWater,
@@ -796,7 +810,7 @@ function draftCourseV2(seed: number, options: GenerateOptionsV2): DraftV2 {
   };
   const course: CourseDefinition = {
     ...withHeight,
-    roughIslands: placeRoughIslands(rng, roughIslandCount, withHeight),
+    bunkers: placeBunkers(rng, bunkerCount, withHeight),
   };
   return { course, difficulty, plan };
 }
@@ -834,9 +848,13 @@ export function generateCourseV2Detailed(
     const result = validateCourse(draft.course, { cellSize });
     if (!result.ok) continue;
     if (result.areaRatio.ob < obMin || result.areaRatio.ob > obMax) continue;
-    // ティー側から辿り着けない芝の島を作らない。連結（ティー→カップ）だけでは残ってしまう
+    // ティー側から辿り着けない芝の島を作らない。連結（ティー→カップ）だけでは残ってしまう。
+    // 砂は罰打なしで打てるので、ここでも打てる地面として数える
     const playable =
-      result.areaRatio.green + result.areaRatio.rough + result.areaRatio.deepRough;
+      result.areaRatio.green +
+      result.areaRatio.rough +
+      result.areaRatio.deepRough +
+      result.areaRatio.bunker;
     const unreachable =
       (playable - result.reachableRatio) * draft.course.bounds.width * draft.course.bounds.length;
     if (unreachable > V.maxUnreachableArea) continue;
