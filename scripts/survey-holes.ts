@@ -25,7 +25,7 @@ const TERRAIN_ORDER: readonly TerrainType[] = [
   'twoTier',
 ];
 const PAR_ORDER = [3, 4, 5] as const;
-const SURFACE_ORDER: readonly SurfaceType[] = ['green', 'rough', 'deepRough', 'water', 'ob'];
+const SURFACE_ORDER: readonly SurfaceType[] = ['green', 'rough', 'deepRough', 'bunker', 'water', 'ob'];
 
 const DIFFICULTY_BY_LABEL: Record<string, Difficulty> = {
   やさしい: 'easy',
