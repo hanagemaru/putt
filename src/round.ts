@@ -181,9 +181,3 @@ function validHoleScore(hole: HoleScore, number: number, seed: number): boolean 
     typeof hole.holedOut === 'boolean'
   );
 }
-
-/** パー差の表示。0 は ±0、プラスは符号を付ける */
-export function formatToPar(diff: number): string {
-  if (diff === 0) return '±0';
-  return diff > 0 ? `+${diff}` : String(diff);
-}

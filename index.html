@@ -111,6 +111,111 @@
       #hud .row:first-child {
         padding-right: 66px;
       }
+      /*
+       * 進行の表示。ゴルフ中継と同じで、**今の打数を主役にして他を従属させる**。
+       * 通算パー差は打数の隣に置くと「このホールで+1」と読まれるので、右端へ離す。
+       * 大きさが混ざっても帯の高さが動かないよう、行の高さは1行ぶんに固定する
+       */
+      #hud .progress {
+        display: flex;
+        align-items: baseline;
+        /* 隣り合う読み取りがつながって見えないよう、欄の間は広めに取る */
+        gap: clamp(10px, 4vw, 18px);
+        line-height: 1;
+      }
+      #hud .progress > span:empty {
+        display: none;
+      }
+      /* スコアカードを出している間は、同じことを言う進行表示を丸ごと引っ込める */
+      #hud .progress.is-off {
+        display: none;
+      }
+      /*
+       * ホール表示は中継のホール紹介と同じ組み方にする。
+       * 大きいホール番号を白地で反転させ、右に全長とPARを2段で添える。
+       * 2段でも1行ぶん（22px）に収め、帯の高さを変えない
+       */
+      #hud .hole-badge {
+        display: inline-flex;
+        align-items: stretch;
+        /* 2段でも1行ぶんに収める。他の欄とはベースラインを共有しない */
+        align-self: center;
+        height: 22px;
+      }
+      #hud .hole-badge-number {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        /* 桁が増えても左端の位置が動かないよう、1桁ぶんの幅を確保する */
+        min-width: 16px;
+        padding: 0 3px;
+        background: #eef7ec;
+        color: #16210f;
+        font-size: clamp(16px, 5vw, 18px);
+        line-height: 1;
+        text-shadow: none;
+      }
+      #hud .hole-badge-number:empty {
+        display: none;
+      }
+      #hud .hole-badge-stack {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 1px;
+        padding: 0 4px;
+        border: 1px solid #4d6b48;
+        border-left: 0;
+        background: rgba(12, 20, 14, 0.55);
+      }
+      #hud .hole-badge-length,
+      #hud .hole-badge-par {
+        font-size: clamp(8px, 2.6vw, 9px);
+        line-height: 1;
+        color: #dfeade;
+      }
+      /* 練習ではホール番号を出さないので、枠を閉じ直す */
+      #hud .hole-badge-number:empty + .hole-badge-stack {
+        border-left: 1px solid #4d6b48;
+      }
+      /*
+       * 打数・通算・残り距離。隣同士がつながって見えないよう、
+       * **見出しは小さく沈め、数字だけを明るく**出す。欄の間も語の中の空きより広く取る
+       */
+      .readout {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 4px;
+      }
+      .readout-label {
+        font-size: 0.78em;
+        color: #85a482;
+      }
+      .readout-value {
+        color: #dfeade;
+      }
+      /* パー差の色は中継の規約に合わせる。アンダーは赤、オーバーは青 */
+      .readout-value.under,
+      .verdict.under {
+        color: #ff8a7a;
+      }
+      .readout-value.over,
+      .verdict.over {
+        color: #9dc2ff;
+      }
+      #hud .readout {
+        font-size: clamp(11px, 3.6vw, 14px);
+      }
+      #hud .readout.is-off {
+        display: none;
+      }
+      #hud .readout-value.shot {
+        color: #ffffff;
+      }
+      /*
+       * 通算パー差。中継の規約に合わせ、アンダーは赤、オーバーは青で出す。
+       * 色が読めない場合でも `+` `-` の記号で分かるようにしておく
+       */
       #hud .state {
         font-size: 16px;
         color: #9ede8a;
@@ -203,6 +308,57 @@
       }
       #result-alert:empty {
         display: none;
+      }
+
+      /*
+       * ホールの入り口で一度だけ出す紹介（中継のホール紹介にあたる）。
+       * 打つ場所を隠さないよう画面の上寄りへ置き、時間で自動的に消す。
+       * 表示時間とフェードは `src/config.ts` の `round.holeIntro`
+       */
+      #hole-intro {
+        position: fixed;
+        /* 上に置くと旗竿と重なって一瞬でも邪魔になるので、画面の中ほどへ置く */
+        top: 50%;
+        left: 0;
+        right: 0;
+        z-index: 18;
+        display: grid;
+        justify-items: center;
+        gap: 8px;
+        transform: translateY(-50%);
+        pointer-events: none;
+        font-family: var(--pixel-font);
+        color: #eef7ec;
+        text-align: center;
+        /*
+         * 出るときはカメラの切り替わりと同時にパッと出す（フェードしない）。
+         * 消えるときだけフェードさせる。時間は `src/config.ts` の `round.holeIntro.fade`
+         */
+        opacity: 0;
+        transition: opacity 0s linear;
+      }
+      #hole-intro.show {
+        opacity: 1;
+      }
+      .hole-intro-number {
+        font-size: clamp(30px, 10vw, 44px);
+        line-height: 1;
+        text-shadow:
+          4px 4px 0 #16210f,
+          -2px -2px 0 #16210f,
+          2px -2px 0 #16210f,
+          -2px 2px 0 #16210f;
+      }
+      /* 小さい文字に大きな影を付けると輪郭が潰れるので、影は1ドットぶんに留める */
+      .hole-intro-detail {
+        font-size: clamp(13px, 4.5vw, 18px);
+        line-height: 1;
+        color: #dfeade;
+        text-shadow:
+          2px 2px 0 #16210f,
+          -1px -1px 0 #16210f,
+          1px -1px 0 #16210f,
+          -1px 1px 0 #16210f;
       }
 
       /* 練習用のパター反発調整。入口はSTROKE中だけ表示する */
@@ -552,19 +708,50 @@
         font-size: 16px;
         letter-spacing: 0.08em;
         color: #9ede8a;
+        /* 「HOLE 5 / 9」と「PAR 4」の間は空きで区切るので、空白を畳ませない */
+        white-space: pre;
       }
-      /* ホール間はこの1行が主役。打数とパー差を大きく出す */
+      /*
+       * ホール間はこの1行が主役。中継と同じで、**スコアはまず語で言う**
+       * （BIRDIE / PAR / DOUBLE BOGEY …）。ラウンド終了は通算パー差がここへ入る
+       */
       #score-headline {
         margin-top: 12px;
         font-size: 32px;
         line-height: 1.1;
         text-shadow: 3px 3px 0 #0d140d;
       }
+      /* 語の下に打数。語がスコアの意味を言い、こちらが実数を言う */
+      #score-strokes {
+        margin-top: 6px;
+        font-size: 18px;
+        line-height: 1.2;
+        color: #dfeade;
+      }
+      #score-strokes:empty {
+        display: none;
+      }
+      /* HUDと同じ組み方（見出しを沈めて数字を明るく）で、通算などを並べる */
       #score-sub {
-        margin-top: 10px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 18px;
+        justify-content: center;
+        margin-top: 12px;
         font-size: 16px;
-        line-height: 1.5;
+        line-height: 1.4;
         color: #bcd0c0;
+      }
+      #score-sub:empty {
+        display: none;
+      }
+      #score-note {
+        margin-top: 8px;
+        font-size: 13px;
+        color: #a8bfae;
+      }
+      #score-note:empty {
+        display: none;
       }
       /*
        * 一覧表を出す（＝縦に長い）カードは、字と余白を詰めて画面に収める。
@@ -573,6 +760,10 @@
       #score-card.list #score-headline {
         margin-top: 8px;
         font-size: 24px;
+      }
+      #score-card.list #score-strokes {
+        margin-top: 4px;
+        font-size: 16px;
       }
       #score-card.list #score-sub {
         margin-top: 6px;
@@ -716,13 +907,37 @@
     <div id="app"></div>
     <canvas id="stroke"></canvas>
     <div id="result-alert" role="status" aria-live="polite"></div>
+    <div id="hole-intro" aria-hidden="true">
+      <div class="hole-intro-number" id="hole-intro-number"></div>
+      <div class="hole-intro-detail" id="hole-intro-detail"></div>
+    </div>
 
     <div id="hud">
       <div class="row">
         <span class="state" id="hud-state">ADDRESS</span>
         <span id="hud-view"></span>
         <span id="hud-aim"></span>
-        <span id="hud-shots"></span>
+        <span class="progress">
+          <span class="hole-badge">
+            <span class="hole-badge-number" id="hud-hole-number"></span>
+            <span class="hole-badge-stack">
+              <span class="hole-badge-length" id="hud-hole-length"></span>
+              <span class="hole-badge-par" id="hud-hole-par"></span>
+            </span>
+          </span>
+          <span class="readout" id="hud-shot">
+            <span class="readout-label" id="hud-shot-label"></span>
+            <span class="readout-value shot" id="hud-shot-value"></span>
+          </span>
+          <span class="readout" id="hud-total">
+            <span class="readout-label" id="hud-total-label"></span>
+            <span class="readout-value total" id="hud-total-value"></span>
+          </span>
+          <span class="readout" id="hud-pin">
+            <span class="readout-label" id="hud-pin-label"></span>
+            <span class="readout-value pin" id="hud-pin-value"></span>
+          </span>
+        </span>
       </div>
       <div class="row" id="hud-swing"></div>
       <div class="result" id="hud-result"></div>
@@ -794,7 +1009,9 @@
       <div id="score-card">
         <div id="score-title"></div>
         <div id="score-headline"></div>
+        <div id="score-strokes"></div>
         <div id="score-sub"></div>
+        <div id="score-note"></div>
         <table id="score-table" hidden>
           <tbody id="score-rows"></tbody>
         </table>
