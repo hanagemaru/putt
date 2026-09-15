@@ -41,38 +41,8 @@ const LOOK_AHEAD_SEC = 10;
 const SCHEDULER_MS = 2500;
 const SCENE_FADE_SEC = 0.35;
 const MIN_GAIN = 0.0001;
-const JINGLE_GAIN = 0.28;
-const JINGLE_DUCK_RATIO = 0.78;
-/** 「音量を下げる」案だけで使う、現状より小さいジングル音量。 */
-const JINGLE_QUIET_GAIN = 0.13;
-/** ジングルを鳴らさない案で、カップ音の余韻に重ねてBGMを少しだけ持ち上げる倍率。 */
-const JINGLE_LIFT_RATIO = 1.18;
-/** ジングルの和音。BGMの1つ目のコード（C6/9）と同じ。 */
-const JINGLE_VOICING = [55, 57, 62, 64] as const;
 /** 中断明けに、過去へずれた予約位置を現在時刻の少し先まで引き戻す余裕。 */
 const RESUME_LEAD_SEC = 0.05;
-
-/**
- * ホールアウトのジングル案。試遊で「浮いて聞こえる」と出たため、
- * `docs/PLAYTEST_BACKLOG.md` §9 の方向をそれぞれ1軸だけ変えた形で持つ。
- * 試聴用ページ（`/jingle-test/`）から選んで鳴らし、採用が決まったら `ACTIVE_JINGLE` を差し替える。
- */
-export type JingleVariant =
-  /** 現状。低いピックアップ + C6/9の同時和音スタブ2回 + ノイズ */
-  | 'current'
-  /** 音量だけ下げる */
-  | 'quiet'
-  /** 同時和音をやめ、BGMと同じ単音の動きにする */
-  | 'single'
-  /** 矩形波 + ノイズをやめ、トライアングル中心の柔らかい音にする */
-  | 'soft'
-  /** 鳴らす位置をBGMの拍へ、和音を進行中のコードへ合わせる */
-  | 'inTime'
-  /** ジングルをやめ、カップ音の余韻 + BGMのわずかな持ち上げだけにする */
-  | 'none';
-
-/** 現在ゲーム本編で鳴らしている案。実機試聴で決めるまでは現状のまま。 */
-export const ACTIVE_JINGLE: JingleVariant = 'current';
 
 /**
  * ホールアウトの結果。ジングルはこの5段階で鳴らし分ける。
@@ -175,8 +145,6 @@ export class PuttMusic {
   private scheduledUntil = 0;
   private scheduler: number | null = null;
   private noiseBuffer: AudioBuffer | null = null;
-  /** 直近に予約した1周の開始時刻。拍とコードの位置を逆算するために持つ。 */
-  private cycleAnchor = 0;
   /** ホールアウトでBGMを引いている間だけ true。曲自体は裏で進み続ける。 */
   private muted = false;
 
@@ -233,7 +201,6 @@ export class PuttMusic {
     this.activeScene = null;
     this.scheduledUntil = 0;
     this.noiseBuffer = null;
-    this.cycleAnchor = 0;
     this.muted = false;
   }
 
@@ -303,131 +270,6 @@ export class PuttMusic {
     gain.exponentialRampToValueAtTime(Math.max(target, MIN_GAIN), from + fade);
   }
 
-  /**
-   * ホールアウトのジングル。
-   * カップ音の余韻を十分に聞かせてから入るため、既定は約1秒遅らせる。
-   * 案の比較中なので、どの形で鳴らすかは `variant` で選べるようにしてある。
-   */
-  playHoleOutJingle(delay = 1, variant: JingleVariant = ACTIVE_JINGLE): void {
-    if (!this.enabled) return;
-    const context = this.ensureContext();
-    if (context.state !== 'running') return;
-
-    const requested = context.currentTime + delay;
-    if (variant === 'none') {
-      this.liftMusic(context, requested);
-      return;
-    }
-
-    // 拍へ合わせる案だけ、BGMの次の拍まで待ち、和音も進行中のコードへ合わせる。
-    const spot = variant === 'inTime' ? this.beatAt(requested) : null;
-    const start = spot ? spot.time : requested;
-    const voicing = spot ? spot.chord.voicing : JINGLE_VOICING;
-    const root = spot ? spot.chord.root : 48;
-    const beat = this.beatSec();
-
-    const jingleBus = context.createGain();
-    jingleBus.gain.value = variant === 'quiet' ? JINGLE_QUIET_GAIN : JINGLE_GAIN;
-    jingleBus.connect(context.destination);
-
-    let tail = 0.6;
-    if (variant === 'single') {
-      // 同時に鳴らさず、BGMのPSGと同じ単音の動きで和声を出す。
-      this.scheduleTriangle(root, start, 0.3, 0.055, jingleBus);
-      const step = 0.085;
-      for (let k = 0; k < voicing.length; k++) {
-        this.scheduleSquare(voicing[k], start + 0.1 + k * step, 0.19, 0.034, jingleBus, 3000);
-      }
-      const last = 0.1 + (voicing.length - 1) * step;
-      this.scheduleNoise(start + last, 0.03, 0.01, jingleBus, 2600, 0.8, 7);
-      tail = last + 0.3;
-    } else if (variant === 'soft') {
-      // 矩形波とノイズをやめ、BGMのベースと同じトライアングルだけで組む。
-      this.scheduleTriangle(root, start, 0.34, 0.05, jingleBus);
-      const step = 0.1;
-      for (let k = 0; k < voicing.length; k++) {
-        this.scheduleTriangle(voicing[k] - 12, start + 0.12 + k * step, 0.36, 0.042, jingleBus);
-      }
-      tail = 0.12 + (voicing.length - 1) * step + 0.4;
-    } else {
-      // 現状の形。ピックアップ + 同時和音スタブ2回 + ノイズ。
-      // 拍へ合わせる案では、ピックアップを拍の前へ置き、スタブを拍の上に乗せる。
-      const pickup = spot ? -beat * 0.5 : 0;
-      const hits = spot
-        ? ([
-            [0, 0.038],
-            [beat * 0.5, 0.027],
-          ] as const)
-        : ([
-            [0.1, 0.038],
-            [0.34, 0.027],
-          ] as const);
-      this.scheduleTriangle(root, start + pickup, 0.3, 0.055, jingleBus);
-      for (const [hit, amount] of hits) {
-        for (const note of voicing) {
-          this.scheduleSquare(note, start + hit, 0.19, amount, jingleBus, 3000);
-        }
-      }
-      const last = hits[hits.length - 1][0];
-      this.scheduleNoise(start + last, 0.03, 0.01, jingleBus, 2600, 0.8, 7);
-      tail = last + 0.3;
-    }
-
-    this.duckMusic(context, start);
-    const stop = start - context.currentTime + tail;
-    window.setTimeout(() => jingleBus.disconnect(), Math.ceil(stop * 1000));
-  }
-
-  /** ジングル時もプレイBGMを大きく引っ込めず、曲の流れを保つ。 */
-  private duckMusic(context: AudioContext, start: number): void {
-    if (!this.bus || !this.activeScene) return;
-    const base = MUSIC[this.activeScene].gain;
-    const gain = this.bus.gain;
-    const duckStart = Math.max(context.currentTime, start - 0.06);
-    gain.cancelScheduledValues(duckStart);
-    gain.setValueAtTime(base, duckStart);
-    gain.linearRampToValueAtTime(base * JINGLE_DUCK_RATIO, start + 0.04);
-    gain.setValueAtTime(base * JINGLE_DUCK_RATIO, start + 0.55);
-    gain.linearRampToValueAtTime(base, start + 0.95);
-  }
-
-  /** ジングルを鳴らさない案。入った合図はカップ音に任せ、BGMをわずかに持ち上げるだけにする。 */
-  private liftMusic(context: AudioContext, start: number): void {
-    if (!this.bus || !this.activeScene) return;
-    const base = MUSIC[this.activeScene].gain;
-    const gain = this.bus.gain;
-    const from = Math.max(context.currentTime, start - 0.4);
-    gain.cancelScheduledValues(from);
-    gain.setValueAtTime(base, from);
-    gain.linearRampToValueAtTime(base * JINGLE_LIFT_RATIO, start + 0.3);
-    gain.setValueAtTime(base * JINGLE_LIFT_RATIO, start + 1.6);
-    gain.linearRampToValueAtTime(base, start + 2.5);
-  }
-
-  private beatSec(): number {
-    return 60 / MUSIC[this.activeScene ?? this.requestedScene].bpm;
-  }
-
-  /**
-   * 指定時刻以降で最初に来るBGMの拍と、そこで鳴っているコードを返す。
-   * 1周の開始時刻からの位置で求めるので、予約済みの先の拍でも逆算できる。
-   */
-  private beatAt(time: number): { time: number; chord: Chord } | null {
-    const scene = this.activeScene;
-    if (!scene || !this.bus || this.cycleAnchor === 0) return null;
-
-    const settings = MUSIC[scene];
-    const beat = 60 / settings.bpm;
-    const bar = 4 * beat;
-    const cycle = settings.bars * bar;
-
-    const steps = Math.ceil((time - this.cycleAnchor) / beat - 1e-6);
-    const beatTime = this.cycleAnchor + steps * beat;
-    const phase = (((beatTime - this.cycleAnchor) % cycle) + cycle) % cycle;
-    const barIndex = Math.floor(phase / bar);
-    return { time: beatTime, chord: PROGRESSION[barIndex % PROGRESSION.length] };
-  }
-
   private startRequestedScene(): void {
     const context = this.ensureContext();
     if (context.state !== 'running') return;
@@ -489,7 +331,6 @@ export class PuttMusic {
   }
 
   private scheduleCycle(scene: MusicScene, start: number, bus: GainNode): void {
-    this.cycleAnchor = start;
     const settings = MUSIC[scene];
     const beat = 60 / settings.bpm;
     const bar = 4 * beat;
