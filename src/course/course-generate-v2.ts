@@ -782,8 +782,14 @@ function placeBunkers(rng: () => number, count: number, draft: CourseDefinition)
  */
 function bunkerHollows(bunkers: readonly SandBunker[]): HeightFeature[] {
   return bunkers.map((b) => {
-    const radiusU = b.radiusX;
-    const radiusV = b.radiusZ;
+    // **窪みは砂の内側に収める。** 輪郭の歪みは半径を角度ごとに (1 ± amplitude) 倍するので、
+    // どの向きでも砂がある最小の半径は (1 - amplitude) 倍。そこまでに収めておけば、
+    // 窪みの斜面が芝へはみ出さない。
+    // はみ出すと、バンカー脇の芝が「止まれない斜面」になって手前に刻めなくなる
+    // （実測で芝の止まれない面が 2.1% → 4.2% に倍増した）
+    const inside = 1 - (b.outline?.amplitude ?? N.bunkerAmplitude);
+    const radiusU = b.radiusX * inside;
+    const radiusV = b.radiusZ * inside;
     const depth = (B.hollowGradient * Math.min(radiusU, radiusV)) / BUMP_PEAK_SLOPE;
     return { kind: 'hollow', center: b.center, height: -depth, radiusU, radiusV, angle: 0 };
   });
