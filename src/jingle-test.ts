@@ -1,53 +1,14 @@
 import { puttAudio } from './audio';
 import { CONFIG } from './config';
-import { ACTIVE_JINGLE, puttMusic, type HoleOutResult, type JingleVariant } from './music';
+import { puttMusic, type HoleOutResult } from './music';
 
 /**
  * ホールアウトのジングル試聴ページ。
  *
- * 「浮いて聞こえる」（`docs/PLAYTEST_BACKLOG.md` §9）をどう直すか決めるために、
- * 本編と同じ `PuttMusic` で案を鳴らし分ける。実機（スピーカー・イヤホン）で比べる前提。
- * ここで鳴らしているのは本編と同じコードなので、採用案はそのまま既定へ移せる。
+ * 「浮いて聞こえる」（`docs/PLAYTEST_BACKLOG.md` §9）を直した結果を、実機
+ * （スピーカー・イヤホン）で確かめるためのページ。本編と同じ `PuttMusic` を鳴らすので、
+ * ここで聞こえるものがそのままゲーム中の音になる。
  */
-type VariantCard = {
-  id: JingleVariant;
-  name: string;
-  desc: string;
-};
-
-const VARIANTS: readonly VariantCard[] = [
-  {
-    id: 'current',
-    name: '1. 現状',
-    desc: '低いピックアップ + C6/9の同時和音スタブ2回 + ノイズ。BGMは0.78倍まで下げる。',
-  },
-  {
-    id: 'quiet',
-    name: '2. 音量だけ下げる',
-    desc: '形はそのままで、ジングルの音量を0.28→0.13へ。いちばん小さい変更。',
-  },
-  {
-    id: 'single',
-    name: '3. 同時和音をやめる',
-    desc: '4音を重ねず、BGMと同じ単音の動き（速い分散）で和音を出す。BGMと同じ組み方になる。',
-  },
-  {
-    id: 'soft',
-    name: '4. 柔らかい音色にする',
-    desc: '矩形波とノイズをやめ、BGMのベースと同じトライアングルだけで鳴らす。角が取れる。',
-  },
-  {
-    id: 'inTime',
-    name: '5. BGMの拍とコードに合わせる',
-    desc: '次の拍まで待って鳴らし、和音も進行中のコードに合わせる。別の曲が重なった感じが消える。',
-  },
-  {
-    id: 'none',
-    name: '6. ジングルをやめる',
-    desc: 'カップ音の余韻に任せ、BGMをほんの少しだけ持ち上げて戻す。鳴るのはカップ音だけ。',
-  },
-];
-
 type ResultCard = {
   id: HoleOutResult;
   name: string;
@@ -95,7 +56,6 @@ const startButton = document.getElementById('start') as HTMLButtonElement;
 const stopButton = document.getElementById('stop') as HTMLButtonElement;
 const stateLabel = document.getElementById('bgm-state') as HTMLElement;
 const withCup = document.getElementById('with-cup') as HTMLInputElement;
-const list = document.getElementById('variants') as HTMLElement;
 const resultList = document.getElementById('results') as HTMLElement;
 
 let started = false;
@@ -104,7 +64,6 @@ let highlight: number | null = null;
 function addCard(
   parent: HTMLElement,
   card: { id: string; name: string; desc: string },
-  tag: string | null,
   onPlay: (item: HTMLElement) => void,
 ): void {
   const item = document.createElement('li');
@@ -116,12 +75,6 @@ function addCard(
   name.className = 'name';
   name.textContent = card.name;
   head.append(name);
-  if (tag) {
-    const mark = document.createElement('span');
-    mark.className = 'tag';
-    mark.textContent = tag;
-    head.append(mark);
-  }
 
   const desc = document.createElement('p');
   desc.className = 'desc';
@@ -137,13 +90,8 @@ function addCard(
 
 function buildList(): void {
   for (const result of RESULTS) {
-    addCard(resultList, result, null, (item) => {
+    addCard(resultList, result, (item) => {
       void playResult(result.id, item);
-    });
-  }
-  for (const variant of VARIANTS) {
-    addCard(list, variant, variant.id === ACTIVE_JINGLE ? '今の音' : null, (item) => {
-      void play(variant.id, item);
     });
   }
 }
@@ -157,7 +105,7 @@ async function start(): Promise<void> {
 
   await Promise.all([puttMusic.unlock(), puttAudio.unlock()]);
   started = true;
-  stateLabel.textContent = 'プレイ中のBGMを鳴らしています。案を選んで比べてください。';
+  stateLabel.textContent = 'プレイ中のBGMを鳴らしています。結果を選んで聞いてください。';
 }
 
 function stop(): void {
@@ -167,7 +115,7 @@ function stop(): void {
 }
 
 /**
- * 新案の通し再生。
+ * 通し再生。
  * カップ音 → 間（俯瞰でラインを見る）→ カードと同時にBGMを引いてジングル →
  * 無音 → 次のホールが始まったつもりでBGMを戻す、という流れをそのまま鳴らす。
  */
@@ -182,24 +130,9 @@ async function playResult(result: HoleOutResult, item: HTMLElement): Promise<voi
   highlightCard(item, (cardAt + CARD_HOLD + 1) * 1000);
 }
 
-async function play(variant: JingleVariant, item: HTMLElement): Promise<void> {
-  if (!started) await start();
-
-  // 本編は、カップ音（ボールが落ちた瞬間）の約1秒後にジングルを置く。
-  // カップ音なしのときだけ、待たずに短い間で鳴らす。
-  if (withCup.checked) {
-    puttAudio.playCupIn(0);
-    puttMusic.playHoleOutJingle(1, variant);
-  } else {
-    puttMusic.playHoleOutJingle(0.15, variant);
-  }
-
-  highlightCard(item, 2600);
-}
-
 /** どれを鳴らしているか分かるよう、鳴っている間だけ枠を明るくする。 */
 function highlightCard(item: HTMLElement, durationMs: number): void {
-  for (const other of [...Array.from(list.children), ...Array.from(resultList.children)]) {
+  for (const other of Array.from(resultList.children)) {
     other.classList.remove('active');
   }
   item.classList.add('active');
