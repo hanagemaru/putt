@@ -43,8 +43,128 @@ const SCENE_FADE_SEC = 0.35;
 const MIN_GAIN = 0.0001;
 const JINGLE_GAIN = 0.28;
 const JINGLE_DUCK_RATIO = 0.78;
+/** 「音量を下げる」案だけで使う、現状より小さいジングル音量。 */
+const JINGLE_QUIET_GAIN = 0.13;
+/** ジングルを鳴らさない案で、カップ音の余韻に重ねてBGMを少しだけ持ち上げる倍率。 */
+const JINGLE_LIFT_RATIO = 1.18;
+/** ジングルの和音。BGMの1つ目のコード（C6/9）と同じ。 */
+const JINGLE_VOICING = [55, 57, 62, 64] as const;
 /** 中断明けに、過去へずれた予約位置を現在時刻の少し先まで引き戻す余裕。 */
 const RESUME_LEAD_SEC = 0.05;
+
+/**
+ * ホールアウトのジングル案。試遊で「浮いて聞こえる」と出たため、
+ * `docs/PLAYTEST_BACKLOG.md` §9 の方向をそれぞれ1軸だけ変えた形で持つ。
+ * 試聴用ページ（`/jingle-test/`）から選んで鳴らし、採用が決まったら `ACTIVE_JINGLE` を差し替える。
+ */
+export type JingleVariant =
+  /** 現状。低いピックアップ + C6/9の同時和音スタブ2回 + ノイズ */
+  | 'current'
+  /** 音量だけ下げる */
+  | 'quiet'
+  /** 同時和音をやめ、BGMと同じ単音の動きにする */
+  | 'single'
+  /** 矩形波 + ノイズをやめ、トライアングル中心の柔らかい音にする */
+  | 'soft'
+  /** 鳴らす位置をBGMの拍へ、和音を進行中のコードへ合わせる */
+  | 'inTime'
+  /** ジングルをやめ、カップ音の余韻 + BGMのわずかな持ち上げだけにする */
+  | 'none';
+
+/** 現在ゲーム本編で鳴らしている案。実機試聴で決めるまでは現状のまま。 */
+export const ACTIVE_JINGLE: JingleVariant = 'current';
+
+/**
+ * ホールアウトの結果。ジングルはこの5段階で鳴らし分ける。
+ * 判定の語（BIRDIE / BOGEY …）はスコアカードと同じ区切り方にしてある。
+ */
+export type HoleOutResult = 'eagle' | 'birdie' | 'par' | 'bogey' | 'double';
+
+type CueNote = {
+  note: number;
+  /** ジングルの先頭からの位置 [s] */
+  at: number;
+  duration: number;
+  amount: number;
+};
+
+type HoleOutCue = {
+  /** 下で支える三角波。BGMのベースと同じ音色 */
+  bass: readonly CueNote[];
+  /** 上の旋律。BGMのPSGと同じ音色で、和音は同時に鳴らさない */
+  melody: readonly CueNote[];
+  /** ごく薄い高域のきらめきを置く位置 [s]。イーグル以上だけ */
+  shimmer?: number;
+};
+
+/**
+ * 結果別のジングル。BGMを止めてから鳴らす前提なので、今より小さくても十分に聞こえる。
+ *
+ * 5つとも「2〜4音の同じ形」で、**上へ行くか下へ行くか、途中に♭が入るか**だけが違う。
+ * 別々の曲に聞こえないので、9ホール続けて聞いても結果の違いだけが伝わる。
+ * 音色はBGMと同じ（三角波のベース + 単音のPSG）。同時和音とノイズヒットは使わない。
+ */
+const HOLE_OUT_CUES: Record<HoleOutResult, HoleOutCue> = {
+  // ソ→ド→ミ→ソ と駆け上がる。滅多に出ないので、ここだけ少し長く贅沢にする
+  eagle: {
+    bass: [
+      { note: 48, at: 0, duration: 0.9, amount: 0.05 },
+      { note: 55, at: 0.45, duration: 0.95, amount: 0.036 },
+    ],
+    melody: [
+      { note: 67, at: 0, duration: 0.15, amount: 0.028 },
+      { note: 72, at: 0.13, duration: 0.15, amount: 0.03 },
+      { note: 76, at: 0.26, duration: 0.15, amount: 0.032 },
+      { note: 79, at: 0.39, duration: 1.1, amount: 0.036 },
+      // 最後の音だけ1オクターブ上に薄く重ねる（和音ではなく単音）
+      { note: 91, at: 0.39, duration: 0.7, amount: 0.01 },
+    ],
+    shimmer: 0.39,
+  },
+  // ソ→ド→ミ の上行。最後のミを伸ばし、オクターブ上の単音で明るさを足す
+  birdie: {
+    bass: [{ note: 48, at: 0, duration: 1.05, amount: 0.05 }],
+    melody: [
+      { note: 67, at: 0, duration: 0.16, amount: 0.028 },
+      { note: 72, at: 0.14, duration: 0.16, amount: 0.031 },
+      { note: 76, at: 0.28, duration: 0.9, amount: 0.034 },
+      { note: 88, at: 0.28, duration: 0.55, amount: 0.011 },
+    ],
+  },
+  // ソ→ド の2音だけ。主音で着地して「ちゃんと終わった」で終わる。一番地味に
+  par: {
+    bass: [{ note: 48, at: 0, duration: 0.95, amount: 0.05 }],
+    melody: [
+      { note: 67, at: 0, duration: 0.18, amount: 0.03 },
+      { note: 72, at: 0.16, duration: 0.75, amount: 0.034 },
+    ],
+  },
+  // ラ→ソ→ミ の下行。ベースもラへ動かす（BGMの2つ目のコードと同じ音なので外れない）
+  bogey: {
+    bass: [{ note: 45, at: 0, duration: 1, amount: 0.048 }],
+    melody: [
+      { note: 69, at: 0, duration: 0.17, amount: 0.03 },
+      { note: 67, at: 0.15, duration: 0.17, amount: 0.028 },
+      { note: 64, at: 0.3, duration: 0.8, amount: 0.026 },
+    ],
+  },
+  // ソ→ミ♭→ド の下行。♭が1音入るだけで沈む。一番短く、一番小さく
+  double: {
+    bass: [{ note: 48, at: 0, duration: 0.75, amount: 0.042 }],
+    melody: [
+      { note: 67, at: 0, duration: 0.15, amount: 0.026 },
+      { note: 63, at: 0.13, duration: 0.15, amount: 0.024 },
+      { note: 60, at: 0.26, duration: 0.6, amount: 0.022 },
+    ],
+  },
+};
+
+/** 結果別ジングルの音量。BGMを止めてから鳴らすので、従来（0.28）より小さくてよい。 */
+const HOLE_OUT_GAIN = 0.22;
+/** カードが出る合図でBGMを引くフェード [s]。 */
+const HOLE_OUT_MUTE_FADE = 0.35;
+/** 次のホールの開始でBGMを戻すフェード [s]。 */
+const HOLE_OUT_RESUME_FADE = 0.7;
 
 export class PuttMusic {
   private context: AudioContext | null = null;
@@ -55,6 +175,10 @@ export class PuttMusic {
   private scheduledUntil = 0;
   private scheduler: number | null = null;
   private noiseBuffer: AudioBuffer | null = null;
+  /** 直近に予約した1周の開始時刻。拍とコードの位置を逆算するために持つ。 */
+  private cycleAnchor = 0;
+  /** ホールアウトでBGMを引いている間だけ true。曲自体は裏で進み続ける。 */
+  private muted = false;
 
   setScene(scene: MusicScene): void {
     if (this.requestedScene === scene && this.activeScene === scene && this.bus) return;
@@ -109,48 +233,199 @@ export class PuttMusic {
     this.activeScene = null;
     this.scheduledUntil = 0;
     this.noiseBuffer = null;
+    this.cycleAnchor = 0;
+    this.muted = false;
   }
 
   /**
-   * ホールアウトだけは選定済みB案を残す。
-   * 低いピックアップ + C6/9の短いコードスタブを2回だけ鳴らす。
-   * カップ音の余韻を十分に聞かせてから入るため、既定は約1秒遅らせる。
+   * ホールアウトの合図（新案）。**スコアカードが出るのと同じ瞬間に呼ぶ。**
+   *
+   * BGMを速めのフェードで引いてから、結果別のジングルを重ねる。
+   * 別々の曲が重なることが「浮く」原因だったので、重なり自体をなくす。
+   * BGMは止めずに音量だけ引くので、曲は裏で進み続け、戻したとき毎回同じ出だしにならない。
+   *
+   * 戻すのは次のホールが始まるとき。`resumeAfterHoleOut()` を呼ぶこと。
    */
-  playHoleOutJingle(delay = 1): void {
+  playHoleOutCue(result: HoleOutResult, delay = 0): void {
     if (!this.enabled) return;
     const context = this.ensureContext();
     if (context.state !== 'running') return;
 
     const start = context.currentTime + delay;
+    this.fadeBus(start, MIN_GAIN, HOLE_OUT_MUTE_FADE);
+    this.muted = true;
+
+    const cueBus = context.createGain();
+    cueBus.gain.value = HOLE_OUT_GAIN;
+    cueBus.connect(context.destination);
+
+    const cue = HOLE_OUT_CUES[result];
+    let end = 0;
+    for (const note of cue.bass) {
+      this.scheduleTriangle(note.note, start + note.at, note.duration, note.amount, cueBus);
+      end = Math.max(end, note.at + note.duration);
+    }
+    for (const note of cue.melody) {
+      this.scheduleSquare(note.note, start + note.at, note.duration, note.amount, cueBus, 3000);
+      end = Math.max(end, note.at + note.duration);
+    }
+    if (cue.shimmer !== undefined) {
+      this.scheduleNoise(start + cue.shimmer, 0.5, 0.0035, cueBus, 7200, 1.2, 13);
+      end = Math.max(end, cue.shimmer + 0.5);
+    }
+
+    window.setTimeout(
+      () => cueBus.disconnect(),
+      Math.ceil((start - context.currentTime + end + 0.2) * 1000),
+    );
+  }
+
+  /** 次のホールの開始で呼ぶ。引いていたBGMを戻す。 */
+  resumeAfterHoleOut(delay = 0): void {
+    if (!this.muted) return;
+    this.muted = false;
+
+    const context = this.context;
+    const scene = this.activeScene;
+    if (!context || context.state !== 'running' || !scene) return;
+    this.fadeBus(context.currentTime + delay, MUSIC[scene].gain, HOLE_OUT_RESUME_FADE);
+  }
+
+  /** BGMのバスを、指定時刻から目標音量へ滑らかに動かす。 */
+  private fadeBus(at: number, target: number, fade: number): void {
+    const context = this.context;
+    if (!this.bus || !context) return;
+    const gain = this.bus.gain;
+    const from = Math.max(context.currentTime, at);
+    const current = Math.max(gain.value, MIN_GAIN);
+    gain.cancelScheduledValues(from);
+    gain.setValueAtTime(current, from);
+    gain.exponentialRampToValueAtTime(Math.max(target, MIN_GAIN), from + fade);
+  }
+
+  /**
+   * ホールアウトのジングル。
+   * カップ音の余韻を十分に聞かせてから入るため、既定は約1秒遅らせる。
+   * 案の比較中なので、どの形で鳴らすかは `variant` で選べるようにしてある。
+   */
+  playHoleOutJingle(delay = 1, variant: JingleVariant = ACTIVE_JINGLE): void {
+    if (!this.enabled) return;
+    const context = this.ensureContext();
+    if (context.state !== 'running') return;
+
+    const requested = context.currentTime + delay;
+    if (variant === 'none') {
+      this.liftMusic(context, requested);
+      return;
+    }
+
+    // 拍へ合わせる案だけ、BGMの次の拍まで待ち、和音も進行中のコードへ合わせる。
+    const spot = variant === 'inTime' ? this.beatAt(requested) : null;
+    const start = spot ? spot.time : requested;
+    const voicing = spot ? spot.chord.voicing : JINGLE_VOICING;
+    const root = spot ? spot.chord.root : 48;
+    const beat = this.beatSec();
+
     const jingleBus = context.createGain();
-    jingleBus.gain.value = JINGLE_GAIN;
+    jingleBus.gain.value = variant === 'quiet' ? JINGLE_QUIET_GAIN : JINGLE_GAIN;
     jingleBus.connect(context.destination);
 
-    this.scheduleTriangle(48, start, 0.3, 0.055, jingleBus);
-    const voicing = [55, 57, 62, 64] as const;
-    for (const [hit, amount] of [
-      [0.1, 0.038],
-      [0.34, 0.027],
-    ] as const) {
-      for (const note of voicing) {
-        this.scheduleSquare(note, start + hit, 0.19, amount, jingleBus, 3000);
+    let tail = 0.6;
+    if (variant === 'single') {
+      // 同時に鳴らさず、BGMのPSGと同じ単音の動きで和声を出す。
+      this.scheduleTriangle(root, start, 0.3, 0.055, jingleBus);
+      const step = 0.085;
+      for (let k = 0; k < voicing.length; k++) {
+        this.scheduleSquare(voicing[k], start + 0.1 + k * step, 0.19, 0.034, jingleBus, 3000);
       }
+      const last = 0.1 + (voicing.length - 1) * step;
+      this.scheduleNoise(start + last, 0.03, 0.01, jingleBus, 2600, 0.8, 7);
+      tail = last + 0.3;
+    } else if (variant === 'soft') {
+      // 矩形波とノイズをやめ、BGMのベースと同じトライアングルだけで組む。
+      this.scheduleTriangle(root, start, 0.34, 0.05, jingleBus);
+      const step = 0.1;
+      for (let k = 0; k < voicing.length; k++) {
+        this.scheduleTriangle(voicing[k] - 12, start + 0.12 + k * step, 0.36, 0.042, jingleBus);
+      }
+      tail = 0.12 + (voicing.length - 1) * step + 0.4;
+    } else {
+      // 現状の形。ピックアップ + 同時和音スタブ2回 + ノイズ。
+      // 拍へ合わせる案では、ピックアップを拍の前へ置き、スタブを拍の上に乗せる。
+      const pickup = spot ? -beat * 0.5 : 0;
+      const hits = spot
+        ? ([
+            [0, 0.038],
+            [beat * 0.5, 0.027],
+          ] as const)
+        : ([
+            [0.1, 0.038],
+            [0.34, 0.027],
+          ] as const);
+      this.scheduleTriangle(root, start + pickup, 0.3, 0.055, jingleBus);
+      for (const [hit, amount] of hits) {
+        for (const note of voicing) {
+          this.scheduleSquare(note, start + hit, 0.19, amount, jingleBus, 3000);
+        }
+      }
+      const last = hits[hits.length - 1][0];
+      this.scheduleNoise(start + last, 0.03, 0.01, jingleBus, 2600, 0.8, 7);
+      tail = last + 0.3;
     }
-    this.scheduleNoise(start + 0.34, 0.03, 0.01, jingleBus, 2600, 0.8, 7);
 
-    // ジングル時もプレイBGMを大きく引っ込めず、曲の流れを保つ。
-    if (this.bus && this.activeScene) {
-      const base = MUSIC[this.activeScene].gain;
-      const gain = this.bus.gain;
-      const duckStart = Math.max(context.currentTime, start - 0.06);
-      gain.cancelScheduledValues(duckStart);
-      gain.setValueAtTime(base, duckStart);
-      gain.linearRampToValueAtTime(base * JINGLE_DUCK_RATIO, start + 0.04);
-      gain.setValueAtTime(base * JINGLE_DUCK_RATIO, start + 0.55);
-      gain.linearRampToValueAtTime(base, start + 0.95);
-    }
+    this.duckMusic(context, start);
+    const stop = start - context.currentTime + tail;
+    window.setTimeout(() => jingleBus.disconnect(), Math.ceil(stop * 1000));
+  }
 
-    window.setTimeout(() => jingleBus.disconnect(), Math.ceil((delay + 1.25) * 1000));
+  /** ジングル時もプレイBGMを大きく引っ込めず、曲の流れを保つ。 */
+  private duckMusic(context: AudioContext, start: number): void {
+    if (!this.bus || !this.activeScene) return;
+    const base = MUSIC[this.activeScene].gain;
+    const gain = this.bus.gain;
+    const duckStart = Math.max(context.currentTime, start - 0.06);
+    gain.cancelScheduledValues(duckStart);
+    gain.setValueAtTime(base, duckStart);
+    gain.linearRampToValueAtTime(base * JINGLE_DUCK_RATIO, start + 0.04);
+    gain.setValueAtTime(base * JINGLE_DUCK_RATIO, start + 0.55);
+    gain.linearRampToValueAtTime(base, start + 0.95);
+  }
+
+  /** ジングルを鳴らさない案。入った合図はカップ音に任せ、BGMをわずかに持ち上げるだけにする。 */
+  private liftMusic(context: AudioContext, start: number): void {
+    if (!this.bus || !this.activeScene) return;
+    const base = MUSIC[this.activeScene].gain;
+    const gain = this.bus.gain;
+    const from = Math.max(context.currentTime, start - 0.4);
+    gain.cancelScheduledValues(from);
+    gain.setValueAtTime(base, from);
+    gain.linearRampToValueAtTime(base * JINGLE_LIFT_RATIO, start + 0.3);
+    gain.setValueAtTime(base * JINGLE_LIFT_RATIO, start + 1.6);
+    gain.linearRampToValueAtTime(base, start + 2.5);
+  }
+
+  private beatSec(): number {
+    return 60 / MUSIC[this.activeScene ?? this.requestedScene].bpm;
+  }
+
+  /**
+   * 指定時刻以降で最初に来るBGMの拍と、そこで鳴っているコードを返す。
+   * 1周の開始時刻からの位置で求めるので、予約済みの先の拍でも逆算できる。
+   */
+  private beatAt(time: number): { time: number; chord: Chord } | null {
+    const scene = this.activeScene;
+    if (!scene || !this.bus || this.cycleAnchor === 0) return null;
+
+    const settings = MUSIC[scene];
+    const beat = 60 / settings.bpm;
+    const bar = 4 * beat;
+    const cycle = settings.bars * bar;
+
+    const steps = Math.ceil((time - this.cycleAnchor) / beat - 1e-6);
+    const beatTime = this.cycleAnchor + steps * beat;
+    const phase = (((beatTime - this.cycleAnchor) % cycle) + cycle) % cycle;
+    const barIndex = Math.floor(phase / bar);
+    return { time: beatTime, chord: PROGRESSION[barIndex % PROGRESSION.length] };
   }
 
   private startRequestedScene(): void {
@@ -175,6 +450,7 @@ export class PuttMusic {
     bus.connect(context.destination);
 
     this.bus = bus;
+    this.muted = false;
     this.activeScene = this.requestedScene;
     this.scheduledUntil = now + RESUME_LEAD_SEC;
     this.ensureScheduled();
@@ -213,6 +489,7 @@ export class PuttMusic {
   }
 
   private scheduleCycle(scene: MusicScene, start: number, bus: GainNode): void {
+    this.cycleAnchor = start;
     const settings = MUSIC[scene];
     const beat = 60 / settings.bpm;
     const bar = 4 * beat;

@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>jingle test — putt</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 100%;
+        min-height: 100%;
+        background: #0e1210;
+        color: #e8f0e8;
+        font-family: system-ui, -apple-system, sans-serif;
+        overscroll-behavior-y: contain;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      body {
+        padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px
+          calc(env(safe-area-inset-bottom, 0px) + 28px);
+        max-width: 560px;
+        margin: 0 auto;
+      }
+
+      h1 {
+        font-size: 17px;
+        letter-spacing: 0.04em;
+        font-weight: 600;
+      }
+      .lead {
+        margin-top: 8px;
+        font-size: 12px;
+        line-height: 1.6;
+        color: #9ab5a6;
+      }
+
+      /* 音を起こす・止めるだけの常設バー。ページ内のどこからでも押せるよう上に固定しない */
+      #transport {
+        margin-top: 14px;
+        padding: 12px;
+        border: 1px solid #2a332e;
+        border-radius: 10px;
+        background: #131a16;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      #transport button {
+        flex: 1 1 120px;
+      }
+      #bgm-state {
+        flex: 1 1 100%;
+        font-size: 11px;
+        line-height: 1.5;
+        color: #7e948a;
+      }
+
+      button {
+        appearance: none;
+        border: 1px solid #38544a;
+        border-radius: 8px;
+        background: #1b2a24;
+        color: #dff0e6;
+        font-family: inherit;
+        font-size: 14px;
+        letter-spacing: 0.02em;
+        padding: 11px 12px;
+        cursor: pointer;
+      }
+      button:active {
+        background: #263b32;
+        transform: translateY(1px);
+      }
+      button.ghost {
+        background: #161d19;
+        border-color: #2a332e;
+        color: #9ab5a6;
+      }
+
+      #options {
+        margin-top: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      label.check {
+        display: flex;
+        align-items: flex-start;
+        gap: 9px;
+        font-size: 12px;
+        line-height: 1.5;
+        color: #b9cfc2;
+      }
+      label.check input {
+        margin-top: 1px;
+        width: 17px;
+        height: 17px;
+        accent-color: #4f9b78;
+      }
+
+      h2.section {
+        margin-top: 26px;
+        padding-top: 16px;
+        border-top: 1px solid #2a332e;
+        font-size: 14px;
+        letter-spacing: 0.03em;
+        font-weight: 600;
+        color: #dff0e6;
+      }
+      .section-lead {
+        margin-top: 8px;
+        font-size: 12px;
+        line-height: 1.7;
+        color: #9ab5a6;
+      }
+      .section-lead b {
+        color: #cfe3d6;
+        font-weight: 600;
+      }
+
+      ol {
+        margin-top: 14px;
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      li {
+        border: 1px solid #2a332e;
+        border-radius: 10px;
+        background: #131a16;
+        padding: 12px;
+      }
+      li.active {
+        border-color: #3f6b57;
+      }
+      .head {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .name {
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+      }
+      .tag {
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        color: #0e1210;
+        background: #6fbf95;
+        border-radius: 4px;
+        padding: 2px 5px;
+      }
+      .desc {
+        margin-top: 6px;
+        font-size: 12px;
+        line-height: 1.6;
+        color: #9ab5a6;
+      }
+      li button {
+        margin-top: 10px;
+        width: 100%;
+      }
+
+      #note {
+        margin-top: 20px;
+        padding-top: 14px;
+        border-top: 1px solid #2a332e;
+        font-size: 11px;
+        line-height: 1.7;
+        color: #7e948a;
+      }
+      #note b {
+        color: #b9cfc2;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>ホールアウトのジングル 試聴</h1>
+    <p class="lead">
+      浮いて聞こえるかはBGMと一緒でないと分からないので、まず「BGMを鳴らす」を押してから比べてください。<br />
+      本編と同じ間隔で鳴らします（カップ音 → 間 → カード）。
+    </p>
+
+    <div id="transport">
+      <button id="start">BGMを鳴らす</button>
+      <button id="stop" class="ghost">音を止める</button>
+      <div id="bgm-state">まだ鳴っていません。最初の一回だけ、この画面を触ると音が出せるようになります。</div>
+    </div>
+
+    <div id="options">
+      <label class="check">
+        <input type="checkbox" id="with-cup" checked />
+        カップ音から通しで鳴らす（外すと、待たずにその場で鳴らす）
+      </label>
+    </div>
+
+    <h2 class="section">A. 新案 — BGMを止めて、カードと同時に鳴らす</h2>
+    <p class="section-lead">
+      <b>コトッ（カップ音）→ 間（俯瞰でラインを見る）→ カード＋ジングル → 静けさ</b>、という流れで鳴ります。<br />
+      カードが出る合図でBGMが速めに引き、ジングルが終わっても無音のままで、約2.5秒後に「次のホールが始まった」つもりでBGMが戻ります。<br />
+      BGMは止めずに音量だけ引いているので、戻ったときの出だしは毎回変わります。
+    </p>
+    <ol id="results"></ol>
+
+    <h2 class="section">B. 前の6案 — BGMを鳴らしたまま比べる</h2>
+    <p class="section-lead">
+      こちらはBGMが鳴り続けたまま、カップ音の約1秒後にジングルが重なります。<br />
+      「重なったままどこまで馴染ませられるか」を試した案なので、Aと比べる基準として残してあります。
+    </p>
+    <ol id="variants"></ol>
+
+    <div id="note">
+      <b>聴きどころ</b><br />
+      ・結果の違い（嬉しい / ふつう / 残念）が、聞いただけで分かるか<br />
+      ・5つが別々の曲に聞こえず、同じゲームの音として揃っているか<br />
+      ・BGMが引くのは速すぎないか、戻るのは唐突でないか<br />
+      ・カードを眺めている間の無音が、落ち着くか・寂しいか<br />
+      ・（B）BGMと別の曲が重なって聞こえないか<br />
+      ・音色がBGM（トライアングルのベース + 単音PSG）から浮いていないか<br />
+      ・カップ音の余韻を邪魔していないか<br />
+      ・9ホール続けて聞いても うるさくならないか<br />
+      <br />
+      このページは音の比較用です。ゲーム本編の音は変えていません。<br />
+      採用する案が決まったら、その形だけを本編へ残します。
+    </div>
+
+    <script type="module" src="/src/jingle-test.ts"></script>
+  </body>
+</html>
