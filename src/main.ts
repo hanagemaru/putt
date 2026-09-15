@@ -87,8 +87,9 @@ const usePrototypeCourse = urlParams.get('course') === 'prototype';
 
 /**
  * URL の `?gen=v2` 。コース生成器v2（`docs/course-generator-v2.md`）で作ったホールを出す。
- * **既定は今までどおりv1。** `?gen=v2&seed=N` で1ホールずつ見比べるための指定で、
- * ツアーのシード列に対して付ければ9ホールをv2で通しで回せる
+ * **既定は今までどおりv1。** `?gen=v2&seed=N` と `?seed=N` を見比べるための指定で、
+ * **練習モードとして出す**（理由は `modeFromUrl`）。
+ * シードを変えるボタンは `gen=v2` を URL に残すので、そのまま次のホールへ移れる
  */
 const useGeneratorV2 = urlParams.get('gen') === 'v2';
 
@@ -97,14 +98,19 @@ type GameMode = 'tour' | 'practice';
 
 /**
  * URL からモードを決める。既定は通常ツアー。
- * `?mode=practice` のほか、**1ホールを繰り返し試すための指定**（`?seed=` と
- * `?course=prototype`）が来たときも練習として扱う。ツアーの進行に割り込ませない
+ * `?mode=practice` のほか、**1ホールを繰り返し試すための指定**（`?seed=` ・
+ * `?course=prototype` ・`?gen=v2`）が来たときも練習として扱う。ツアーの進行に割り込ませない。
+ *
+ * `?gen=v2` を練習にするのには理由がある。ラウンド進行と自己ベストは
+ * **ツアーIDとシード列だけで照合している**ので、同じシード列をv2で回ると
+ * v1のツアーの保存へv2のスコアが混ざる。生成器を切り替えて比べたいだけなので、
+ * 練習モード（保存しない）で出す
  */
 function modeFromUrl(): GameMode {
   const raw = urlParams.get('mode');
   if (raw === 'practice') return 'practice';
   if (raw === 'tour') return 'tour';
-  if (urlParams.get('seed') !== null || usePrototypeCourse) return 'practice';
+  if (urlParams.get('seed') !== null || usePrototypeCourse || useGeneratorV2) return 'practice';
   return 'tour';
 }
 
