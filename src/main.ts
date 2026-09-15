@@ -1612,6 +1612,20 @@ function readoutNode(label: string, value: string, tone?: number): HTMLElement {
   return root;
 }
 
+/**
+ * このホールの結果を5段階で返す。カードの判定語と同じ区切り方。
+ * ギブアップはカップインしていないので `none`（音を鳴らさない）。
+ */
+function holeOutResult(strokes: number, par: number, holedOut: boolean): string {
+  if (!holedOut) return 'none';
+  const diff = strokes - par;
+  if (diff <= -2) return 'eagle';
+  if (diff === -1) return 'birdie';
+  if (diff === 0) return 'par';
+  if (diff === 1) return 'bogey';
+  return 'double';
+}
+
 /** 判定語（BIRDIE など）を、パー差の色付きで見出しへ入れる */
 function showVerdict(strokes: number, par: number, holedOut: boolean): void {
   const diff = strokes - par;
@@ -1619,6 +1633,9 @@ function showVerdict(strokes: number, par: number, holedOut: boolean): void {
   if (diff !== 0) scoreHeadline.classList.add(diff < 0 ? 'under' : 'over');
   scoreHeadline.textContent = i18n.holeVerdict(strokes, par, holedOut);
   scoreStrokes.textContent = i18n.strokesText(strokes);
+  // カードが出たことと結果を、音の側（`src/audio-bootstrap.ts`）へ渡す。
+  // 同じ結果が続いても属性を書けば変更として届くので、毎ホール必ず鳴る
+  scoreTitle.dataset.result = holeOutResult(strokes, par, holedOut);
 }
 
 /** ホールアウトのカード。今のホールの結果と、ここまでの合計を出す */
@@ -1649,6 +1666,8 @@ function showHoleOutCard(current: Round): void {
 function showRoundEndCard(current: Round): void {
   const gaveUp = current.scores.some((hole) => !hole.holedOut);
   scoreTitle.dataset.screen = 'round-end';
+  // ラウンド終了に判定語は無い。ホールの結果音を持ち越さないよう消す
+  delete scoreTitle.dataset.result;
   scoreTitle.textContent = i18n.roundEndTitle(selectedTour.name[language()]);
   // ラウンドには判定語が無いので、主役は中継のリーダーボードと同じく通算パー差にする
   scoreHeadline.className = 'verdict';
