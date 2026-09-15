@@ -33,6 +33,7 @@
 
 import { CONFIG } from '../src/config.ts';
 import { approachDirection, generateCourse } from '../src/course/course-generate.ts';
+import { generateCourseV2 } from '../src/course/course-generate-v2.ts';
 import { surfaceAt } from '../src/course/course-map.ts';
 import { Green, defaultGreenParams } from '../src/green.ts';
 import { Roller, criticalGradient, frictionFromStimp } from '../src/physics.ts';
@@ -129,6 +130,8 @@ interface Args {
   vmin: number;
   vmax: number;
   verbose: boolean;
+  /** どの生成器で作ったコースを調べるか。既定は v1（既存ツアーと同じ） */
+  gen: 'v1' | 'v2';
 }
 
 function parseArgs(argv: readonly string[]): Args {
@@ -139,6 +142,7 @@ function parseArgs(argv: readonly string[]): Args {
     vmin: SPEED_MIN,
     vmax: SPEED_MAX,
     verbose: false,
+    gen: 'v1',
   };
   for (const raw of argv) {
     const [key, value] = raw.replace(/^--/, '').split('=');
@@ -150,8 +154,17 @@ function parseArgs(argv: readonly string[]): Args {
     else if (key === 'vmin' && value) args.vmin = Number(value);
     else if (key === 'vmax' && value) args.vmax = Number(value);
     else if (key === 'verbose') args.verbose = true;
+    else if (key === 'gen' && value) {
+      if (value !== 'v1' && value !== 'v2') throw new Error(`--gen は v1 か v2: ${value}`);
+      args.gen = value;
+    }
   }
   return args;
+}
+
+/** 調べる対象のコースを作る。生成器の違いはここ1箇所だけに閉じる */
+function generateFor(seed: number, gen: Args['gen']): CourseDefinition {
+  return gen === 'v2' ? generateCourseV2(seed) : generateCourse(seed);
 }
 
 const ARGS = parseArgs(process.argv.slice(2));
@@ -173,6 +186,8 @@ function buildGreen(course: CourseDefinition): Green {
         cup: course.cup,
         approach: approachDirection(course),
       },
+      // 高さのハザード（生成器v2）。v1のコースは持たないので undefined のまま渡る
+      heightFeatures: course.heightFeatures,
     },
     (x, z) => surfaceAt(course, x, z),
   );
@@ -382,7 +397,7 @@ interface SeedReport {
 }
 
 function investigate(seed: number, args: Args): SeedReport {
-  const course = generateCourse(seed);
+  const course = generateFor(seed, args.gen);
   const green = buildGreen(course);
   const grid = buildGrid(course, green, args.cell);
   // 位相は細かい格子で見る。粗い格子だと斜めの細い芝が島に見える
@@ -720,7 +735,9 @@ function percent(value: number): string {
 }
 
 console.log('=== 打ち切り廃止の可否を判断するための調査 ===');
-console.log(`シード: ${ARGS.seedFrom}〜${ARGS.seedTo}（生成器 generateCourse(seed)）`);
+console.log(
+  `シード: ${ARGS.seedFrom}〜${ARGS.seedTo}（生成器 ${ARGS.gen === 'v2' ? 'generateCourseV2' : 'generateCourse'}(seed)）`,
+);
 console.log(`位相を見る格子: ${TOPO_CELL}m / 打つマスの格子: ${ARGS.cell}m / 方向: ${DIRECTIONS} / 初速: ${SPEEDS.map((v) => v.toFixed(2)).join(', ')} m/s`);
 console.log(`想定した最弱の一打: ${ARGS.vmin} m/s ・ 最強の一打: ${ARGS.vmax} m/s`);
 console.log(

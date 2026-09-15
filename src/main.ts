@@ -24,6 +24,7 @@ import { Roller } from './physics';
 import { surfaceAt } from './course/course-map';
 import { PROTOTYPE_COURSE } from './course/prototype-course';
 import { approachDirection, generateCourse } from './course/course-generate';
+import { generateCourseV2 } from './course/course-generate-v2';
 import type { CourseDefinition, TerrainType } from './course/course-types';
 import { tourById } from './course/tour-holes';
 import { CourseMapMarker } from './course-map-marker';
@@ -72,6 +73,7 @@ const TERRAIN_LABEL: Record<TerrainType, string> = {
 function courseWithSeed(value: number): CourseDefinition {
   const seed = value >>> 0;
   if (usePrototypeCourse) return { ...PROTOTYPE_COURSE, seed };
+  if (useGeneratorV2) return generateCourseV2(seed);
   return generateCourse(seed);
 }
 
@@ -82,6 +84,13 @@ const selectedTour = tourById(urlParams.get('tour'));
 
 /** URL の ?course=prototype 。生成器を入れる前の手作りホールを出す */
 const usePrototypeCourse = urlParams.get('course') === 'prototype';
+
+/**
+ * URL の `?gen=v2` 。コース生成器v2（`docs/course-generator-v2.md`）で作ったホールを出す。
+ * **既定は今までどおりv1。** `?gen=v2&seed=N` で1ホールずつ見比べるための指定で、
+ * ツアーのシード列に対して付ければ9ホールをv2で通しで回せる
+ */
+const useGeneratorV2 = urlParams.get('gen') === 'v2';
 
 /** 遊び方（spec §6）。通常ツアーは固定9ホールを順に回り、練習は同じホールを打ち直す */
 type GameMode = 'tour' | 'practice';
@@ -154,6 +163,8 @@ function greenParamsFor(target: CourseDefinition, amplitude: number) {
       cup: target.cup,
       approach: approachDirection(target),
     },
+    // 高さのハザード（生成器v2）。v1のコースは持たないので undefined のまま渡る
+    heightFeatures: target.heightFeatures,
   };
 }
 

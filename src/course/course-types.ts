@@ -37,6 +37,39 @@ export interface EllipseHazard {
 }
 
 /**
+ * 高さのハザード（生成器v2）。ハイトマップへ足す局所的な盛り上がり／尾根／窪み。
+ * **新しいサーフェスも罰打も持たない。** ハイトマップが表示と物理の唯一の情報源なので、
+ * ここを足すだけで見た目と転がりの両方が同時に変わる。
+ *
+ * 形は「長軸 `radiusU` ・短軸 `radiusV` の楕円の中だけで盛り上がる山」。
+ * 縁で高さも傾きも 0 になるので、周りの地形と段差なく繋がる。
+ * `kind` は見出しで、実際の形は `height` の符号（＋が山・−が窪み）と軸比が決める。
+ */
+export interface HeightFeature {
+  kind: 'mound' | 'ridge' | 'hollow';
+  center: CoursePoint;
+  /** 頂点（窪地なら底）の高さ [m]。負なら窪み */
+  height: number;
+  /** 長軸方向の広がり [m]。ここより外は完全に 0 */
+  radiusU: number;
+  /** 短軸方向の広がり [m] */
+  radiusV: number;
+  /** 長軸の向き [rad]。+Z を 0 とし、+X へ回る向きを正とする */
+  angle: number;
+}
+
+/**
+ * 深いラフの島（生成器v2）。帯ではなく塊としてルートの中や脇に置く。
+ * `surfaceAt` は島の内側で `deepRough` を返すだけなので、
+ * **罰打も新しいサーフェスも要らず、芝の連結も切れない**（セカンドカットは打てる）。
+ */
+export interface RoughIsland {
+  center: CoursePoint;
+  radiusX: number;
+  radiusZ: number;
+}
+
+/**
  * 生成器・検証器・ゲーム本体が共有するコース定義。
  * route はプレイ可能な芝の中心線で、各線分の周囲を greenWidth の芝にする。
  * その外へ roughFringe（ラフ）、deepRoughFringe（セカンドカット）の順に帯を足し、
@@ -61,4 +94,14 @@ export interface CourseDefinition {
   hazards: readonly EllipseHazard[];
   /** 地形の性格。高さの作り方だけを決め、サーフェス分類には影響しない */
   terrain: TerrainType;
+  /**
+   * 高さのハザード。**生成器v2だけが入れる任意項目。**
+   * 省略（v1のコース）なら地形はこれまでと1mmも変わらない
+   */
+  heightFeatures?: readonly HeightFeature[];
+  /**
+   * 深いラフの島。**生成器v2だけが入れる任意項目。**
+   * 省略（v1のコース）なら `surfaceAt` はこれまでと同じ答えを返す
+   */
+  roughIslands?: readonly RoughIsland[];
 }

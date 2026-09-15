@@ -1,5 +1,11 @@
 import { CONFIG } from '../config';
-import type { CourseDefinition, CoursePoint, EllipseHazard, SurfaceType } from './course-types';
+import type {
+  CourseDefinition,
+  CoursePoint,
+  EllipseHazard,
+  RoughIsland,
+  SurfaceType,
+} from './course-types';
 import {
   evalAngularHarmonics,
   fbm2,
@@ -111,6 +117,53 @@ function isInsideWater(course: CourseDefinition, x: number, z: number, fringe = 
 }
 
 /**
+ * 深いラフの島（生成器v2）の輪郭の歪み。池と同じ作りで、
+ * コース定義とシードだけから決まるのでキャッシュの有無で結果は変わらない。
+ */
+const islandShapeCache = new WeakMap<CourseDefinition, AngularHarmonics[][]>();
+
+function islandShapes(course: CourseDefinition): AngularHarmonics[][] {
+  const cached = islandShapeCache.get(course);
+  if (cached) return cached;
+  const shapes = (course.roughIslands ?? []).map((_, index) =>
+    makeAngularHarmonics(
+      (course.seed + N.streamSalt.island + index) >>> 0,
+      N.islandOrderMin,
+      N.islandOrderMax,
+    ),
+  );
+  islandShapeCache.set(course, shapes);
+  return shapes;
+}
+
+function isInsideIsland(
+  island: RoughIsland,
+  outline: AngularHarmonics[],
+  x: number,
+  z: number,
+): boolean {
+  const baseX = (x - island.center.x) / island.radiusX;
+  const baseZ = (z - island.center.z) / island.radiusZ;
+  if (baseX === 0 && baseZ === 0) return true;
+  const theta = Math.atan2(baseZ, baseX);
+  const limit = 1 + N.islandAmplitude * evalAngularHarmonics(outline, theta);
+  return Math.hypot(baseX, baseZ) <= limit;
+}
+
+/**
+ * 深いラフの島の内側か。**v1のコースは島を持たないので、そのまま false を返す。**
+ */
+function isInsideRoughIsland(course: CourseDefinition, x: number, z: number): boolean {
+  const islands = course.roughIslands;
+  if (!islands || islands.length === 0) return false;
+  const shapes = islandShapes(course);
+  for (let i = 0; i < islands.length; i++) {
+    if (isInsideIsland(islands[i], shapes[i], x, z)) return true;
+  }
+  return false;
+}
+
+/**
  * 帯の幅の揺らぎ。位置ごとの倍率を返す（1 が定義どおりの幅）。
  *
  * ルートに沿った位置だけでなく左右でも変わるようにするため、素直に座標のノイズを引く。
@@ -131,18 +184,10 @@ function isProtected(course: CourseDefinition, x: number, z: number): boolean {
 }
 
 /**
- * 高レベルのコース定義を、任意座標の地面種別へ変換する。
- * 座標だけで決まる純関数で、呼ぶ順序や回数によって結果は変わらない（物理が毎ステップ呼ぶ）。
+ * ルートからの距離で決まる帯（芝 → ラフ → セカンドカット → OB）の種別。
+ * 池と保護域の判定はここには入れず、呼ぶ側で先に済ませる。
  */
-export function surfaceAt(course: CourseDefinition, x: number, z: number): SurfaceType {
-  const halfWidth = course.bounds.width / 2;
-  const halfLength = course.bounds.length / 2;
-  if (x < -halfWidth || x > halfWidth || z < -halfLength || z > halfLength) return 'ob';
-  if (isProtected(course, x, z)) return 'green';
-  if (isInsideWater(course, x, z)) return 'water';
-  // 岸は芝の途中でもラフにする。池際から直接打つ状況を作らない
-  if (isInsideWater(course, x, z, course.waterFringe)) return 'rough';
-
+function bandSurfaceAt(course: CourseDefinition, x: number, z: number): SurfaceType {
   const salt = N.streamSalt;
   const distance = distanceToRoute(course, x, z);
   // 揺らぎの幅は [-1, 1] に収まるので、どう転んでも結果が変わらない距離ではノイズを引かない。
@@ -165,4 +210,27 @@ export function surfaceAt(course: CourseDefinition, x: number, z: number): Surfa
   if (distance <= roughEdge) return 'rough';
   if (distance <= deepRoughEdge) return 'deepRough';
   return 'ob';
+}
+
+/**
+ * 高レベルのコース定義を、任意座標の地面種別へ変換する。
+ * 座標だけで決まる純関数で、呼ぶ順序や回数によって結果は変わらない（物理が毎ステップ呼ぶ）。
+ */
+export function surfaceAt(course: CourseDefinition, x: number, z: number): SurfaceType {
+  const halfWidth = course.bounds.width / 2;
+  const halfLength = course.bounds.length / 2;
+  if (x < -halfWidth || x > halfWidth || z < -halfLength || z > halfLength) return 'ob';
+  if (isProtected(course, x, z)) return 'green';
+  if (isInsideWater(course, x, z)) return 'water';
+  // 岸は芝の途中でもラフにする。池際から直接打つ状況を作らない
+  if (isInsideWater(course, x, z, course.waterFringe)) return 'rough';
+
+  const band = bandSurfaceAt(course, x, z);
+  // 深いラフの島（生成器v2）。**芝とラフだけを一段重くする。**
+  // OBを芝へ変えることはないので、OB面積比も芝の連結も島の有無で変わらない。
+  // v1のコースは島を持たないので、ここは必ず素通りする
+  if ((band === 'green' || band === 'rough') && isInsideRoughIsland(course, x, z)) {
+    return 'deepRough';
+  }
+  return band;
 }
