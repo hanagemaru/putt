@@ -3,7 +3,12 @@
 // 比較用の「形状2×」だけは、物理と色を変えず3D形状の高さだけを一時的に誇張する。
 import * as THREE from 'three';
 import { CONFIG } from './config';
-import type { CoursePoint, SurfaceType, TerrainType } from './course/course-types';
+import type {
+  CoursePoint,
+  HeightFeature,
+  SurfaceType,
+  TerrainType,
+} from './course/course-types';
 
 const C = CONFIG.green;
 const T = CONFIG.course.terrain;
@@ -34,6 +39,20 @@ export interface GreenParams {
   tiltPercent: number;
   /** 地形の性格。省略すると `random`（従来どおりの全体傾斜＋うねり） */
   terrain?: TerrainParams;
+  /**
+   * 高さのハザード（生成器v2のマウンド・リッジ・窪地）。
+   * **うねりの正規化が終わった後に足す**ので、ここで指定した高さがそのまま m 単位で出る。
+   * 省略（v1のコース・green-test）なら地形はこれまでと1mmも変わらない
+   */
+  heightFeatures?: readonly HeightFeature[];
+  /**
+   * バンカーのすり鉢による高さの変化 [m] を返す関数（`bunkerBasinAt`）。
+   *
+   * 窪みの縁を**砂の輪郭そのもの**にするには、サーフェス側が持っている角度ごとの歪みが要る。
+   * ハイトマップ側でそれを作り直すと二重管理になるので、コース定義を知っている側から
+   * 関数として渡してもらう。省略（v1のコース・green-test）なら地形は変わらない
+   */
+  bunkerBasin?: (x: number, z: number) => number;
 }
 
 export function defaultGreenParams(): GreenParams {
@@ -69,6 +88,29 @@ interface Gaussian {
   sigma: number;
   /** 正規化前の重み。符号が山と谷 */
   weight: number;
+}
+
+/**
+ * 高さのハザード1つ分の高さ [m]。
+ *
+ * 形は `(1 - r^2)^2`（r は楕円座標の半径）。r >= 1 で高さも傾きもちょうど 0 になるので、
+ * 周りの地形と段差なく繋がり、楕円の外へは一切影響しない。
+ * 勾配の上限は生成器側（`CONFIG.course.generatorV2.height.maxGradient`）で掛けてある。
+ */
+function heightFeatureAt(feature: HeightFeature, x: number, z: number): number {
+  const dx = x - feature.center.x;
+  const dz = z - feature.center.z;
+  // 長軸（angle）を u 軸、その左を v 軸とする局所座標へ移す
+  const ux = Math.sin(feature.angle);
+  const uz = Math.cos(feature.angle);
+  const u = dx * ux + dz * uz;
+  const v = -dx * uz + dz * ux;
+  const nu = u / feature.radiusU;
+  const nv = v / feature.radiusV;
+  const rSq = nu * nu + nv * nv;
+  if (rSq >= 1) return 0;
+  const falloff = 1 - rSq;
+  return feature.height * falloff * falloff;
 }
 
 /**
@@ -186,13 +228,20 @@ export class Green {
     const targetAmplitude = params.undulationAmplitude * T.undulationGain[type];
     const scale = maxAbs > 0 ? targetAmplitude / maxAbs : 0;
 
+    // 高さのハザード（生成器v2）。**うねりの正規化より後に足す。**
+    // 先に足すと正規化に巻き込まれ、config で指定した高さが出なくなる
+    const features = params.heightFeatures ?? [];
+    const basin = params.bunkerBasin;
+
     this.minHeight = Infinity;
     this.maxHeight = -Infinity;
     for (let j = 0; j < this.resZ; j++) {
       const z = -halfLength + j * this.cellZ;
       for (let i = 0; i < this.resX; i++) {
         const x = -halfWidth + i * this.cellX;
-        const h = shapeAt(x, z) + undulation[j * this.resX + i] * scale;
+        let h = shapeAt(x, z) + undulation[j * this.resX + i] * scale;
+        for (const feature of features) h += heightFeatureAt(feature, x, z);
+        if (basin) h += basin(x, z);
         this.heights[j * this.resX + i] = h;
         if (h < this.minHeight) this.minHeight = h;
         if (h > this.maxHeight) this.maxHeight = h;
@@ -400,6 +449,7 @@ export class GreenMesh {
     green: new THREE.Color(C.surfaceColors.green),
     rough: new THREE.Color(C.surfaceColors.rough),
     deepRough: new THREE.Color(C.surfaceColors.deepRough),
+    bunker: new THREE.Color(C.surfaceColors.bunker),
     water: new THREE.Color(C.surfaceColors.water),
     ob: new THREE.Color(C.surfaceColors.ob),
   };

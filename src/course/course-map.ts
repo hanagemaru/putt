@@ -1,5 +1,12 @@
 import { CONFIG } from '../config';
-import type { CourseDefinition, CoursePoint, EllipseHazard, SurfaceType } from './course-types';
+import type {
+  CourseDefinition,
+  CoursePoint,
+  EllipseHazard,
+  HazardOutline,
+  SandBunker,
+  SurfaceType,
+} from './course-types';
 import {
   evalAngularHarmonics,
   fbm2,
@@ -26,6 +33,20 @@ function pointSegmentDistance(point: CoursePoint, a: CoursePoint, b: CoursePoint
     1,
   );
   return Math.hypot(point.x - (a.x + dx * t), point.z - (a.z + dz * t));
+}
+
+/**
+ * 輪郭の歪みまで含めた、ハザードの実効的な最大半径 [m]。
+ * 生成器が「どれだけ場所を空けるか」を決めるのに使う。
+ * 歪みを大きくした形（ひょうたん型など）は素の半径より外へ膨らむ。
+ */
+export function hazardReach(
+  radiusX: number,
+  radiusZ: number,
+  outline: HazardOutline | undefined,
+  fallbackAmplitude: number,
+): number {
+  return Math.max(radiusX, radiusZ) * (1 + (outline?.amplitude ?? fallbackAmplitude));
 }
 
 /** ルート（芝の中心線）までの最短距離 [m]。生成器が池を置くときにも使う */
@@ -57,11 +78,11 @@ function hazardShapes(course: CourseDefinition): HazardShape[] {
   const cached = hazardShapeCache.get(course);
   if (cached) return cached;
   const salt = N.streamSalt;
-  const shapes = course.hazards.map((_, index) => ({
+  const shapes = course.hazards.map((hazard, index) => ({
     outline: makeAngularHarmonics(
       (course.seed + salt.water + index) >>> 0,
-      N.waterOrderMin,
-      N.waterOrderMax,
+      hazard.outline?.orderMin ?? N.waterOrderMin,
+      hazard.outline?.orderMax ?? N.waterOrderMax,
     ),
     shore: makeAngularHarmonics(
       (course.seed + salt.shore + index) >>> 0,
@@ -91,7 +112,8 @@ function isInsideHazard(
   const baseZ = (z - hazard.center.z) / hazard.radiusZ;
   if (baseX === 0 && baseZ === 0) return true;
   const theta = Math.atan2(baseZ, baseX);
-  const limit = 1 + N.waterAmplitude * evalAngularHarmonics(shape.outline, theta);
+  const amplitude = hazard.outline?.amplitude ?? N.waterAmplitude;
+  const limit = 1 + amplitude * evalAngularHarmonics(shape.outline, theta);
   if (fringe <= 0) {
     return Math.hypot(baseX, baseZ) <= limit;
   }
@@ -108,6 +130,103 @@ function isInsideWater(course: CourseDefinition, x: number, z: number, fringe = 
     if (isInsideHazard(course.hazards[i], shapes[i], x, z, fringe)) return true;
   }
   return false;
+}
+
+/**
+ * バンカー（生成器v2）の輪郭の歪み。池と同じ作りで、
+ * コース定義とシードだけから決まるのでキャッシュの有無で結果は変わらない。
+ */
+const bunkerShapeCache = new WeakMap<CourseDefinition, AngularHarmonics[][]>();
+
+function bunkerShapes(course: CourseDefinition): AngularHarmonics[][] {
+  const cached = bunkerShapeCache.get(course);
+  if (cached) return cached;
+  const shapes = (course.bunkers ?? []).map((bunker, index) =>
+    makeAngularHarmonics(
+      (course.seed + N.streamSalt.bunker + index) >>> 0,
+      bunker.outline?.orderMin ?? N.bunkerOrderMin,
+      bunker.outline?.orderMax ?? N.bunkerOrderMax,
+    ),
+  );
+  bunkerShapeCache.set(course, shapes);
+  return shapes;
+}
+
+function isInsideSand(
+  bunker: SandBunker,
+  outline: AngularHarmonics[],
+  x: number,
+  z: number,
+): boolean {
+  const baseX = (x - bunker.center.x) / bunker.radiusX;
+  const baseZ = (z - bunker.center.z) / bunker.radiusZ;
+  if (baseX === 0 && baseZ === 0) return true;
+  const theta = Math.atan2(baseZ, baseX);
+  const amplitude = bunker.outline?.amplitude ?? N.bunkerAmplitude;
+  const limit = 1 + amplitude * evalAngularHarmonics(outline, theta);
+  return Math.hypot(baseX, baseZ) <= limit;
+}
+
+/**
+ * バンカーの輪郭までの正規化距離。0 が中心、1 がちょうど砂の縁、1 より大きければ砂の外。
+ * **角度ごとの歪みで割っている**ので、輪郭がどれだけ崩れていても縁がちょうど 1 になる。
+ */
+function sandNormalizedRadius(
+  bunker: SandBunker,
+  outline: AngularHarmonics[],
+  x: number,
+  z: number,
+): number {
+  const baseX = (x - bunker.center.x) / bunker.radiusX;
+  const baseZ = (z - bunker.center.z) / bunker.radiusZ;
+  const r = Math.hypot(baseX, baseZ);
+  if (r === 0) return 0;
+  const theta = Math.atan2(baseZ, baseX);
+  const amplitude = bunker.outline?.amplitude ?? N.bunkerAmplitude;
+  const limit = 1 + amplitude * evalAngularHarmonics(outline, theta);
+  return limit > 0 ? r / limit : Infinity;
+}
+
+/**
+ * バンカーの内側か。**v1のコースはバンカーを持たないので、そのまま false を返す。**
+ */
+function isInsideBunker(course: CourseDefinition, x: number, z: number): boolean {
+  const bunkers = course.bunkers;
+  if (!bunkers || bunkers.length === 0) return false;
+  const shapes = bunkerShapes(course);
+  for (let i = 0; i < bunkers.length; i++) {
+    if (isInsideSand(bunkers[i], shapes[i], x, z)) return true;
+  }
+  return false;
+}
+
+/**
+ * バンカーのすり鉢による高さの変化 [m]（0 または負）。
+ *
+ * **窪みの縁は砂の輪郭そのもの。** 形は `1 - q^n`（q は輪郭までの正規化距離）なので
+ *   - q = 1（＝砂の縁）でちょうど 0。外の芝には一切影響しない
+ *   - 傾きは q に比例して**縁でいちばん急**になる（＝縁を起点に落ちる皿）
+ *   - q = 0（中心）で傾きが 0。底は平ら
+ * `(1 - r^2)^2` のような「中心も縁も平らで途中が急」な形とは逆で、
+ * 砂の面全体が縁から落ち込む1枚の皿になる。
+ *
+ * 急になるのは砂の中だけなので、止まれる勾配の上限は芝（7.8%）ではなく砂（62.7%）を見ればよい。
+ */
+export function bunkerBasinAt(course: CourseDefinition, x: number, z: number): number {
+  const bunkers = course.bunkers;
+  if (!bunkers || bunkers.length === 0) return 0;
+  const shapes = bunkerShapes(course);
+  let drop = 0;
+  for (let i = 0; i < bunkers.length; i++) {
+    const bunker = bunkers[i];
+    // 枠の外は角度も歪みも引かずに捨てる（ハイトマップの全点から呼ばれる）
+    const reach = hazardReach(bunker.radiusX, bunker.radiusZ, bunker.outline, N.bunkerAmplitude);
+    if (Math.abs(x - bunker.center.x) > reach || Math.abs(z - bunker.center.z) > reach) continue;
+    const q = sandNormalizedRadius(bunker, shapes[i], x, z);
+    if (q >= 1) continue;
+    drop -= bunker.depth * (1 - Math.pow(q, N.bunkerBasinProfile));
+  }
+  return drop;
 }
 
 /**
@@ -131,18 +250,10 @@ function isProtected(course: CourseDefinition, x: number, z: number): boolean {
 }
 
 /**
- * 高レベルのコース定義を、任意座標の地面種別へ変換する。
- * 座標だけで決まる純関数で、呼ぶ順序や回数によって結果は変わらない（物理が毎ステップ呼ぶ）。
+ * ルートからの距離で決まる帯（芝 → ラフ → セカンドカット → OB）の種別。
+ * 池と保護域の判定はここには入れず、呼ぶ側で先に済ませる。
  */
-export function surfaceAt(course: CourseDefinition, x: number, z: number): SurfaceType {
-  const halfWidth = course.bounds.width / 2;
-  const halfLength = course.bounds.length / 2;
-  if (x < -halfWidth || x > halfWidth || z < -halfLength || z > halfLength) return 'ob';
-  if (isProtected(course, x, z)) return 'green';
-  if (isInsideWater(course, x, z)) return 'water';
-  // 岸は芝の途中でもラフにする。池際から直接打つ状況を作らない
-  if (isInsideWater(course, x, z, course.waterFringe)) return 'rough';
-
+function bandSurfaceAt(course: CourseDefinition, x: number, z: number): SurfaceType {
   const salt = N.streamSalt;
   const distance = distanceToRoute(course, x, z);
   // 揺らぎの幅は [-1, 1] に収まるので、どう転んでも結果が変わらない距離ではノイズを引かない。
@@ -165,4 +276,26 @@ export function surfaceAt(course: CourseDefinition, x: number, z: number): Surfa
   if (distance <= roughEdge) return 'rough';
   if (distance <= deepRoughEdge) return 'deepRough';
   return 'ob';
+}
+
+/**
+ * 高レベルのコース定義を、任意座標の地面種別へ変換する。
+ * 座標だけで決まる純関数で、呼ぶ順序や回数によって結果は変わらない（物理が毎ステップ呼ぶ）。
+ */
+export function surfaceAt(course: CourseDefinition, x: number, z: number): SurfaceType {
+  const halfWidth = course.bounds.width / 2;
+  const halfLength = course.bounds.length / 2;
+  if (x < -halfWidth || x > halfWidth || z < -halfLength || z > halfLength) return 'ob';
+  if (isProtected(course, x, z)) return 'green';
+  if (isInsideWater(course, x, z)) return 'water';
+  // 岸は芝の途中でもラフにする。池際から直接打つ状況を作らない
+  if (isInsideWater(course, x, z, course.waterFringe)) return 'rough';
+
+  const band = bandSurfaceAt(course, x, z);
+  // バンカー（生成器v2）。**芝の上だけを砂にする。**
+  // OBを砂へ変えることはないので、OB面積比も芝の連結もバンカーの有無で変わらない
+  // （砂は罰打なしで打てるので、連結の判定では芝と同じ扱い）。
+  // v1のコースはバンカーを持たないので、ここは必ず素通りする
+  if (band !== 'ob' && isInsideBunker(course, x, z)) return 'bunker';
+  return band;
 }

@@ -13,11 +13,12 @@ import { courseSurfaceDigest, validateCourse } from '../src/course/course-valida
 import { generateCourseDetailed } from '../src/course/course-generate.ts';
 import type { CourseDefinition, SurfaceType, TerrainType } from '../src/course/course-types.ts';
 
-const SURFACES: readonly SurfaceType[] = ['green', 'rough', 'deepRough', 'water', 'ob'];
+const SURFACES: readonly SurfaceType[] = ['green', 'rough', 'deepRough', 'bunker', 'water', 'ob'];
 const LABEL: Record<SurfaceType, string> = {
   green: '通常芝',
   rough: 'ラフ',
   deepRough: 'セカンドカット',
+  bunker: 'バンカー',
   water: '池',
   ob: 'OB',
 };

@@ -33,12 +33,23 @@
 
 import { CONFIG } from '../src/config.ts';
 import { approachDirection, generateCourse } from '../src/course/course-generate.ts';
-import { surfaceAt } from '../src/course/course-map.ts';
+import { generateCourseV2 } from '../src/course/course-generate-v2.ts';
+import { bunkerBasinAt, surfaceAt } from '../src/course/course-map.ts';
 import { Green, defaultGreenParams } from '../src/green.ts';
 import { Roller, criticalGradient, frictionFromStimp } from '../src/physics.ts';
 import type { CourseDefinition, SurfaceType } from '../src/course/course-types.ts';
 
 const P = CONFIG.physics;
+
+/** 報告に出すサーフェス名 */
+const SURFACE_LABEL: Record<SurfaceType, string> = {
+  green: '通常芝',
+  rough: 'ラフ',
+  deepRough: 'セカンドカット',
+  bunker: '砂',
+  water: '池',
+  ob: 'OB',
+};
 
 // --- 調査の前提値 ---------------------------------------------------------
 
@@ -129,6 +140,8 @@ interface Args {
   vmin: number;
   vmax: number;
   verbose: boolean;
+  /** どの生成器で作ったコースを調べるか。既定は v1（既存ツアーと同じ） */
+  gen: 'v1' | 'v2';
 }
 
 function parseArgs(argv: readonly string[]): Args {
@@ -139,6 +152,7 @@ function parseArgs(argv: readonly string[]): Args {
     vmin: SPEED_MIN,
     vmax: SPEED_MAX,
     verbose: false,
+    gen: 'v1',
   };
   for (const raw of argv) {
     const [key, value] = raw.replace(/^--/, '').split('=');
@@ -150,8 +164,17 @@ function parseArgs(argv: readonly string[]): Args {
     else if (key === 'vmin' && value) args.vmin = Number(value);
     else if (key === 'vmax' && value) args.vmax = Number(value);
     else if (key === 'verbose') args.verbose = true;
+    else if (key === 'gen' && value) {
+      if (value !== 'v1' && value !== 'v2') throw new Error(`--gen は v1 か v2: ${value}`);
+      args.gen = value;
+    }
   }
   return args;
+}
+
+/** 調べる対象のコースを作る。生成器の違いはここ1箇所だけに閉じる */
+function generateFor(seed: number, gen: Args['gen']): CourseDefinition {
+  return gen === 'v2' ? generateCourseV2(seed) : generateCourse(seed);
 }
 
 const ARGS = parseArgs(process.argv.slice(2));
@@ -173,13 +196,23 @@ function buildGreen(course: CourseDefinition): Green {
         cup: course.cup,
         approach: approachDirection(course),
       },
+      // 高さのハザード（生成器v2）。v1のコースは持たないので undefined のまま渡る
+      heightFeatures: course.heightFeatures,
+      bunkerBasin: (x: number, z: number) => bunkerBasinAt(course, x, z),
     },
     (x, z) => surfaceAt(course, x, z),
   );
 }
 
 function isPlayable(surface: SurfaceType): boolean {
-  return surface === 'green' || surface === 'rough' || surface === 'deepRough';
+  return (
+    surface === 'green' ||
+    surface === 'rough' ||
+    surface === 'deepRough' ||
+    // 砂は罰打なしでそこから打つので、止まれるマスに数える。
+    // **「打っても出ない砂」があればここで詰みとして出る**
+    surface === 'bunker'
+  );
 }
 
 /** 地面種別ごとの摩擦 [m/s^2]。physics.ts の frictionMultiplier と同じ */
@@ -187,6 +220,7 @@ function frictionOn(surface: SurfaceType): number {
   const base = frictionFromStimp(P.stimpFeet);
   if (surface === 'rough') return base * P.roughFrictionMultiplier;
   if (surface === 'deepRough') return base * P.deepRoughFrictionMultiplier;
+  if (surface === 'bunker') return base * P.bunkerFrictionMultiplier;
   return base;
 }
 
@@ -382,7 +416,7 @@ interface SeedReport {
 }
 
 function investigate(seed: number, args: Args): SeedReport {
-  const course = generateCourse(seed);
+  const course = generateFor(seed, args.gen);
   const green = buildGreen(course);
   const grid = buildGrid(course, green, args.cell);
   // 位相は細かい格子で見る。粗い格子だと斜めの細い芝が島に見える
@@ -635,15 +669,17 @@ function investigate(seed: number, args: Args): SeedReport {
   //   - 36方向 × 初速を全部試したとき、池・OB以外で止まれる中での最大移動距離
   // を見る。後者が小さいほど「打っても前へ進まない」に近い
   phase = 'uphill';
-  const candidates: { x: number; z: number; gradient: number }[] = [];
+  const candidates: { x: number; z: number; surface: SurfaceType; gradient: number }[] = [];
   for (let j = 0; j < grid.nz; j++) {
     for (let i = 0; i < grid.nx; i++) {
       if (!grid.playable[j * grid.nx + i]) continue;
       const x = grid.cellX(i);
       const z = grid.cellZ(j);
-      if (surfaceAt(course, x, z) !== 'deepRough') continue;
+      // 摩擦が重い地面ほど「打っても出ない」に近い。セカンドカットと砂の両方を見る
+      const surface = surfaceAt(course, x, z);
+      if (surface !== 'deepRough' && surface !== 'bunker') continue;
       green.sampleGradient(x, z, grad);
-      candidates.push({ x, z, gradient: Math.hypot(grad.x, grad.z) });
+      candidates.push({ x, z, surface, gradient: Math.hypot(grad.x, grad.z) });
     }
   }
   candidates.sort((a, b) => b.gradient - a.gradient);
@@ -668,7 +704,7 @@ function investigate(seed: number, args: Args): SeedReport {
     if (worst === null || candidate.gradient > worst.gradient) {
       worst = {
         gradient: candidate.gradient,
-        surface: 'deepRough',
+        surface: candidate.surface,
         x: candidate.x,
         z: candidate.z,
         uphillMove,
@@ -720,17 +756,19 @@ function percent(value: number): string {
 }
 
 console.log('=== 打ち切り廃止の可否を判断するための調査 ===');
-console.log(`シード: ${ARGS.seedFrom}〜${ARGS.seedTo}（生成器 generateCourse(seed)）`);
+console.log(
+  `シード: ${ARGS.seedFrom}〜${ARGS.seedTo}（生成器 ${ARGS.gen === 'v2' ? 'generateCourseV2' : 'generateCourse'}(seed)）`,
+);
 console.log(`位相を見る格子: ${TOPO_CELL}m / 打つマスの格子: ${ARGS.cell}m / 方向: ${DIRECTIONS} / 初速: ${SPEEDS.map((v) => v.toFixed(2)).join(', ')} m/s`);
 console.log(`想定した最弱の一打: ${ARGS.vmin} m/s ・ 最強の一打: ${ARGS.vmax} m/s`);
 console.log(
   `参考: 初速 = スワイプ[px/s] × speedK ${CONFIG.swipeTest.speedK} × 反発（${CONFIG.game.putterTuning.minScale}〜${CONFIG.game.putterTuning.maxScale}倍）× 芯の減衰（${CONFIG.swipeTest.mishitMinGain}〜1.0）`,
 );
 console.log(
-  `摩擦: 通常芝 ${frictionOn('green').toFixed(3)} / ラフ ${frictionOn('rough').toFixed(3)} / セカンドカット ${frictionOn('deepRough').toFixed(3)} m/s^2`,
+  `摩擦: 通常芝 ${frictionOn('green').toFixed(3)} / ラフ ${frictionOn('rough').toFixed(3)} / セカンドカット ${frictionOn('deepRough').toFixed(3)} / 砂 ${frictionOn('bunker').toFixed(3)} m/s^2`,
 );
 console.log(
-  `止まれる勾配の上限: 通常芝 ${percent(criticalGradient(P.stimpFeet))} / ラフ ${percent(criticalGradient(P.stimpFeet) * P.roughFrictionMultiplier)} / セカンドカット ${percent(criticalGradient(P.stimpFeet) * P.deepRoughFrictionMultiplier)}`,
+  `止まれる勾配の上限: 通常芝 ${percent(criticalGradient(P.stimpFeet))} / ラフ ${percent(criticalGradient(P.stimpFeet) * P.roughFrictionMultiplier)} / セカンドカット ${percent(criticalGradient(P.stimpFeet) * P.deepRoughFrictionMultiplier)} / 砂 ${percent(criticalGradient(P.stimpFeet) * P.bunkerFrictionMultiplier)}`,
 );
 console.log('');
 
@@ -747,7 +785,16 @@ let totalShots = 0;
 let seedsWithIslands = 0;
 let totalIslandArea = 0;
 let seedsTeeCupSplit = 0;
-let maxUphill = { gradient: -1, seed: 0, uphillMove: 0, status: '', bestMove: 0, x: 0, z: 0 };
+let maxUphill = {
+  gradient: -1,
+  seed: 0,
+  surface: 'deepRough' as SurfaceType,
+  uphillMove: 0,
+  status: '',
+  bestMove: 0,
+  x: 0,
+  z: 0,
+};
 let globalMinBestMove = { distance: Infinity, x: 0, z: 0, gradient: 0, seed: 0 };
 const escapeSpeedTotal = new Array<number>(SPEEDS.length).fill(0);
 let noProgressWithinReach = 0;
@@ -787,6 +834,7 @@ for (let seed = ARGS.seedFrom; seed <= ARGS.seedTo; seed++) {
     maxUphill = {
       gradient: report.worstUphill.gradient,
       seed,
+      surface: report.worstUphill.surface,
       uphillMove: report.worstUphill.uphillMove,
       status: report.worstUphill.uphillStatus,
       bestMove: report.worstUphill.bestMove,
@@ -881,12 +929,12 @@ console.log(
 {
   const sorted = [...uphillDisplacements].sort((a, b) => a - b);
   console.log(
-    `各シードのセカンドカット最大上り地点で、いちばん遠くへ動かせた距離: ` +
+    `各シードの「摩擦が重い地面（セカンドカット・砂）」の最大上り地点で、いちばん遠くへ動かせた距離: ` +
       `最小 ${(sorted[0] ?? 0).toFixed(2)}m / 中央 ${(sorted[Math.floor(sorted.length / 2)] ?? 0).toFixed(2)}m / 最大 ${(sorted[sorted.length - 1] ?? 0).toFixed(2)}m`,
   );
 }
 console.log(
-  `セカンドカットの最大上り勾配: ${percent(maxUphill.gradient)}（シード ${maxUphill.seed} / ` +
+  `摩擦が重い地面の最大上り勾配: ${percent(maxUphill.gradient)}（${SURFACE_LABEL[maxUphill.surface]} / シード ${maxUphill.seed} / ` +
     `(${maxUphill.x.toFixed(2)}, ${maxUphill.z.toFixed(2)})）。そこで真上りへ最強の一打 ${ARGS.vmax} m/s: ` +
     `${maxUphill.uphillMove.toFixed(2)}m 動いて ${maxUphill.status} / 全方向の中でいちばん遠くへ動かせた距離 ${maxUphill.bestMove.toFixed(2)}m`,
 );

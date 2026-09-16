@@ -21,9 +21,10 @@ import {
   defaultShadeParams,
 } from './green';
 import { Roller } from './physics';
-import { surfaceAt } from './course/course-map';
+import { bunkerBasinAt, surfaceAt } from './course/course-map';
 import { PROTOTYPE_COURSE } from './course/prototype-course';
 import { approachDirection, generateCourse } from './course/course-generate';
+import { generateCourseV2 } from './course/course-generate-v2';
 import type { CourseDefinition, TerrainType } from './course/course-types';
 import { tourById } from './course/tour-holes';
 import { CourseMapMarker } from './course-map-marker';
@@ -72,6 +73,7 @@ const TERRAIN_LABEL: Record<TerrainType, string> = {
 function courseWithSeed(value: number): CourseDefinition {
   const seed = value >>> 0;
   if (usePrototypeCourse) return { ...PROTOTYPE_COURSE, seed };
+  if (useGeneratorV2) return generateCourseV2(seed);
   return generateCourse(seed);
 }
 
@@ -83,19 +85,32 @@ const selectedTour = tourById(urlParams.get('tour'));
 /** URL の ?course=prototype 。生成器を入れる前の手作りホールを出す */
 const usePrototypeCourse = urlParams.get('course') === 'prototype';
 
+/**
+ * URL の `?gen=v2` 。コース生成器v2（`docs/course-generator-v2.md`）で作ったホールを出す。
+ * **既定は今までどおりv1。** `?gen=v2&seed=N` と `?seed=N` を見比べるための指定で、
+ * **練習モードとして出す**（理由は `modeFromUrl`）。
+ * シードを変えるボタンは `gen=v2` を URL に残すので、そのまま次のホールへ移れる
+ */
+const useGeneratorV2 = urlParams.get('gen') === 'v2';
+
 /** 遊び方（spec §6）。通常ツアーは固定9ホールを順に回り、練習は同じホールを打ち直す */
 type GameMode = 'tour' | 'practice';
 
 /**
  * URL からモードを決める。既定は通常ツアー。
- * `?mode=practice` のほか、**1ホールを繰り返し試すための指定**（`?seed=` と
- * `?course=prototype`）が来たときも練習として扱う。ツアーの進行に割り込ませない
+ * `?mode=practice` のほか、**1ホールを繰り返し試すための指定**（`?seed=` ・
+ * `?course=prototype` ・`?gen=v2`）が来たときも練習として扱う。ツアーの進行に割り込ませない。
+ *
+ * `?gen=v2` を練習にするのには理由がある。ラウンド進行と自己ベストは
+ * **ツアーIDとシード列だけで照合している**ので、同じシード列をv2で回ると
+ * v1のツアーの保存へv2のスコアが混ざる。生成器を切り替えて比べたいだけなので、
+ * 練習モード（保存しない）で出す
  */
 function modeFromUrl(): GameMode {
   const raw = urlParams.get('mode');
   if (raw === 'practice') return 'practice';
   if (raw === 'tour') return 'tour';
-  if (urlParams.get('seed') !== null || usePrototypeCourse) return 'practice';
+  if (urlParams.get('seed') !== null || usePrototypeCourse || useGeneratorV2) return 'practice';
   return 'tour';
 }
 
@@ -154,6 +169,10 @@ function greenParamsFor(target: CourseDefinition, amplitude: number) {
       cup: target.cup,
       approach: approachDirection(target),
     },
+    // 高さのハザード（生成器v2）。v1のコースは持たないので undefined のまま渡る
+    heightFeatures: target.heightFeatures,
+    // バンカーのすり鉢。縁を砂の輪郭に合わせるので、コース定義を知っている側から渡す
+    bunkerBasin: (x: number, z: number) => bunkerBasinAt(target, x, z),
   };
 }
 

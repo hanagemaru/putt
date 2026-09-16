@@ -82,10 +82,12 @@ export function directionToVelocity(
   return { vx: speed * Math.sin(direction), vz: -speed * Math.cos(direction) };
 }
 
-/** 地面種別ごとの摩擦倍率。芝以外は転がらないので 1 のままでよい */
+/** 地面種別ごとの摩擦倍率。池とOBは転がらないので 1 のままでよい */
 function frictionMultiplier(surface: SurfaceType): number {
   if (surface === 'rough') return P.roughFrictionMultiplier;
   if (surface === 'deepRough') return P.deepRoughFrictionMultiplier;
+  // 砂。罰打が無い代わりに、次の一打が伸びないことで打数を失わせる
+  if (surface === 'bunker') return P.bunkerFrictionMultiplier;
   return 1;
 }
 

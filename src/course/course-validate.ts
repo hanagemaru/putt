@@ -8,8 +8,12 @@ import { CONFIG } from '../config';
 import { surfaceAt } from './course-map';
 import type { CourseDefinition, SurfaceType } from './course-types';
 
-/** 芝として扱う（罰打なしで打てる）サーフェス */
-const PLAYABLE: readonly SurfaceType[] = ['green', 'rough', 'deepRough'];
+/**
+ * 罰打なしでそこから打てるサーフェス。**砂もここに入る。**
+ * バンカーは止まっても打ち直しではなく、そのまま打つので、
+ * 芝の連結（ティーからカップまで辿れるか）でも通り道として数える
+ */
+const PLAYABLE: readonly SurfaceType[] = ['green', 'rough', 'deepRough', 'bunker'];
 
 export interface CourseValidationOptions {
   /** 格子間隔 [m]。既定は `CONFIG.course.validationCellSize` */
@@ -21,7 +25,7 @@ export interface CourseValidationResult {
   cellSize: number;
   /** サーフェス別の面積比。合計は 1 */
   areaRatio: Record<SurfaceType, number>;
-  /** ティーからカップまで、芝（green / rough / deepRough）だけを辿って行けるか */
+  /** ティーからカップまで、打てる地面（green / rough / deepRough / bunker）だけを辿って行けるか */
   connected: boolean;
   /** ティー・カップの周囲が通常芝に保たれているか */
   teeIsGreen: boolean;
@@ -56,6 +60,7 @@ export function validateCourse(
     green: 0,
     rough: 0,
     deepRough: 0,
+    bunker: 0,
     water: 0,
     ob: 0,
   };
@@ -74,6 +79,7 @@ export function validateCourse(
     green: counts.green / total,
     rough: counts.rough / total,
     deepRough: counts.deepRough / total,
+    bunker: counts.bunker / total,
     water: counts.water / total,
     ob: counts.ob / total,
   };
@@ -151,7 +157,7 @@ export function courseSurfaceDigest(
   const nz = Math.max(2, Math.round(course.bounds.length / cellSize) + 1);
   const stepX = course.bounds.width / (nx - 1);
   const stepZ = course.bounds.length / (nz - 1);
-  const order: readonly SurfaceType[] = ['green', 'rough', 'deepRough', 'water', 'ob'];
+  const order: readonly SurfaceType[] = ['green', 'rough', 'deepRough', 'bunker', 'water', 'ob'];
 
   let hash = 0x811c9dc5;
   for (let j = 0; j < nz; j++) {
