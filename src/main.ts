@@ -26,7 +26,7 @@ import { PROTOTYPE_COURSE } from './course/prototype-course';
 import { approachDirection, generateCourse } from './course/course-generate';
 import { generateCourseV2 } from './course/course-generate-v2';
 import type { CourseDefinition, TerrainType } from './course/course-types';
-import { tourById } from './course/tour-holes';
+import { DEFAULT_SETUP, setupOf, tourById } from './course/tour-holes';
 import { CourseMapMarker } from './course-map-marker';
 import { ensurePixelFont } from './pixel-font';
 import * as i18n from './i18n';
@@ -74,6 +74,8 @@ function courseWithSeed(value: number): CourseDefinition {
   const seed = value >>> 0;
   if (usePrototypeCourse) return { ...PROTOTYPE_COURSE, seed };
   if (useGeneratorV2) return generateCourseV2(seed);
+  // ツアーは自分が使う生成器をセット定義に持つ。**省略しているセットは今までどおりv1**
+  if (mode === 'tour' && selectedTour.generator === 'v2') return generateCourseV2(seed);
   return generateCourse(seed);
 }
 
@@ -115,6 +117,14 @@ function modeFromUrl(): GameMode {
 }
 
 const mode = modeFromUrl();
+
+/**
+ * コースの仕立て（うねりの倍率・グリーンの速さ）。**通常ツアーだけが持つ。**
+ *
+ * 練習・`?seed=`・`?gen=v2` は1ホールを繰り返し試すための入口なので、
+ * 比べる基準がぶれないよう既定（うねり等倍・スティンプ10ft）で回す
+ */
+const courseSetup = mode === 'tour' ? setupOf(selectedTour) : DEFAULT_SETUP;
 
 /** 通常ツアーのラウンド状態。**練習モードでは null**（ホールを進めず、同じホールを打ち直す） */
 const round = mode === 'tour' ? new Round(selectedTour.seeds) : null;
@@ -163,7 +173,9 @@ function greenParamsFor(target: CourseDefinition, amplitude: number) {
     seed: target.seed,
     width: target.bounds.width,
     length: target.bounds.length,
-    undulationAmplitude: amplitude,
+    // コースの仕立ての倍率を掛ける。**絶対値ではなく倍率にしてある**ので、
+    // アンジュレーション比較モード（`UNDULATION_MODES`）は今までどおり効く
+    undulationAmplitude: amplitude * courseSetup.undulationGain,
     terrain: {
       type: target.terrain,
       cup: target.cup,
@@ -174,6 +186,16 @@ function greenParamsFor(target: CourseDefinition, amplitude: number) {
     // バンカーのすり鉢。縁を砂の輪郭に合わせるので、コース定義を知っている側から渡す
     bunkerBasin: (x: number, z: number) => bunkerBasinAt(target, x, z),
   };
+}
+
+/**
+ * 現在のグリーンとカップで転がりを作る。
+ * **グリーンの速さはコースの仕立てが決める**ので、作り直すたびにここを通す
+ */
+function makeRoller(): Roller {
+  const next = new Roller(green, course.cup);
+  next.stimpFeet = courseSetup.stimpFeet;
+  return next;
 }
 
 // --- シーン ---------------------------------------------------------------
@@ -504,7 +526,7 @@ function aimViewLabel(view: AimView): string {
 }
 type StrokeCameraView = 'DOWN' | 'CUP';
 
-let roller = new Roller(green, course.cup);
+let roller = makeRoller();
 const cup = new THREE.Vector2(course.cup.x, course.cup.z);
 /** ボールの現在位置（XZ）。roller から毎フレーム写す */
 const ball = new THREE.Vector2(course.tee.x, course.tee.z);
@@ -1112,7 +1134,7 @@ function rebuildGreenForUndulationCompare(): void {
   const mode = selectedUndulation();
   visualHeightScale = mode.visualScale;
   green = new Green(greenParamsFor(course, mode.amplitude), (x, z) => surfaceAt(course, x, z));
-  roller = new Roller(green, course.cup);
+  roller = makeRoller();
   roller.place(ball.x, ball.y);
   buildTerrain();
   trailPointCount = 0;
@@ -1135,7 +1157,7 @@ function loadHole(next: number): void {
   const mode = selectedUndulation();
   visualHeightScale = mode.visualScale;
   green = new Green(greenParamsFor(course, mode.amplitude), (x, z) => surfaceAt(course, x, z));
-  roller = new Roller(green, course.cup);
+  roller = makeRoller();
   buildTerrain();
   ball.set(course.tee.x, course.tee.z);
   shotStart.copy(ball);

@@ -37,6 +37,7 @@ import { generateCourseV2 } from '../src/course/course-generate-v2.ts';
 import { bunkerBasinAt, surfaceAt } from '../src/course/course-map.ts';
 import { Green, defaultGreenParams } from '../src/green.ts';
 import { Roller, criticalGradient, frictionFromStimp } from '../src/physics.ts';
+import { TOUR_SETS, setupOf } from '../src/course/tour-holes.ts';
 import type { CourseDefinition, SurfaceType } from '../src/course/course-types.ts';
 
 const P = CONFIG.physics;
@@ -142,6 +143,14 @@ interface Args {
   verbose: boolean;
   /** どの生成器で作ったコースを調べるか。既定は v1（既存ツアーと同じ） */
   gen: 'v1' | 'v2';
+  /**
+   * コースの仕立て（`src/course/tour-holes.ts`）。
+   * **速さとうねりは「止まれるか」を直接動かす**ので、ツアーへ入れる前にここで通す
+   */
+  stimpFeet: number;
+  undulationGain: number;
+  /** 調べるシードを列挙で指定する。`--tour=` と `--seeds=` の結果がここへ入る */
+  seedList: number[] | null;
 }
 
 function parseArgs(argv: readonly string[]): Args {
@@ -153,6 +162,9 @@ function parseArgs(argv: readonly string[]): Args {
     vmax: SPEED_MAX,
     verbose: false,
     gen: 'v1',
+    stimpFeet: P.stimpFeet,
+    undulationGain: 1,
+    seedList: null,
   };
   for (const raw of argv) {
     const [key, value] = raw.replace(/^--/, '').split('=');
@@ -167,6 +179,18 @@ function parseArgs(argv: readonly string[]): Args {
     else if (key === 'gen' && value) {
       if (value !== 'v1' && value !== 'v2') throw new Error(`--gen は v1 か v2: ${value}`);
       args.gen = value;
+    } else if (key === 'stimp' && value) args.stimpFeet = Number(value);
+    else if (key === 'gain' && value) args.undulationGain = Number(value);
+    else if (key === 'tour' && value) {
+      // ツアー1セットをそのまま通す。シード列・生成器・仕立てを定義から拾うので、
+      // 手で写し間違える余地がない
+      const tour = TOUR_SETS.find((t) => t.id === value);
+      if (!tour) throw new Error(`--tour が見つかりません: ${value}`);
+      const setup = setupOf(tour);
+      args.seedList = [...tour.seeds];
+      args.gen = tour.generator ?? 'v1';
+      args.stimpFeet = setup.stimpFeet;
+      args.undulationGain = setup.undulationGain;
     }
   }
   return args;
@@ -180,6 +204,11 @@ function generateFor(seed: number, gen: Args['gen']): CourseDefinition {
 const ARGS = parseArgs(process.argv.slice(2));
 const SPEEDS = speedLadder(ARGS.vmin, ARGS.vmax);
 
+/** 実際に調べるシード。`--tour=` か `--seeds=` で決まる */
+const SEEDS: number[] =
+  ARGS.seedList ??
+  Array.from({ length: ARGS.seedTo - ARGS.seedFrom + 1 }, (_, i) => ARGS.seedFrom + i);
+
 // --- 下ごしらえ -----------------------------------------------------------
 
 /** main.ts の greenParamsFor と同じ組み立て。物理に効くのは高さだけなので見た目倍率は要らない */
@@ -190,7 +219,7 @@ function buildGreen(course: CourseDefinition): Green {
       seed: course.seed,
       width: course.bounds.width,
       length: course.bounds.length,
-      undulationAmplitude: UNDULATION_AMPLITUDE,
+      undulationAmplitude: UNDULATION_AMPLITUDE * ARGS.undulationGain,
       terrain: {
         type: course.terrain,
         cup: course.cup,
@@ -217,7 +246,7 @@ function isPlayable(surface: SurfaceType): boolean {
 
 /** 地面種別ごとの摩擦 [m/s^2]。physics.ts の frictionMultiplier と同じ */
 function frictionOn(surface: SurfaceType): number {
-  const base = frictionFromStimp(P.stimpFeet);
+  const base = frictionFromStimp(ARGS.stimpFeet);
   if (surface === 'rough') return base * P.roughFrictionMultiplier;
   if (surface === 'deepRough') return base * P.deepRoughFrictionMultiplier;
   if (surface === 'bunker') return base * P.bunkerFrictionMultiplier;
@@ -422,6 +451,7 @@ function investigate(seed: number, args: Args): SeedReport {
   // 位相は細かい格子で見る。粗い格子だと斜めの細い芝が島に見える
   const topo = buildGrid(course, green, TOPO_CELL);
   const roller = new Roller(green, course.cup);
+  roller.stimpFeet = ARGS.stimpFeet;
 
   const teeComponent = topo.component[topo.indexAt(course.tee.x, course.tee.z)];
   const cupComponent = topo.component[topo.indexAt(course.cup.x, course.cup.z)];
@@ -757,7 +787,13 @@ function percent(value: number): string {
 
 console.log('=== 打ち切り廃止の可否を判断するための調査 ===');
 console.log(
-  `シード: ${ARGS.seedFrom}〜${ARGS.seedTo}（生成器 ${ARGS.gen === 'v2' ? 'generateCourseV2' : 'generateCourse'}(seed)）`,
+  ARGS.seedList
+    ? `シード: ${SEEDS.join(', ')}（生成器 ${ARGS.gen === 'v2' ? 'generateCourseV2' : 'generateCourse'}(seed)）`
+    : `シード: ${ARGS.seedFrom}〜${ARGS.seedTo}（生成器 ${ARGS.gen === 'v2' ? 'generateCourseV2' : 'generateCourse'}(seed)）`,
+);
+console.log(
+  `コースの仕立て: グリーンの速さ ${ARGS.stimpFeet}ft / うねりの倍率 ${ARGS.undulationGain}` +
+    `（振幅 ${(UNDULATION_AMPLITUDE * ARGS.undulationGain).toFixed(3)}m）`,
 );
 console.log(`位相を見る格子: ${TOPO_CELL}m / 打つマスの格子: ${ARGS.cell}m / 方向: ${DIRECTIONS} / 初速: ${SPEEDS.map((v) => v.toFixed(2)).join(', ')} m/s`);
 console.log(`想定した最弱の一打: ${ARGS.vmin} m/s ・ 最強の一打: ${ARGS.vmax} m/s`);
@@ -768,7 +804,7 @@ console.log(
   `摩擦: 通常芝 ${frictionOn('green').toFixed(3)} / ラフ ${frictionOn('rough').toFixed(3)} / セカンドカット ${frictionOn('deepRough').toFixed(3)} / 砂 ${frictionOn('bunker').toFixed(3)} m/s^2`,
 );
 console.log(
-  `止まれる勾配の上限: 通常芝 ${percent(criticalGradient(P.stimpFeet))} / ラフ ${percent(criticalGradient(P.stimpFeet) * P.roughFrictionMultiplier)} / セカンドカット ${percent(criticalGradient(P.stimpFeet) * P.deepRoughFrictionMultiplier)} / 砂 ${percent(criticalGradient(P.stimpFeet) * P.bunkerFrictionMultiplier)}`,
+  `止まれる勾配の上限: 通常芝 ${percent(criticalGradient(ARGS.stimpFeet))} / ラフ ${percent(criticalGradient(ARGS.stimpFeet) * P.roughFrictionMultiplier)} / セカンドカット ${percent(criticalGradient(ARGS.stimpFeet) * P.deepRoughFrictionMultiplier)} / 砂 ${percent(criticalGradient(ARGS.stimpFeet) * P.bunkerFrictionMultiplier)}`,
 );
 console.log('');
 
@@ -803,16 +839,17 @@ const problems: string[] = [];
 
 // 決定論の確認。同じシードを2回調べて、結果が1文字も違わないことを見る
 {
-  const a = JSON.stringify(investigate(ARGS.seedFrom, ARGS));
-  const b = JSON.stringify(investigate(ARGS.seedFrom, ARGS));
-  console.log(`決定論（シード ${ARGS.seedFrom} を2回）: ${a === b ? 'OK' : 'NG'}`);
+  const a = JSON.stringify(investigate(SEEDS[0], ARGS));
+  const b = JSON.stringify(investigate(SEEDS[0], ARGS));
+  console.log(`決定論（シード ${SEEDS[0]} を2回）: ${a === b ? 'OK' : 'NG'}`);
   if (a !== b) process.exitCode = 1;
 }
 
-for (let seed = ARGS.seedFrom; seed <= ARGS.seedTo; seed++) {
+for (let index = 0; index < SEEDS.length; index++) {
+  const seed = SEEDS[index];
   const report = investigate(seed, ARGS);
-  if ((seed - ARGS.seedFrom) % 25 === 24) {
-    console.log(`-- 進捗: ${seed - ARGS.seedFrom + 1} / ${ARGS.seedTo - ARGS.seedFrom + 1} シード`);
+  if (index % 5 === 4 || index === SEEDS.length - 1) {
+    console.log(`-- 進捗: ${index + 1} / ${SEEDS.length} シード`);
   }
   totalStoppable += report.stoppableCells;
   totalStuck += report.stuck.length;
@@ -904,7 +941,7 @@ for (let seed = ARGS.seedFrom; seed <= ARGS.seedTo; seed++) {
   }
 }
 
-const seeds = ARGS.seedTo - ARGS.seedFrom + 1;
+const seeds = SEEDS.length;
 console.log('');
 console.log('=== まとめ ===');
 console.log(`調べたシード: ${seeds} / 打ったショット: ${totalShots}`);

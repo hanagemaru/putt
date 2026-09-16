@@ -178,9 +178,11 @@ function renderTopMenu(): void {
 function renderTourSelection(): void {
   const root = prepareMenuRoot();
   root.replaceChildren();
+  // 見出しを上へ貼り付けるため、スクロール領域の上余白をパネル側へ移す（下の CSS）
+  root.classList.add('tour-scroll');
 
   const panel = document.createElement('main');
-  panel.className = 'menu-panel course-panel';
+  panel.className = 'menu-panel course-panel tour-panel';
 
   const heading = document.createElement('div');
   heading.className = 'menu-heading';
@@ -545,6 +547,8 @@ function prepareMenuRoot(): HTMLElement {
     root.id = 'menu-root';
     document.body.append(root);
   }
+  // 画面ごとの指定は毎回落とす。コース一覧だけが `tour-scroll` を足す
+  root.classList.remove('tour-scroll');
   return root;
 }
 
@@ -880,6 +884,42 @@ function ensureMenuStyles(): void {
     }
     .course-best-row {
       margin-top: 10px;
+    }
+    /*
+     * コース一覧。**4コースはどの端末でも1画面に収まらない**（390x844 で 1008px）。
+     * 1枚は「名前・説明・44pxのボタン」なので、これ以上は詰められない。
+     *
+     * 収めるのを諦めるかわりに、**「← トップ」を上へ貼り付けて画面から消さない**。
+     * スクロールで戻る道が消えたように見えるのがいちばん困る（パター選択と同じ理由）。
+     * 貼り付けた帯は下をくぐるカードが透けないよう、枠と同じ色で塗って境目を引く
+     */
+    /*
+     * 上余白はスクロール領域（#menu-root）ではなくパネルの外側マージンへ移す。
+     * 領域側に padding があると、貼り付けた見出しはその内側で止まり、
+     * **上の24pxをカードが素通りして見える**
+     */
+    #menu-root.tour-scroll {
+      padding-top: 0;
+    }
+    #menu-root.tour-scroll .menu-panel {
+      margin-top: max(24px, env(safe-area-inset-top));
+    }
+    .tour-panel .menu-heading {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      gap: 12px;
+      background: #0f170f;
+      border-bottom: 3px solid #1b3318;
+      margin: -22px -16px 0;
+      padding: 22px 16px 12px;
+    }
+    .tour-panel .course-title {
+      font-size: 24px;
+    }
+    .tour-panel .course-list {
+      gap: 10px;
+      margin-top: 14px;
     }
     /* パター選択 */
     /*
