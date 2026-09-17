@@ -66,16 +66,6 @@ export function rankingTable(board: RankingBoard): HTMLElement {
   return frame;
 }
 
-/** 表の下に出す一行。板の人数と、自分の記録が `確認中` のときの断り */
-export function rankingFooter(board: RankingBoard, checking: boolean): HTMLElement {
-  const footer = document.createElement('div');
-  footer.className = 'ranking-footer';
-  footer.textContent = checking
-    ? `${i18n.playerCountLabel(board.playerCount)}　${t().rankingChecking}`
-    : i18n.playerCountLabel(board.playerCount);
-  return footer;
-}
-
 /** 読み込み中・失敗のときに表の場所へ置く1枚 */
 export function rankingNotice(message: string, retry?: () => void): HTMLElement {
   ensureRankingStyles();
@@ -257,12 +247,132 @@ export function ensureRankingStyles(): void {
      * 表の枠。**画面に収め、中身だけを縦にスクロールさせる。**
      * 板が育つほど行は増えるので、枠ごと伸ばすと「戻る」が画面から消える
      */
-    .ranking-frame {
+    /*
+     * 板（コース）の切り替え。**画面を分けずにここで切り替える。**
+     * 3つを1行に収めるため、字は視点バー（.camera-button）と同じ12px。
+     * 英語のコース名は長いので、収まらないぶんは枠の中で折り返す
+     */
+    .ranking-tabs {
+      display: flex;
+      gap: 6px;
       margin-top: 16px;
+    }
+    .ranking-tab {
+      appearance: none;
+      flex: 1 1 0;
+      min-width: 0;
+      min-height: 44px;
+      border-style: solid;
+      border-width: 3px;
+      border-color: #9ede8a #1b3318 #1b3318 #9ede8a;
+      border-radius: 0;
+      background: #27431f;
+      box-shadow: 0 4px 0 #0d140d;
+      padding: 8px 4px;
+      font-family: inherit;
+      font-size: 12px;
+      line-height: 1.3;
+      letter-spacing: 0;
+      color: #bcd0c0;
+      touch-action: manipulation;
+      cursor: pointer;
+    }
+    /* 今どの板を見ているかは反転で示す。視点バーの選択中と同じ約束 */
+    .ranking-tab.selected {
+      background: #eef7ec;
+      border-color: #ffffff #4f9844 #4f9844 #ffffff;
+      color: #16210f;
+    }
+    .ranking-tab:active {
+      transform: translateY(4px);
+      border-color: #1b3318 #9ede8a #9ede8a #1b3318;
+      box-shadow: none;
+    }
+    .ranking-tab:focus-visible {
+      outline: 3px solid #ffe66d;
+      outline-offset: 2px;
+    }
+    /*
+     * 「あなた」の一枚。**自分の順位を表の中から探させない。**
+     * 圏外でも、まだ登録していなくても、同じ場所に同じ形で出る
+     */
+    .ranking-you {
+      margin-top: 14px;
+      border: 3px solid #1b3318;
+      background: #1b2c1d;
+      padding: 10px;
+    }
+    .ranking-you-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .ranking-you-label {
+      flex: none;
+      font-size: 16px;
+      color: #a8bfae;
+    }
+    /* 長い名前で「名前を変える」を押し出さない */
+    .ranking-you-name {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      font-size: 16px;
+      color: #eef7ec;
+    }
+    .ranking-you-head .ranking-button {
+      flex: none;
+      min-height: 36px;
+      padding: 8px 8px;
+      font-size: 12px;
+      letter-spacing: 0;
+    }
+    .ranking-you-readouts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 18px;
+      margin-top: 8px;
+    }
+    /* 見出しを沈めて値を明るく。HUDと同じ組み方 */
+    .ranking-readout {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 6px;
+      font-size: 16px;
+    }
+    .ranking-readout-label {
+      font-size: 13px;
+      color: #a8bfae;
+    }
+    .ranking-readout-value {
+      color: #ffe66d;
+    }
+    /* 記録の削除。めったに押さないので一番下に文字だけで置く */
+    .ranking-danger {
+      margin-top: 20px;
+      text-align: center;
+    }
+    .ranking-danger .name-note {
+      margin-bottom: 10px;
+      text-align: center;
+    }
+    .ranking-danger-actions {
+      display: grid;
+      justify-content: center;
+    }
+    .ranking-danger-actions.two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      justify-content: stretch;
+    }
+    .ranking-frame {
+      margin-top: 14px;
       border: 3px solid #1b3318;
       background: #1b2c1d;
       padding: 8px 6px;
-      max-height: 58vh;
+      max-height: 46vh;
       overflow-y: auto;
       touch-action: pan-y;
     }
@@ -337,25 +447,6 @@ export function ensureRankingStyles(): void {
       line-height: 1.5;
       color: #bcd0c0;
       text-align: center;
-    }
-    .ranking-footer {
-      margin-top: 10px;
-      font-size: 16px;
-      color: #bcd0c0;
-    }
-    /* 名前と記録の管理。板の一覧の下へ1つだけ置く */
-    .ranking-data-link {
-      display: grid;
-      margin-top: 22px;
-    }
-    .ranking-data-slot {
-      margin-top: 16px;
-    }
-    .ranking-data-card {
-      margin-top: 16px;
-      border: 3px solid #1b3318;
-      background: #1b2c1d;
-      padding: 14px 12px;
     }
     /*
      * ボタン。**メニューの中でもゲーム画面の上でも同じ見た目にする。**

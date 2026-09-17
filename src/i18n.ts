@@ -45,8 +45,8 @@ const COPY = {
     ranking: 'ランキング',
     /** 板の一覧とランキング表の見出し */
     rankingTitle: 'ランキング',
-    /** 板の一覧の下に置く、名前と記録の管理へ入るボタン */
-    rankingPlayerData: '名前と記録',
+    /** 表の上に置く「あなた」の行。自分の順位を表の中から探させない */
+    you: 'あなた',
     colRank: '順位',
     colName: '名前',
     rankingEmpty: 'まだ登録がありません',
@@ -65,7 +65,10 @@ const COPY = {
     nameSave: '決定',
     nameLater: 'あとで',
     nameEdit: '名前を変える',
-    nameUnset: 'まだ決めていません',
+    /** まだ決めていない人へ。変えるものが無い状態で「変える」と言わない */
+    nameSet: '名前を決める',
+    /** 名前を決めていない人の欄。隣に「名前を決める」が並ぶので短くする */
+    nameUnset: '名前なし',
     /** 記録の削除（プライバシー。消し方が無い状態で公開しない） */
     dataDelete: '記録を全部消す',
     dataDeleteNote: 'この端末の名前と、登録した記録を消します。元には戻せません',
@@ -164,7 +167,7 @@ const COPY = {
 
     ranking: 'RANKING',
     rankingTitle: 'RANKING',
-    rankingPlayerData: 'NAME & DATA',
+    you: 'YOU',
     colRank: 'POS',
     colName: 'NAME',
     rankingEmpty: 'NO ENTRIES YET',
@@ -179,7 +182,8 @@ const COPY = {
     nameSave: 'SAVE',
     nameLater: 'LATER',
     nameEdit: 'CHANGE NAME',
-    nameUnset: 'NOT SET YET',
+    nameSet: 'SET NAME',
+    nameUnset: 'NO NAME',
     dataDelete: 'DELETE MY RECORDS',
     dataDeleteNote: "Deletes your name and every record you've posted. This can't be undone.",
     dataDeleteConfirm: 'DELETE',

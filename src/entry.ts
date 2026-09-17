@@ -1,5 +1,5 @@
 import { CONFIG } from './config';
-import { TOUR_SETS, tourById, type TourDefinition } from './course/tour-holes';
+import { DEFAULT_TOUR, TOUR_SETS, tourById, type TourDefinition } from './course/tour-holes';
 import { TourBestScoreStore, type BestScoreUpdate } from './best-score-storage';
 import { Round, onRoundComplete, type RoundResult } from './round';
 import { RoundProgressStore, seedsId } from './round-storage';
@@ -19,13 +19,7 @@ import {
   type RankingBoard,
   type SubmitRecordRequest,
 } from './ranking-shared';
-import {
-  nameCard,
-  rankingFooter,
-  rankingNotice,
-  rankingTable,
-  showNameOverlay,
-} from './ranking-view';
+import { rankingNotice, rankingTable, showNameOverlay } from './ranking-view';
 import { ensurePixelFont } from './pixel-font';
 import * as i18n from './i18n';
 import { applyStaticUiText, language, setLanguage, t } from './i18n';
@@ -60,9 +54,8 @@ void flushPendingSubmissions();
 if (params.get('menu') === 'ranking') {
   // ランキングは `?tour=` を board の指定として使う。**ゲームは始めない**ので、
   // 直接プレイの判定より先に見る
-  const tour = params.get('tour');
-  if (tour) renderRankingTable(tourById(tour));
-  else renderRankingBoards();
+  // `?tour=` はどのタブを開くかの指定。無ければ最初のコース
+  renderRanking(tourById(params.get('tour')));
 } else if (shouldStartGameDirectly(params)) {
   const tour = directTourFromParams(params);
   if (tour) setupTourBestTracking(tour);
@@ -354,7 +347,7 @@ function renderTopMenu(): void {
   // ランキングも遊び始めるボタンではないので、パターと同じく色を落とす。
   // **APIの無い配信先（GitHub Pages）では入口ごと出さない**（`docs/ranking.md` §6-4）
   if (rankingAvailable()) {
-    const ranking = menuButton(copy.ranking, renderRankingBoards);
+    const ranking = menuButton(copy.ranking, () => renderRanking());
     ranking.classList.add('menu-button-sub');
     actions.append(ranking);
   }
@@ -402,140 +395,203 @@ function renderTourSelection(): void {
 }
 
 /**
- * ランキングの板（コース）を選ぶ画面（`docs/ranking.md` §6-3）。
+ * ランキング（`docs/ranking.md` §6-3）。**トップから1枚で着く。**
  *
- * **トップから入るときだけ1枚挟む。** ランキングはコースごとに別の板なので、
- * どれを見るかを先に決める必要がある。見た目はコース選択の使い回しで、新しい形は増やさない
+ * コースごとに別の板だが、**画面は分けずタブで切り替える**（スイーパーと同じ作り）。
+ * ボタンを何度も押させないことのほうが、画面を分ける整理より大事。
+ *
+ * 並びは上から「タブ → あなた → 表」。**自分の順位を表の中から探させない**ので、
+ * 圏外でも、まだ登録していなくても、自分の立ち位置は常に同じ場所に出る。
+ * 言語の切り替えはここに置かない（パター選択と同じで、トップにだけ置く）
  */
-function renderRankingBoards(): void {
+function renderRanking(tour: TourDefinition = DEFAULT_TOUR): void {
   const root = prepareMenuRoot();
   root.replaceChildren();
   const copy = t();
 
   const panel = document.createElement('main');
-  panel.className = 'menu-panel course-panel';
+  panel.className = 'menu-panel course-panel ranking-panel';
   panel.append(menuHeading(copy.rankingTitle, renderTopMenu));
 
-  const list = document.createElement('div');
-  list.className = 'course-list';
-  for (const tour of TOUR_SETS) {
-    const card = document.createElement('div');
-    card.className = 'course-card';
-
-    const name = document.createElement('div');
-    name.className = 'course-name';
-    name.textContent = tour.name[language()];
-
-    const description = document.createElement('div');
-    description.className = 'course-description';
-    description.textContent = tour.description[language()];
-
-    const actions = document.createElement('div');
-    actions.className = 'course-actions';
-    // 3つは並びで、押してほしい順は無い。白地（primary）は使わない
-    actions.append(courseAction(copy.rankingSee, false, () => renderRankingTable(tour)));
-
-    card.append(name, description, actions);
-    list.append(card);
+  // 板の切り替え。押した先も同じ画面なので、戻る道が増えない
+  const tabs = document.createElement('div');
+  tabs.className = 'ranking-tabs';
+  for (const board of TOUR_SETS) {
+    const selected = board.id === tour.id;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = selected ? 'ranking-tab selected' : 'ranking-tab';
+    button.textContent = board.name[language()];
+    button.setAttribute('aria-pressed', String(selected));
+    if (!selected) button.addEventListener('click', () => renderRanking(board));
+    tabs.append(button);
   }
 
-  // 名前と記録の管理はここへ置く。**トップのボタンをこれ以上増やさない**
-  // （`docs/ranking.md` §6-1 はトップへ置く案だったが、遊ぶボタンが埋もれる）
-  const data = document.createElement('div');
-  data.className = 'ranking-data-link';
-  data.append(courseAction(copy.rankingPlayerData, false, renderPlayerData));
-
-  panel.append(list, data, languageToggle(renderRankingBoards));
-  root.append(panel);
-}
-
-/**
- * 1つの板のランキング表。
- * コース選択からも同じ表へ入れる（板が決まっているので一覧を挟まない）
- */
-function renderRankingTable(tour: TourDefinition): void {
-  const root = prepareMenuRoot();
-  root.replaceChildren();
-
-  const panel = document.createElement('main');
-  panel.className = 'menu-panel course-panel';
-  panel.append(
-    menuHeading(tour.name[language()], renderRankingBoards, `← ${t().rankingTitle}`),
-  );
-
-  // 表の場所。読み込み中 → 表（または失敗）の順に差し替える
+  const you = playerCard(() => renderRanking(tour));
   const slot = document.createElement('div');
-  slot.append(rankingNotice(t().rankingLoading));
-  panel.append(slot, languageToggle(() => renderRankingTable(tour)));
-  root.append(panel);
 
   const load = (): void => {
-    slot.replaceChildren(rankingNotice(t().rankingLoading));
+    slot.replaceChildren(rankingNotice(copy.rankingLoading));
+    you.pending();
     void fetchRanking(boardIdFor(tour), readOrCreateIdentity()).then(
       (board: RankingBoard) => {
-        // 自分の記録が板に無いのに自己ベストだけある＝段2の検証待ち
-        const checking = board.yourRank === null && board.yourBest !== null;
-        slot.replaceChildren(rankingTable(board), rankingFooter(board, checking));
+        you.show(board);
+        slot.replaceChildren(rankingTable(board));
       },
       () => {
-        slot.replaceChildren(rankingNotice(t().rankingUnavailable, load));
+        you.failed();
+        slot.replaceChildren(rankingNotice(copy.rankingUnavailable, load));
       },
     );
   };
+
+  panel.append(tabs, you.element, slot, deleteRecordsLink());
+  root.append(panel);
   load();
 }
 
+interface PlayerCard {
+  element: HTMLElement;
+  /** 取りに行っている間 */
+  pending: () => void;
+  show: (board: RankingBoard) => void;
+  failed: () => void;
+}
+
 /**
- * 名前と記録の管理（`docs/ranking.md` §5-3・§6-1）。
- * **消し方が無い状態で公開しない**ので、削除はランキングと同じ回に入れる
+ * 表の上に置く「あなた」の一枚（`docs/ranking.md` §6-3）。
+ *
+ * **自分の順位を表の中から探させないための行。** 名前・順位・打数をいつも同じ場所に出し、
+ * 名前を決める入口もここに置く（トップのボタンをこれ以上増やさない）
  */
-function renderPlayerData(): void {
-  const root = prepareMenuRoot();
-  root.replaceChildren();
+function playerCard(rerender: () => void): PlayerCard {
   const copy = t();
 
-  const panel = document.createElement('main');
-  panel.className = 'menu-panel course-panel';
-  panel.append(menuHeading(copy.rankingPlayerData, renderRankingBoards, `← ${copy.rankingTitle}`));
+  const element = document.createElement('div');
+  element.className = 'ranking-you';
 
-  const status = document.createElement('div');
-  status.className = 'ranking-footer';
-  status.textContent = loadPlayerName() ?? copy.nameUnset;
+  const head = document.createElement('div');
+  head.className = 'ranking-you-head';
 
-  const editor = document.createElement('div');
-  editor.className = 'ranking-data-slot';
-  editor.append(
-    nameCard({
+  const label = document.createElement('span');
+  label.className = 'ranking-you-label';
+  label.textContent = copy.you;
+
+  const name = document.createElement('span');
+  name.className = 'ranking-you-name';
+
+  const edit = document.createElement('button');
+  edit.type = 'button';
+  edit.className = 'ranking-button';
+
+  const renderName = (): void => {
+    const current = loadPlayerName();
+    name.textContent = current ?? copy.nameUnset;
+    // まだ決めていない人には「決める」と出す。変えるものが無い状態で「変える」と言わない
+    edit.textContent = current ? copy.nameEdit : copy.nameSet;
+  };
+  edit.addEventListener('click', () => {
+    showNameOverlay({
       initial: loadPlayerName(),
-      title: copy.nameEdit,
-      onSave: (name) => {
+      onSave: (value) => {
         // 端末側は先に保存する。サーバへの反映は失敗してもよい（次の登録で送り直る）
-        void updatePlayerName(name, readOrCreateIdentity()).catch(() => {});
-        status.textContent = name;
+        void updatePlayerName(value, readOrCreateIdentity()).catch(() => {});
+        rerender();
       },
-    }),
-  );
+      onCancel: () => {},
+    });
+  });
+  renderName();
 
-  const danger = document.createElement('div');
-  danger.className = 'ranking-data-card';
+  head.append(label, name, edit);
+
+  const readouts = document.createElement('div');
+  readouts.className = 'ranking-you-readouts';
+  const rank = readoutPair(copy.colRank);
+  const strokes = readoutPair(copy.colStrokes);
+  readouts.append(rank.element, strokes.element);
+
+  element.append(head, readouts);
+
+  const set = (rankText: string, strokesText: string): void => {
+    rank.value.textContent = rankText;
+    strokes.value.textContent = strokesText;
+  };
+
+  return {
+    element,
+    pending: () => set('…', '…'),
+    failed: () => set('--', '--'),
+    show: (board) => {
+      // 板に載っていないのに自己ベストがある＝段2の検証待ち
+      const checking = board.yourRank === null && board.yourBest !== null;
+      set(
+        board.yourRank === null
+          ? checking
+            ? copy.rankingChecking
+            : '--'
+          : `${i18n.rankLabel(board.yourRank, board.yourTied)} / ${i18n.playerCountLabel(board.playerCount)}`,
+        board.yourBest
+          ? `${i18n.rankingStrokes(board.yourBest.strokes, board.yourBest.gaveUp)} (${i18n.formatDiff(board.yourBest.toPar)})`
+          : '--',
+      );
+    },
+  };
+}
+
+/** 見出しを沈めて値を明るく出す1組。HUDと同じ組み方 */
+function readoutPair(label: string): { element: HTMLElement; value: HTMLElement } {
+  const element = document.createElement('span');
+  element.className = 'ranking-readout';
+
+  const labelNode = document.createElement('span');
+  labelNode.className = 'ranking-readout-label';
+  labelNode.textContent = label;
+
+  const value = document.createElement('span');
+  value.className = 'ranking-readout-value';
+
+  element.append(labelNode, value);
+  return { element, value };
+}
+
+/**
+ * 記録の削除（`docs/ranking.md` §5-3）。**消し方が無い状態で公開しない。**
+ * めったに押さないので画面の一番下に文字だけで置き、押されたその場で確かめる
+ */
+function deleteRecordsLink(): HTMLElement {
+  const copy = t();
+  const box = document.createElement('div');
+  box.className = 'ranking-danger';
 
   const note = document.createElement('div');
   note.className = 'name-note';
+  note.hidden = true;
   note.textContent = copy.dataDeleteNote;
 
   const actions = document.createElement('div');
-  actions.className = 'name-actions';
+  actions.className = 'ranking-danger-actions';
 
-  const askDelete = (): void => {
+  const start = document.createElement('button');
+  start.type = 'button';
+  start.className = 'menu-text-link';
+  start.textContent = copy.dataDelete;
+
+  const reset = (): void => {
+    note.hidden = true;
+    actions.classList.remove('two');
+    actions.replaceChildren(start);
+  };
+
+  start.addEventListener('click', () => {
+    note.hidden = false;
     actions.classList.add('two');
+
     const cancel = document.createElement('button');
     cancel.type = 'button';
     cancel.className = 'ranking-button';
     cancel.textContent = copy.dataDeleteCancel;
-    cancel.addEventListener('click', () => {
-      actions.classList.remove('two');
-      actions.replaceChildren(deleteButton());
-    });
+    cancel.addEventListener('click', reset);
 
     const confirm = document.createElement('button');
     confirm.type = 'button';
@@ -544,32 +600,24 @@ function renderPlayerData(): void {
     confirm.addEventListener('click', () => {
       void deletePlayer(readOrCreateIdentity()).then(
         () => {
-          actions.classList.remove('two');
-          actions.replaceChildren(deleteButton());
-          status.textContent = copy.dataDeleted;
+          reset();
+          note.hidden = false;
+          note.textContent = copy.dataDeleted;
         },
         () => {
-          status.textContent = copy.dataDeleteFailed;
+          reset();
+          note.hidden = false;
+          note.textContent = copy.dataDeleteFailed;
         },
       );
     });
+
     actions.replaceChildren(cancel, confirm);
-  };
+  });
 
-  const deleteButton = (): HTMLButtonElement => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'ranking-button';
-    button.textContent = copy.dataDelete;
-    button.addEventListener('click', askDelete);
-    return button;
-  };
-
-  actions.append(deleteButton());
-  danger.append(note, actions);
-
-  panel.append(status, editor, danger, languageToggle(renderPlayerData));
-  root.append(panel);
+  actions.append(start);
+  box.append(note, actions);
+  return box;
 }
 
 /**
