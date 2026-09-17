@@ -1,13 +1,33 @@
 {
-  // Cloudflare Workers の Static Assets でゲームを配る。Workerのコードは持たない。
+  // Cloudflare Workers の Static Assets でゲームを配り、`/api/*` だけ Worker が受ける。
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "putt",
+  "main": "./src/server/worker.ts",
   "compatibility_date": "2026-08-01",
   "assets": {
     // `PUTT_BASE=/ npm run build` の出力先
     "directory": "./dist",
-    "not_found_handling": "none"
+    "not_found_handling": "none",
+    // ランキングのAPIだけ Worker を先に走らせる。ゲーム資産は今までどおり Static Assets から
+    "run_worker_first": ["/api/*"]
   },
+  // D1（ランキングの保存先）は**まだ作っていない**。作ってからここを開ける:
+  //
+  //   npx wrangler d1 create putt-ranking          … 出た database_id を下へ書く
+  //   npm run db:migrate:local                     … 手元のD1へ適用
+  //   npm run db:migrate                           … 本番のD1へ適用
+  //
+  // 開けるまでは `env.DB` が無いので、Worker は `/api/player` に 503 を返すだけで、
+  // ゲームの配信には影響しない（`src/server/worker.ts` 冒頭）。
+  //
+  // "d1_databases": [
+  //   {
+  //     "binding": "DB",
+  //     "database_name": "putt-ranking",
+  //     "database_id": "<wrangler d1 create の出力>",
+  //     "migrations_dir": "migrations"
+  //   }
+  // ],
   "observability": {
     "enabled": true
   }

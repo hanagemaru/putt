@@ -972,6 +972,28 @@ export const CONFIG = {
       mockStorageKey: 'putt-ranking-mock-v1',
       /** モックが作る板の人数。同打数が大量に並ぶ見え方を確認するための数 */
       mockPlayerCount: 340,
+
+      /**
+       * サーバ（`src/server/worker.ts`）側の数値。
+       * **ランキングのAPIは誰でも直接叩ける**ので、上限は必ず要る（`docs/ranking.md` §4-4）
+       */
+      server: {
+        /** レート制限の窓 [s]。この幅で数えて、超えた分を弾く */
+        rateWindowSeconds: 60,
+        /** 表示名の更新: 1人あたり / 同じIPあたり（窓の中の回数） */
+        namePerPlayer: 10,
+        namePerIp: 20,
+        /** 記録の削除。押し間違いで何度も叩くものではないので低め */
+        deletePerPlayer: 4,
+        deletePerIp: 12,
+        /** 記録の登録（段4で使う）。1ラウンド9ホールに1回しか出ない */
+        submitPerPlayer: 12,
+        submitPerIp: 40,
+        /** 受け取る本文の上限 [byte]。打ち出しの列を積んでも9ホールで1KB未満 */
+        maxBodyBytes: 120000,
+        /** レート制限の古い行を片付けるまで [s] */
+        rateKeepSeconds: 86400,
+      },
     },
 
     aim: {
