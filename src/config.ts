@@ -332,6 +332,8 @@ export const CONFIG = {
           heightFeatureCount: [0, 1],
           /** バンカーの数 */
           bunkerCount: [0, 1],
+          /** `variedBunkers` のときの個数。同じ砂が1個だけ、を避ける */
+          variedBunkerCount: [0, 2],
         },
         normal: {
           routeLength: [15.5, 28.5],
@@ -341,6 +343,7 @@ export const CONFIG = {
           hazardCount: [1, 1],
           heightFeatureCount: [1, 2],
           bunkerCount: [1, 2],
+          variedBunkerCount: [1, 3],
         },
         hard: {
           routeLength: [21, 35.5],
@@ -350,6 +353,7 @@ export const CONFIG = {
           hazardCount: [1, 2],
           heightFeatureCount: [1, 3],
           bunkerCount: [1, 2],
+          variedBunkerCount: [2, 4],
         },
       },
 
@@ -397,6 +401,24 @@ export const CONFIG = {
          * 2.0倍でも「曲がりが潰れる」半径（芝幅の 0.5 倍）の4倍あるので、
          * 曲がる量を取るほうを選んでいる。v1の実測は中央値 8.4m・最小 3.3m だった
          */
+        /**
+         * `wideSCurve`（S字を大きく振る）のときだけ使う値。
+         *
+         * **効くのは総回頭角の上限ではなく制御点の数だった。** 4点では大きなS字を
+         * Catmull-Rom で表せず、曲率が跳ねて relax（回頭角を縮めて作り直し）に落ちる。
+         * 実測（800シード・半径×0.5）:
+         *
+         *   制御点 4 / 上限170° → 回頭 最大115° ・ 遠回り率 最大1.080
+         *   制御点10 / 上限300° → 回頭 最大212° ・ 遠回り率 最大1.258
+         *   制御点14 / 上限300° → 回頭 最大231° ・ 遠回り率 最大1.364（v1の最大は1.51）
+         *
+         * どれも fallback 0・半径の下限割れ 0。**中央値は1.04にしか上がらない**ので、
+         * 大きく振れたホールはシード選定のほうで拾う
+         */
+        wideSCurve: {
+          controlPoints: 14,
+          totalTurn: [55, 300],
+        },
         minTurnRadiusWidthFactor: 2,
         /** 同じく下限 [m] の絶対値。芝が狭いホールでもここより小さくはしない */
         minTurnRadiusFloor: 4.5,
@@ -547,6 +569,25 @@ export const CONFIG = {
          * 平らでも 3.63 m/s 要り、25cm 窪ませても 3.95 m/s（+9%）にしかならない。
          * 効いているのは砂の摩擦であって深さではない
          */
+        /**
+         * `variedBunkers` のときに差し替える範囲。
+         *
+         * 既定は 半径1.1〜2.0m・ほぼ丸・ルートの後半50〜85%・最大2個しかなく、
+         * 実機で「ほとんど同じレイアウトが続く」と言われた。
+         * **大きさの幅を広げ、細長い形を増やし、置ける区間をホールの4分の1目から**にする。
+         * 逃げ道（`minClearWidth`）と食い込みの上限（`maxCenterOverlap`）は据え置く。
+         *
+         * **半径を上げすぎると逆効果。** 3.2m まで広げたら、狭い芝に置けず諦めるホールが増えて
+         * 「砂ゼロ」が15% → 39% に増えた。実測（700シード）で選んだのがこの範囲。
+         *
+         *   既定 1.1〜2.0 → 砂ゼロ15% ・ 個数は1個が61% ・ 面積 中央1.36% 最大5.36%
+         *   この値        → 砂ゼロ11% ・ 個数が1〜3に散る ・ 面積 中央1.20% 最大7.69%
+         */
+        varied: {
+          radius: [0.8, 2.2],
+          aspect: [0.35, 1.2],
+          routeRange: [0.25, 0.9],
+        },
         depth: [0.05, 0.26],
         /**
          * すり鉢が作ってよい勾配の上限（無次元）。小さいバンカーが深くなりすぎないようにする。
@@ -671,6 +712,13 @@ export const CONFIG = {
      * - `undulationGain`: うねりの振幅に掛ける倍率。地面の読みにくさを決める
      * - `stimpFeet`: グリーンの速さ [ft]。通常芝の摩擦 MU を決める
      * - `turnRadiusScale`: 最小曲率半径の下限に掛ける倍率。小さいほど「角」に近づく
+     * - `wideSCurve` / `bareWaterChance` / `variedBunkers`: 生成器へそのまま渡す
+     *
+     * ⚠️ **うねりの倍率は 1.0 より上げない。**
+     * 1.1 と 1.2 を試したら、カップの周り2mの半分以上が「止まれない面」になるホールが
+     * 4本出て、実機で1ホール15打になった（EXPERT H3・カップ2m以内の64.5%が止まれない）。
+     * 1.0 以下では9ホール中0件。**`check:stuck` はカップ周りの止まれない面を拾えない**ので、
+     * シード選定のほうで弾く
      *
      * **速さは現在4コースとも 10ft（既定値）で揃えてある。**
      * 一度 8〜12ft に振ったが、遅いグリーンは1打で進む距離が縮むぶん
@@ -683,17 +731,46 @@ export const CONFIG = {
      * **ここを変えたら必ず `npm run check:stuck -- --tour=<id>` を通すこと**
      */
     tourSetups: {
-      /** 入門。うねりが弱く、曲がりも既定どおりゆるい */
-      beginner: { undulationGain: 0.8, stimpFeet: 10, turnRadiusScale: 1 },
-      /** 標準 */
-      standard: { undulationGain: 1, stimpFeet: 10, turnRadiusScale: 1 },
-      /** 上級。うねりを少し強くする */
-      advanced: { undulationGain: 1.1, stimpFeet: 10, turnRadiusScale: 1 },
       /**
-       * 最上級。うねりがいちばん強く、**曲率半径の下限を半分にして「角」を戻す**。
-       * v2は角を潰す設計なので、ここだけ鋭さを許す
+       * 入門。**実機で「このままでいい」と出たので据え置く。**
+       * 新しいつまみ（S字の振り・岸なしの池・バンカーの幅）は全部オフで、
+       * `generateCourseV2` の既定と完全に同じ出力になる
        */
-      expert: { undulationGain: 1.2, stimpFeet: 10, turnRadiusScale: 0.5 },
+      beginner: {
+        undulationGain: 0.8,
+        stimpFeet: 10,
+        turnRadiusScale: 1,
+        wideSCurve: false,
+        bareWaterChance: 0,
+        variedBunkers: false,
+      },
+      /** 標準。ここから上はうねりを既定（1.0）に固定する（下のコメント参照） */
+      standard: {
+        undulationGain: 1,
+        stimpFeet: 10,
+        turnRadiusScale: 1,
+        wideSCurve: true,
+        bareWaterChance: 0.3,
+        variedBunkers: true,
+      },
+      /** 上級。曲がりを少し鋭くする */
+      advanced: {
+        undulationGain: 1,
+        stimpFeet: 10,
+        turnRadiusScale: 0.8,
+        wideSCurve: true,
+        bareWaterChance: 0.4,
+        variedBunkers: true,
+      },
+      /** 最上級。曲率半径の下限を半分にして「角」を作る */
+      expert: {
+        undulationGain: 1,
+        stimpFeet: 10,
+        turnRadiusScale: 0.5,
+        wideSCurve: true,
+        bareWaterChance: 0.5,
+        variedBunkers: true,
+      },
     },
   },
 

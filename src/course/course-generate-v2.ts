@@ -71,6 +71,35 @@ export interface GenerateOptionsV2 {
    * fallback 0・半径の下限割れ 0
    */
   turnRadiusScale?: number;
+  /**
+   * S字を大きく振る。**遠回りさせるS字を作れるようにする。**
+   *
+   * v2のS字は逆向きの曲がりが相殺して、遠回り率が中央1.01（v1は1.15）しかなかった。
+   * 実験すると効いていたのは総回頭角ではなく**骨格の制御点の数**で、
+   * 4点では大きなS字を Catmull-Rom で表せず、曲率が跳ねて作り直しに落ちていた。
+   *
+   * 制御点を増やして総回頭角の上限を上げると、
+   * 半径×0.5 で 回頭 最大231°・遠回り率 最大1.364（v1の最大1.51に近い）まで出る。
+   * **中央値は1.04にしか上がらない**ので、大きく振れたホールは選定で拾う
+   */
+  wideSCurve?: boolean;
+  /**
+   * 池の岸（ラフ）を無くす割合 [0..1]。**フェアウェイが直接水に接する。**
+   *
+   * 既定では池の周りを必ず `waterFringe` のラフにして「池際から直接打つ状況」を避けていたが、
+   * そのぶん池がフェアウェイから遠くなり、**池がほとんど難易度に効かなくなっていた**。
+   *
+   * 追加の乱数は引かない。**引いた岸の幅が範囲の下位どれだけに入るか**で決めるので、
+   * 0（既定）なら今までと1ビットも変わらない
+   */
+  bareWaterChance?: number;
+  /**
+   * バンカーの大きさ・形・置き場所・個数の幅を広げる。
+   *
+   * 既定は 半径1.1〜2.0m・ほぼ丸・ルートの後半50〜85%・最大2個しかなく、
+   * 実機で「ほとんど同じレイアウトが続く」と言われた
+   */
+  variedBunkers?: boolean;
 }
 
 /** mulberry32。シードから再現可能な擬似乱数（v1・green.ts と同じ実装） */
@@ -408,9 +437,14 @@ function buildRouteV2(
   routeLengthRange: Range,
   greenWidth: number,
   turnRadiusScale: number,
+  wideSCurve: boolean,
 ): BuiltRoute {
   const lobeCount = C.lobes[shape];
-  const controlCount = C.controlPoints[shape];
+  // **S字を大きく振るときだけ制御点を増やす。** 4点では大きなS字を Catmull-Rom で
+  // 表せず、曲率が跳ねて relax に落ちる（＝回頭角が縮む）。乱数は引かないので、
+  // この分岐を通らないコースは1ビットも変わらない
+  const wide = wideSCurve && shape === 'serpentine';
+  const controlCount = wide ? C.wideSCurve.controlPoints : C.controlPoints[shape];
   const side = rng() < 0.5 ? -1 : 1;
   const turnSpread = pick(rng, C.turnSpread);
 
@@ -437,7 +471,8 @@ function buildRouteV2(
   const length = pick(rng, routeLengthRange);
   // この全長で、設計半径を保ったまま曲がれる上限
   const maxTurn = (area * turnSpread * length) / (designRadius * maxWeight * lobeCount);
-  let turn = Math.min((pick(rng, C.totalTurn[shape]) * Math.PI) / 180, maxTurn);
+  const turnRange = wide ? C.wideSCurve.totalTurn : C.totalTurn[shape];
+  let turn = Math.min((pick(rng, turnRange) * Math.PI) / 180, maxTurn);
   const targetTurn = turn;
 
   // Catmull-Rom で引き直すと骨格よりわずかに曲率が上がることがある。
@@ -720,14 +755,24 @@ function placeHeightFeatures(
  * 最初に作った深いラフの島は横ずれの下限が0で、294個中87%が中心線を塞いでいた。
  * 逃げ道が無ければ選択にならず、ただの障害物になる。
  */
-function placeBunkers(rng: () => number, count: number, draft: CourseDefinition): SandBunker[] {
+function placeBunkers(
+  rng: () => number,
+  count: number,
+  draft: CourseDefinition,
+  varied: boolean,
+): SandBunker[] {
   const bunkers: SandBunker[] = [];
   const halfWidth = draft.greenWidth / 2;
+  // 幅を広げるときの差し替え。**乱数の引き方も引く回数も変えない**ので、
+  // 既定（varied=false）のコースは1ビットも変わらない
+  const radiusRange = varied ? B.varied.radius : B.radius;
+  const aspectRange = varied ? B.varied.aspect : B.aspect;
+  const routeRange = varied ? B.varied.routeRange : B.routeRange;
 
   for (let i = 0; i < count; i++) {
-    const radiusMajor = pick(rng, B.radius);
+    const radiusMajor = pick(rng, radiusRange);
     const pickedDepth = pick(rng, B.depth);
-    const { aspect, outline } = pickOutline(rng, B.aspect);
+    const { aspect, outline } = pickOutline(rng, aspectRange);
     const radiusX = radiusMajor;
     const radiusZ = radiusMajor * aspect;
     // 歪みを含めた実効半径。ひょうたん型は素の半径より外へ膨らむので、その分も見る
@@ -746,7 +791,7 @@ function placeBunkers(rng: () => number, count: number, draft: CourseDefinition)
 
     let placed: SandBunker | null = null;
     for (let attempt = 0; attempt < B.maxAttempts && !placed; attempt++) {
-      const at = sampleRoute(draft.route, pick(rng, B.routeRange));
+      const at = sampleRoute(draft.route, pick(rng, routeRange));
       const side = rng() < B.insideBias ? 1 : -1;
       const offset = pick(rng, [minOffset, maxOffset]) * side;
       const center = {
@@ -824,7 +869,12 @@ function draftCourseV2(seed: number, options: GenerateOptionsV2): DraftV2 {
   const greenWidth = pick(rng, d.greenWidth);
   const roughFringe = pick(rng, d.roughFringe);
   const deepRoughFringe = pick(rng, d.deepRoughFringe);
-  const waterFringe = pick(rng, V.waterFringe);
+  // 岸（池の周りのラフ）。**引いた幅が範囲の下位 bareWaterChance に入ったら岸なしにする。**
+  // 追加の乱数を引かないので、既定（0）なら今までと同じ値になる
+  const drawnFringe = pick(rng, V.waterFringe);
+  const [fringeMin, fringeMax] = V.waterFringe;
+  const fringeRank = fringeMax > fringeMin ? (drawnFringe - fringeMin) / (fringeMax - fringeMin) : 0;
+  const waterFringe = fringeRank < (options.bareWaterChance ?? 0) ? 0 : drawnFringe;
   // **乱数はこの倍率に依らず同じ順で引かれる**（半径は引き終えた値から計算し、
   // 作り直しの relax も乱数を引かない）ので、倍率1のコースは1mmも変わらない
   const { route, plan } = buildRouteV2(
@@ -833,6 +883,7 @@ function draftCourseV2(seed: number, options: GenerateOptionsV2): DraftV2 {
     d.routeLength,
     greenWidth,
     options.turnRadiusScale ?? 1,
+    options.wideSCurve ?? false,
   );
 
   // コース枠。ルートの外接矩形を、揺らぎなしの芝の幅を基準に広げる
@@ -857,7 +908,7 @@ function draftCourseV2(seed: number, options: GenerateOptionsV2): DraftV2 {
   const terrain = options.terrain ?? pickWeighted(rng, T.weights);
   const hazardCount = pickInt(rng, d.hazardCount);
   const heightFeatureCount = pickInt(rng, d.heightFeatureCount);
-  const bunkerCount = pickInt(rng, d.bunkerCount);
+  const bunkerCount = pickInt(rng, options.variedBunkers ? d.variedBunkerCount : d.bunkerCount);
 
   const base: CourseDefinition = {
     id: options.id ?? `gen2-${(seed >>> 0).toString(36)}`,
@@ -882,7 +933,7 @@ function draftCourseV2(seed: number, options: GenerateOptionsV2): DraftV2 {
   // **高さのハザードを最後にするのは、バンカーのすり鉢と重ねないため。**
   // すり鉢も高さのハザードなので、先に入れておけば間隔の判定がそのまま効く
   const withWater: CourseDefinition = { ...base, hazards: placeHazards(rng, hazardCount, base) };
-  const bunkers = placeBunkers(rng, bunkerCount, withWater);
+  const bunkers = placeBunkers(rng, bunkerCount, withWater, options.variedBunkers ?? false);
   const withBunkers: CourseDefinition = { ...withWater, bunkers };
   const course: CourseDefinition = {
     ...withBunkers,

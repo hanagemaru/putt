@@ -26,7 +26,13 @@ import { PROTOTYPE_COURSE } from './course/prototype-course';
 import { approachDirection, generateCourse } from './course/course-generate';
 import { generateCourseV2 } from './course/course-generate-v2';
 import type { CourseDefinition, TerrainType } from './course/course-types';
-import { DEFAULT_SETUP, setupOf, tourById } from './course/tour-holes';
+import {
+  DEFAULT_SETUP,
+  TOUR_SETS,
+  generateOptionsFor,
+  setupOf,
+  tourById,
+} from './course/tour-holes';
 import { CourseMapMarker } from './course-map-marker';
 import { ensurePixelFont } from './pixel-font';
 import * as i18n from './i18n';
@@ -73,10 +79,10 @@ const TERRAIN_LABEL: Record<TerrainType, string> = {
 function courseWithSeed(value: number): CourseDefinition {
   const seed = value >>> 0;
   if (usePrototypeCourse) return { ...PROTOTYPE_COURSE, seed };
-  if (useGeneratorV2) return generateCourseV2(seed, { turnRadiusScale: generatorRadiusScale });
+  if (useGeneratorV2) return generateCourseV2(seed, generateOptionsFor(generatorSetup));
   // ツアーは自分が使う生成器をセット定義に持つ。**省略しているセットは今までどおりv1**
   if (mode === 'tour' && selectedTour.generator === 'v2') {
-    return generateCourseV2(seed, { turnRadiusScale: courseSetup.turnRadiusScale });
+    return generateCourseV2(seed, generateOptionsFor(courseSetup));
   }
   return generateCourse(seed);
 }
@@ -98,13 +104,18 @@ const usePrototypeCourse = urlParams.get('course') === 'prototype';
 const useGeneratorV2 = urlParams.get('gen') === 'v2';
 
 /**
- * URL の `?radius=` 。`?gen=v2` のときだけ効く、最小曲率半径の下限の倍率。
- * **EXPERT の「角」のあるホールを1本ずつ確かめるための指定**（EXPERT は 0.5）。
- * 省略・数値でない・範囲外は 1（既定の曲がり方）に落とす
+ * URL の `?setup=<ツアーID>` 。`?gen=v2` のときだけ効く。
+ *
+ * **そのツアーの仕立てで1ホールだけ作る**ための指定。
+ * `?gen=v2&seed=1931&setup=expert` で EXPERT のH2（S字）をそのまま出せる。
+ * 仕立てはS字の振り・岸なしの池・バンカーの幅まで含むので、
+ * ここを通さないと**同じシードでも別のホールになる**。
+ * 省略・不明なIDのときは既定の仕立て（＝生成器の素の出力）
  */
-const generatorRadiusScale = (() => {
-  const raw = Number(urlParams.get('radius'));
-  return Number.isFinite(raw) && raw >= 0.25 && raw <= 2 ? raw : 1;
+const generatorSetup = (() => {
+  const id = urlParams.get('setup');
+  const tour = id === null ? null : TOUR_SETS.find((t) => t.id === id);
+  return tour ? setupOf(tour) : DEFAULT_SETUP;
 })();
 
 /** 遊び方（spec §6）。通常ツアーは固定9ホールを順に回り、練習は同じホールを打ち直す */
@@ -131,12 +142,13 @@ function modeFromUrl(): GameMode {
 const mode = modeFromUrl();
 
 /**
- * コースの仕立て（うねりの倍率・グリーンの速さ）。**通常ツアーだけが持つ。**
+ * コースの仕立て（うねり・速さ・曲がりの鋭さ・S字・岸なしの池・バンカーの幅）。
  *
- * 練習・`?seed=`・`?gen=v2` は1ホールを繰り返し試すための入口なので、
- * 比べる基準がぶれないよう既定（うねり等倍・スティンプ10ft）で回す
+ * 通常ツアーはセット定義のものを使う。練習・`?seed=`・`?gen=v2` は既定で回すが、
+ * `?setup=<ツアーID>` を付けたときだけそのツアーの仕立てで出す
+ * （**ツアーのホールを1本ずつ確かめるため**）
  */
-const courseSetup = mode === 'tour' ? setupOf(selectedTour) : DEFAULT_SETUP;
+const courseSetup = mode === 'tour' ? setupOf(selectedTour) : generatorSetup;
 
 /** 通常ツアーのラウンド状態。**練習モードでは null**（ホールを進めず、同じホールを打ち直す） */
 const round = mode === 'tour' ? new Round(selectedTour.seeds) : null;
