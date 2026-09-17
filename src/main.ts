@@ -21,6 +21,12 @@ import {
   defaultShadeParams,
 } from './green';
 import { Roller } from './physics';
+import {
+  giveUpAvailable,
+  isHoledOut,
+  penaltyStrokes,
+  returnsToShotStart,
+} from './hole-sim';
 import { bunkerBasinAt, surfaceAt } from './course/course-map';
 import { PROTOTYPE_COURSE } from './course/prototype-course';
 import { approachDirection, generateCourse } from './course/course-generate';
@@ -935,11 +941,10 @@ function resumeFollowFromCup(): void {
 /** ボールが完全に停止してから呼ぶ。ここで初めて俯瞰と軌跡を出す（§3） */
 function enterResult(): void {
   state = 'RESULT';
-  if (
-    !penaltyApplied &&
-    (roller.status === 'water' || roller.status === 'outOfBounds')
-  ) {
-    shots += 1;
+  // 罰打の規則は `hole-sim.ts` が正本。検証側も同じ関数を見る
+  const penalty = penaltyStrokes(roller.status);
+  if (!penaltyApplied && penalty > 0) {
+    shots += penalty;
     penaltyApplied = true;
   }
   syncLineVisibility();
@@ -955,7 +960,7 @@ function enterResult(): void {
 }
 
 function penaltyResultPending(): boolean {
-  return roller.status === 'water' || roller.status === 'outOfBounds';
+  return penaltyStrokes(roller.status) > 0;
 }
 
 /** 結果テキスト（§3）。打ち出しラインへの射影で オーバー／ショート と左右のズレを出す */
@@ -979,8 +984,8 @@ function describeResult(): string {
 
 /** RESULT でタップされた。ホールが続いている場合だけ次のパットへ */
 function nextPutt(): void {
-  if (roller.status === 'water' || roller.status === 'outOfBounds') {
-    // 打つ前の位置へ戻す。打数はそのまま
+  if (returnsToShotStart(roller.status)) {
+    // 打つ前の位置へ戻す。打数はそのまま（罰打は RESULT で足し済み）
     ball.copy(shotStart);
   }
   roller.place(ball.x, ball.y);
@@ -993,7 +998,7 @@ function nextPutt(): void {
  * 自然に終わるのはカップインだけ（もう一方の出口はギブアップ）
  */
 function holeFinished(): boolean {
-  return roller.status === 'holed';
+  return isHoledOut(roller.status);
 }
 
 /**
@@ -1003,8 +1008,8 @@ function holeFinished(): boolean {
  */
 function canGiveUp(): boolean {
   if (state !== 'ADDRESS' && state !== 'RESULT') return false;
-  if (roller.status === 'holed') return false;
-  return shots >= course.par * G.round.giveUpParMultiple;
+  if (isHoledOut(roller.status)) return false;
+  return giveUpAvailable(shots, course.par);
 }
 
 /**
@@ -1051,7 +1056,7 @@ function practiceEndPending(): boolean {
 function enterHoleOut(): void {
   if (!round) return;
   state = 'HOLE_OUT';
-  round.recordHole(course.par, shots, roller.status === 'holed');
+  round.recordHole(course.par, shots, isHoledOut(roller.status));
   // スコアが確定した時点で保存する。1打ごとには保存しない（復元はホールの頭からなので、
   // それ以上の頻度に意味がない）。
   // 最終ホールのあとは再開できるホールがない。ここで残すと終わったラウンドを
