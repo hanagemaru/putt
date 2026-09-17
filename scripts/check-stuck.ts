@@ -36,7 +36,7 @@ import { approachDirection, generateCourse } from '../src/course/course-generate
 import { generateCourseV2 } from '../src/course/course-generate-v2.ts';
 import { bunkerBasinAt, surfaceAt } from '../src/course/course-map.ts';
 import { Green, defaultGreenParams } from '../src/green.ts';
-import { Roller, criticalGradient, frictionFromStimp } from '../src/physics.ts';
+import { Roller, frictionOnSurface } from '../src/physics.ts';
 import { TOUR_SETS, setupOf } from '../src/course/tour-holes.ts';
 import type { CourseDefinition, SurfaceType } from '../src/course/course-types.ts';
 
@@ -149,6 +149,7 @@ interface Args {
    */
   stimpFeet: number;
   undulationGain: number;
+  turnRadiusScale: number;
   /** 調べるシードを列挙で指定する。`--tour=` と `--seeds=` の結果がここへ入る */
   seedList: number[] | null;
 }
@@ -164,6 +165,7 @@ function parseArgs(argv: readonly string[]): Args {
     gen: 'v1',
     stimpFeet: P.stimpFeet,
     undulationGain: 1,
+    turnRadiusScale: 1,
     seedList: null,
   };
   for (const raw of argv) {
@@ -181,6 +183,7 @@ function parseArgs(argv: readonly string[]): Args {
       args.gen = value;
     } else if (key === 'stimp' && value) args.stimpFeet = Number(value);
     else if (key === 'gain' && value) args.undulationGain = Number(value);
+    else if (key === 'radius' && value) args.turnRadiusScale = Number(value);
     else if (key === 'tour' && value) {
       // ツアー1セットをそのまま通す。シード列・生成器・仕立てを定義から拾うので、
       // 手で写し間違える余地がない
@@ -191,6 +194,7 @@ function parseArgs(argv: readonly string[]): Args {
       args.gen = tour.generator ?? 'v1';
       args.stimpFeet = setup.stimpFeet;
       args.undulationGain = setup.undulationGain;
+      args.turnRadiusScale = setup.turnRadiusScale;
     }
   }
   return args;
@@ -198,7 +202,9 @@ function parseArgs(argv: readonly string[]): Args {
 
 /** 調べる対象のコースを作る。生成器の違いはここ1箇所だけに閉じる */
 function generateFor(seed: number, gen: Args['gen']): CourseDefinition {
-  return gen === 'v2' ? generateCourseV2(seed) : generateCourse(seed);
+  return gen === 'v2'
+    ? generateCourseV2(seed, { turnRadiusScale: ARGS.turnRadiusScale })
+    : generateCourse(seed);
 }
 
 const ARGS = parseArgs(process.argv.slice(2));
@@ -246,11 +252,9 @@ function isPlayable(surface: SurfaceType): boolean {
 
 /** 地面種別ごとの摩擦 [m/s^2]。physics.ts の frictionMultiplier と同じ */
 function frictionOn(surface: SurfaceType): number {
-  const base = frictionFromStimp(ARGS.stimpFeet);
-  if (surface === 'rough') return base * P.roughFrictionMultiplier;
-  if (surface === 'deepRough') return base * P.deepRoughFrictionMultiplier;
-  if (surface === 'bunker') return base * P.bunkerFrictionMultiplier;
-  return base;
+  // ゲーム本体と同じ関数を使う。**速さが効くのは通常芝だけ**で、
+  // ラフ・セカンドカット・砂は基準スティンプに固定されている
+  return frictionOnSurface(ARGS.stimpFeet, surface);
 }
 
 interface ShotResult {
@@ -793,7 +797,8 @@ console.log(
 );
 console.log(
   `コースの仕立て: グリーンの速さ ${ARGS.stimpFeet}ft / うねりの倍率 ${ARGS.undulationGain}` +
-    `（振幅 ${(UNDULATION_AMPLITUDE * ARGS.undulationGain).toFixed(3)}m）`,
+    `（振幅 ${(UNDULATION_AMPLITUDE * ARGS.undulationGain).toFixed(3)}m）` +
+    ` / 曲率半径の下限の倍率 ${ARGS.turnRadiusScale}`,
 );
 console.log(`位相を見る格子: ${TOPO_CELL}m / 打つマスの格子: ${ARGS.cell}m / 方向: ${DIRECTIONS} / 初速: ${SPEEDS.map((v) => v.toFixed(2)).join(', ')} m/s`);
 console.log(`想定した最弱の一打: ${ARGS.vmin} m/s ・ 最強の一打: ${ARGS.vmax} m/s`);
@@ -804,7 +809,9 @@ console.log(
   `摩擦: 通常芝 ${frictionOn('green').toFixed(3)} / ラフ ${frictionOn('rough').toFixed(3)} / セカンドカット ${frictionOn('deepRough').toFixed(3)} / 砂 ${frictionOn('bunker').toFixed(3)} m/s^2`,
 );
 console.log(
-  `止まれる勾配の上限: 通常芝 ${percent(criticalGradient(ARGS.stimpFeet))} / ラフ ${percent(criticalGradient(ARGS.stimpFeet) * P.roughFrictionMultiplier)} / セカンドカット ${percent(criticalGradient(ARGS.stimpFeet) * P.deepRoughFrictionMultiplier)} / 砂 ${percent(criticalGradient(ARGS.stimpFeet) * P.bunkerFrictionMultiplier)}`,
+  `止まれる勾配の上限: ${(['green', 'rough', 'deepRough', 'bunker'] as const)
+    .map((s) => `${SURFACE_LABEL[s]} ${percent(frictionOn(s) / (P.slopeFactor * P.gravity))}`)
+    .join(' / ')}`,
 );
 console.log('');
 

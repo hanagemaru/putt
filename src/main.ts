@@ -73,9 +73,11 @@ const TERRAIN_LABEL: Record<TerrainType, string> = {
 function courseWithSeed(value: number): CourseDefinition {
   const seed = value >>> 0;
   if (usePrototypeCourse) return { ...PROTOTYPE_COURSE, seed };
-  if (useGeneratorV2) return generateCourseV2(seed);
+  if (useGeneratorV2) return generateCourseV2(seed, { turnRadiusScale: generatorRadiusScale });
   // ツアーは自分が使う生成器をセット定義に持つ。**省略しているセットは今までどおりv1**
-  if (mode === 'tour' && selectedTour.generator === 'v2') return generateCourseV2(seed);
+  if (mode === 'tour' && selectedTour.generator === 'v2') {
+    return generateCourseV2(seed, { turnRadiusScale: courseSetup.turnRadiusScale });
+  }
   return generateCourse(seed);
 }
 
@@ -94,6 +96,16 @@ const usePrototypeCourse = urlParams.get('course') === 'prototype';
  * シードを変えるボタンは `gen=v2` を URL に残すので、そのまま次のホールへ移れる
  */
 const useGeneratorV2 = urlParams.get('gen') === 'v2';
+
+/**
+ * URL の `?radius=` 。`?gen=v2` のときだけ効く、最小曲率半径の下限の倍率。
+ * **EXPERT の「角」のあるホールを1本ずつ確かめるための指定**（EXPERT は 0.5）。
+ * 省略・数値でない・範囲外は 1（既定の曲がり方）に落とす
+ */
+const generatorRadiusScale = (() => {
+  const raw = Number(urlParams.get('radius'));
+  return Number.isFinite(raw) && raw >= 0.25 && raw <= 2 ? raw : 1;
+})();
 
 /** 遊び方（spec §6）。通常ツアーは固定9ホールを順に回り、練習は同じホールを打ち直す */
 type GameMode = 'tour' | 'practice';

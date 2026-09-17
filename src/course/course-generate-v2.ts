@@ -58,6 +58,19 @@ export interface GenerateOptionsV2 {
   name?: string;
   /** ID。省略するとシードから作る */
   id?: string;
+  /**
+   * 最小曲率半径の下限に掛ける倍率。**1 が既定（芝幅×2・最低4.5m）。**
+   *
+   * 小さくするほど急に曲がれる ＝ カーブではなく「角」に近づく。
+   * v2はv1の直角ドッグレッグを潰すために下限を入れたが、
+   * **潰しすぎて総回頭角の最大が 202°→107°、遠回り率が 1.64→1.26 になった**ので、
+   * コース単位で鋭さを戻せるようにしてある（`CONFIG.course.tourSetups`）。
+   *
+   * 0.5 なら芝幅×1.0。**曲がりが自分自身と重なって消える半径（芝幅×0.5）の2倍**あるので、
+   * 曲がりの内側でも芝は痩せない。実測（400シード）で 中央58°・最大125°・90°以上12%・
+   * fallback 0・半径の下限割れ 0
+   */
+  turnRadiusScale?: number;
 }
 
 /** mulberry32。シードから再現可能な擬似乱数（v1・green.ts と同じ実装） */
@@ -394,6 +407,7 @@ function buildRouteV2(
   shape: HoleShapeV2,
   routeLengthRange: Range,
   greenWidth: number,
+  turnRadiusScale: number,
 ): BuiltRoute {
   const lobeCount = C.lobes[shape];
   const controlCount = C.controlPoints[shape];
@@ -413,7 +427,10 @@ function buildRouteV2(
   }
   const maxWeight = lobes.reduce((m, l) => Math.max(m, l.weight), 0);
 
-  const minTurnRadius = Math.max(greenWidth * C.minTurnRadiusWidthFactor, C.minTurnRadiusFloor);
+  // 倍率は max の外へ掛ける。max(a, b) * s = max(a * s, b * s) なので、
+  // 芝幅の側と下限の絶対値の側へ別々に掛ける必要はない
+  const minTurnRadius =
+    Math.max(greenWidth * C.minTurnRadiusWidthFactor, C.minTurnRadiusFloor) * turnRadiusScale;
   const designRadius = minTurnRadius * C.turnRadiusSafety;
   const area = 1 - C.plateauRise;
 
@@ -808,7 +825,15 @@ function draftCourseV2(seed: number, options: GenerateOptionsV2): DraftV2 {
   const roughFringe = pick(rng, d.roughFringe);
   const deepRoughFringe = pick(rng, d.deepRoughFringe);
   const waterFringe = pick(rng, V.waterFringe);
-  const { route, plan } = buildRouteV2(rng, shape, d.routeLength, greenWidth);
+  // **乱数はこの倍率に依らず同じ順で引かれる**（半径は引き終えた値から計算し、
+  // 作り直しの relax も乱数を引かない）ので、倍率1のコースは1mmも変わらない
+  const { route, plan } = buildRouteV2(
+    rng,
+    shape,
+    d.routeLength,
+    greenWidth,
+    options.turnRadiusScale ?? 1,
+  );
 
   // コース枠。ルートの外接矩形を、揺らぎなしの芝の幅を基準に広げる
   let minX = Infinity;
