@@ -2,7 +2,30 @@ import { CONFIG } from './config';
 import { TOUR_SETS, tourById, type TourDefinition } from './course/tour-holes';
 import { TourBestScoreStore, type BestScoreUpdate } from './best-score-storage';
 import { Round, onRoundComplete, type RoundResult } from './round';
-import { RoundProgressStore } from './round-storage';
+import { RoundProgressStore, seedsId } from './round-storage';
+import {
+  deletePlayer,
+  flushPendingSubmissions,
+  loadPlayerName,
+  rankingAvailable,
+  readOrCreateIdentity,
+  submitRecord,
+  updatePlayerName,
+  fetchRanking,
+} from './ranking-client';
+import {
+  TOUR_GENERATOR,
+  tourBoardId,
+  type RankingBoard,
+  type SubmitRecordRequest,
+} from './ranking-shared';
+import {
+  nameCard,
+  rankingFooter,
+  rankingNotice,
+  rankingTable,
+  showNameOverlay,
+} from './ranking-view';
 import { ensurePixelFont } from './pixel-font';
 import * as i18n from './i18n';
 import { applyStaticUiText, language, setLanguage, t } from './i18n';
@@ -30,7 +53,17 @@ registerSW({ immediate: true });
 // index.html は日本語を初期値として持つ。英語ならここで一度だけ差し替える
 applyStaticUiText();
 
-if (shouldStartGameDirectly(params)) {
+// 前回送れなかった記録を送り直す（`docs/ranking.md` §6-2）。
+// 積んでいるものが無ければ何もしないので、遊ぶだけの人には何も起きない
+void flushPendingSubmissions();
+
+if (params.get('menu') === 'ranking') {
+  // ランキングは `?tour=` を board の指定として使う。**ゲームは始めない**ので、
+  // 直接プレイの判定より先に見る
+  const tour = params.get('tour');
+  if (tour) renderRankingTable(tourById(tour));
+  else renderRankingBoards();
+} else if (shouldStartGameDirectly(params)) {
   const tour = directTourFromParams(params);
   if (tour) setupTourBestTracking(tour);
   void import('./main');
@@ -69,23 +102,96 @@ function directTourFromParams(search: URLSearchParams): TourDefinition | null {
 function setupTourBestTracking(tour: TourDefinition): void {
   const store = new TourBestScoreStore(tour.id, tour.seeds);
   let latest: BestScoreUpdate | null = null;
+  /** 今回の完走結果。**自己ベストを更新したときだけ**登録に使う（§3-4） */
+  let finished: RoundResult | null = null;
+  /** 登録の手続きへ入ったか。カードが描き直されても二度送らない */
+  let submissionStarted = false;
 
   const scoreTitle = document.getElementById('score-title');
   const scoreSub = document.getElementById('score-sub');
   let bestResult: HTMLParagraphElement | null = null;
+  let rankingResult: HTMLParagraphElement | null = null;
 
   if (scoreTitle && scoreSub) {
     bestResult = document.createElement('p');
     bestResult.id = 'tour-best-result';
     bestResult.hidden = true;
     scoreSub.insertAdjacentElement('afterend', bestResult);
+
+    // 登録の結果は BEST の下へ1行で出す（`T12 / 340人` / `あとで登録します` / `確認中`）
+    rankingResult = document.createElement('p');
+    rankingResult.id = 'ranking-result';
+    rankingResult.hidden = true;
+    bestResult.insertAdjacentElement('afterend', rankingResult);
     ensureBestScoreStyles();
   }
 
+  // ラウンド終了カードの「ランキング」。**登録できたかに関わらず見には行ける**
+  const rankingButton = rankingAvailable() ? appendRankingAction(tour) : null;
+
+  const setRankingStatus = (text: string): void => {
+    if (!rankingResult) return;
+    rankingResult.textContent = text;
+    rankingResult.hidden = text === '';
+  };
+
+  /** 登録する。**失敗してもここで握り潰す**（ゲームを止めない・§6-4） */
+  const send = async (name: string): Promise<void> => {
+    const result = finished;
+    if (!result) return;
+    setRankingStatus(t().rankingLoading);
+
+    const outcome = await submitRecord(
+      buildSubmission(tour, result, name),
+      readOrCreateIdentity(),
+    );
+    if (!outcome.ok) {
+      // 保留へ積んである。次の起動で送り直す
+      setRankingStatus(t().rankingHeld);
+      return;
+    }
+    const response = outcome.response;
+    if (response.status !== 'verified') {
+      // 段2の検証待ち。板には出さず、本人にだけ断る
+      setRankingStatus(t().rankingChecking);
+      return;
+    }
+    setRankingStatus(
+      response.rank === null
+        ? ''
+        : i18n.standingLabel(response.rank, response.tied, response.playerCount),
+    );
+  };
+
+  /**
+   * 登録へ入る。**「登録しますか？」とは聞かない**（遊ぶ側の一手間を増やさない）。
+   * 聞くのは名前だけで、それも初回の1回だけ
+   */
+  const beginSubmission = (): void => {
+    if (submissionStarted || !finished || !rankingAvailable()) return;
+    submissionStarted = true;
+
+    const name = loadPlayerName();
+    if (name) {
+      void send(name);
+      return;
+    }
+    showNameOverlay({
+      initial: null,
+      onSave: (value) => void send(value),
+      // 「あとで」なら送らない。次に更新したときにまた聞く
+      onCancel: () => setRankingStatus(''),
+    });
+  };
+
   const renderBest = (): void => {
+    const onRoundEnd = scoreTitle?.dataset.screen === 'round-end';
+    // ホール間のカードにはランキングを出さない（ラウンドが終わってから）
+    if (rankingButton) rankingButton.hidden = !onRoundEnd;
     if (!scoreTitle || !bestResult) return;
-    if (scoreTitle.dataset.screen !== 'round-end') {
+    if (!onRoundEnd) {
       bestResult.hidden = true;
+      if (rankingResult) rankingResult.hidden = true;
       return;
     }
 
@@ -102,6 +208,9 @@ function setupTourBestTracking(tour: TourDefinition): void {
     const best = i18n.bestLabel(score.strokes, i18n.formatDiff(score.strokes - score.par));
     bestResult.textContent = isNewBest ? i18n.newBestLabel(best) : best;
     bestResult.hidden = false;
+
+    // カードが出た時点で登録へ入る。**同打数は更新扱いにしないので送らない**
+    if (isNewBest) beginSubmission();
   };
 
   if (scoreTitle) {
@@ -117,9 +226,88 @@ function setupTourBestTracking(tour: TourDefinition): void {
 
   onRoundComplete((result) => {
     if (!matchesTour(result, tour)) return;
+    finished = result;
     latest = store.record(result.totalStrokes, result.totalPar);
     renderBest();
   });
+}
+
+/**
+ * ラウンド終了カードのボタンへ「ランキング」を足す（`docs/ranking.md` §6-3）。
+ *
+ * これで `コース選択へ / もう一度 / トップへ` と合わせて**4つ**になる。
+ * 9ホールの一覧が出るカードは既に縦がぎりぎりなので、
+ * **320×568 に収まるかは実機で確認する**（収まらなければ一覧の上へ1行で置く）
+ */
+function appendRankingAction(tour: TourDefinition): HTMLButtonElement | null {
+  const actions = document.getElementById('score-actions');
+  if (!actions) return null;
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'score-action';
+  button.id = 'score-ranking';
+  button.hidden = true;
+  button.textContent = t().rankingSee;
+  button.addEventListener('click', () => navigateTo({ menu: 'ranking', tour: tour.id }));
+  actions.append(button);
+  return button;
+}
+
+/** 板ID（ランキングの単位）。**シード列が変われば別の板になる** */
+function boardIdFor(tour: TourDefinition): string {
+  return tourBoardId(tour.id, TOUR_GENERATOR, seedsId(tour.seeds));
+}
+
+/**
+ * スワイプ→初速の個人調整。**再現には要らない**が、分布を見たいので送る。
+ * 読み方は `main.ts` の `loadPutterPowerScale` と同じ（性能差ではなく感度）
+ */
+function readPutterPowerScale(): number {
+  const P = CONFIG.game.putterTuning;
+  try {
+    const raw = localStorage.getItem(P.storageKey);
+    if (raw !== null) {
+      const value = Number(raw);
+      if (Number.isFinite(value)) return Math.min(Math.max(value, P.minScale), P.maxScale);
+    }
+  } catch {
+    // 読めない環境では既定値を送る
+  }
+  return P.defaultScale;
+}
+
+/** 送る中身を組み立てる（同 §6-2） */
+function buildSubmission(
+  tour: TourDefinition,
+  result: RoundResult,
+  displayName: string,
+): SubmitRecordRequest {
+  const R = CONFIG.game.ranking;
+  return {
+    submissionId:
+      typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+    boardId: boardIdFor(tour),
+    displayName,
+    totalStrokes: result.totalStrokes,
+    totalPar: result.totalPar,
+    gaveUp: result.scores.some((hole) => !hole.holedOut),
+    holes: result.scores.map((hole) => ({
+      number: hole.number,
+      seed: hole.seed,
+      par: hole.par,
+      strokes: hole.strokes,
+      holedOut: hole.holedOut,
+    })),
+    // 打ち出しの列は段4（リプレイ検証の下ごしらえ）で積む。器だけ先に通しておく
+    shots: [],
+    generator: TOUR_GENERATOR,
+    rulesVersion: R.rulesVersion,
+    appVersion: R.appVersion,
+    putterPowerScale: readPutterPowerScale(),
+  };
 }
 
 function matchesTour(result: RoundResult, tour: TourDefinition): boolean {
@@ -163,6 +351,14 @@ function renderTopMenu(): void {
     putter,
   );
 
+  // ランキングも遊び始めるボタンではないので、パターと同じく色を落とす。
+  // **APIの無い配信先（GitHub Pages）では入口ごと出さない**（`docs/ranking.md` §6-4）
+  if (rankingAvailable()) {
+    const ranking = menuButton(copy.ranking, renderRankingBoards);
+    ranking.classList.add('menu-button-sub');
+    actions.append(ranking);
+  }
+
   const secondary = document.createElement('nav');
   secondary.className = 'menu-secondary';
   secondary.setAttribute('aria-label', copy.guideLabel);
@@ -203,6 +399,199 @@ function renderTourSelection(): void {
 
   panel.append(heading, courses, languageToggle(renderTourSelection));
   root.append(panel);
+}
+
+/**
+ * ランキングの板（コース）を選ぶ画面（`docs/ranking.md` §6-3）。
+ *
+ * **トップから入るときだけ1枚挟む。** ランキングはコースごとに別の板なので、
+ * どれを見るかを先に決める必要がある。見た目はコース選択の使い回しで、新しい形は増やさない
+ */
+function renderRankingBoards(): void {
+  const root = prepareMenuRoot();
+  root.replaceChildren();
+  const copy = t();
+
+  const panel = document.createElement('main');
+  panel.className = 'menu-panel course-panel';
+  panel.append(menuHeading(copy.rankingTitle, renderTopMenu));
+
+  const list = document.createElement('div');
+  list.className = 'course-list';
+  for (const tour of TOUR_SETS) {
+    const card = document.createElement('div');
+    card.className = 'course-card';
+
+    const name = document.createElement('div');
+    name.className = 'course-name';
+    name.textContent = tour.name[language()];
+
+    const description = document.createElement('div');
+    description.className = 'course-description';
+    description.textContent = tour.description[language()];
+
+    const actions = document.createElement('div');
+    actions.className = 'course-actions';
+    // 3つは並びで、押してほしい順は無い。白地（primary）は使わない
+    actions.append(courseAction(copy.rankingSee, false, () => renderRankingTable(tour)));
+
+    card.append(name, description, actions);
+    list.append(card);
+  }
+
+  // 名前と記録の管理はここへ置く。**トップのボタンをこれ以上増やさない**
+  // （`docs/ranking.md` §6-1 はトップへ置く案だったが、遊ぶボタンが埋もれる）
+  const data = document.createElement('div');
+  data.className = 'ranking-data-link';
+  data.append(courseAction(copy.rankingPlayerData, false, renderPlayerData));
+
+  panel.append(list, data, languageToggle(renderRankingBoards));
+  root.append(panel);
+}
+
+/**
+ * 1つの板のランキング表。
+ * コース選択からも同じ表へ入れる（板が決まっているので一覧を挟まない）
+ */
+function renderRankingTable(tour: TourDefinition): void {
+  const root = prepareMenuRoot();
+  root.replaceChildren();
+
+  const panel = document.createElement('main');
+  panel.className = 'menu-panel course-panel';
+  panel.append(
+    menuHeading(tour.name[language()], renderRankingBoards, `← ${t().rankingTitle}`),
+  );
+
+  // 表の場所。読み込み中 → 表（または失敗）の順に差し替える
+  const slot = document.createElement('div');
+  slot.append(rankingNotice(t().rankingLoading));
+  panel.append(slot, languageToggle(() => renderRankingTable(tour)));
+  root.append(panel);
+
+  const load = (): void => {
+    slot.replaceChildren(rankingNotice(t().rankingLoading));
+    void fetchRanking(boardIdFor(tour), readOrCreateIdentity()).then(
+      (board: RankingBoard) => {
+        // 自分の記録が板に無いのに自己ベストだけある＝段2の検証待ち
+        const checking = board.yourRank === null && board.yourBest !== null;
+        slot.replaceChildren(rankingTable(board), rankingFooter(board, checking));
+      },
+      () => {
+        slot.replaceChildren(rankingNotice(t().rankingUnavailable, load));
+      },
+    );
+  };
+  load();
+}
+
+/**
+ * 名前と記録の管理（`docs/ranking.md` §5-3・§6-1）。
+ * **消し方が無い状態で公開しない**ので、削除はランキングと同じ回に入れる
+ */
+function renderPlayerData(): void {
+  const root = prepareMenuRoot();
+  root.replaceChildren();
+  const copy = t();
+
+  const panel = document.createElement('main');
+  panel.className = 'menu-panel course-panel';
+  panel.append(menuHeading(copy.rankingPlayerData, renderRankingBoards, `← ${copy.rankingTitle}`));
+
+  const status = document.createElement('div');
+  status.className = 'ranking-footer';
+  status.textContent = loadPlayerName() ?? copy.nameUnset;
+
+  const editor = document.createElement('div');
+  editor.className = 'ranking-data-slot';
+  editor.append(
+    nameCard({
+      initial: loadPlayerName(),
+      title: copy.nameEdit,
+      onSave: (name) => {
+        // 端末側は先に保存する。サーバへの反映は失敗してもよい（次の登録で送り直る）
+        void updatePlayerName(name, readOrCreateIdentity()).catch(() => {});
+        status.textContent = name;
+      },
+    }),
+  );
+
+  const danger = document.createElement('div');
+  danger.className = 'ranking-data-card';
+
+  const note = document.createElement('div');
+  note.className = 'name-note';
+  note.textContent = copy.dataDeleteNote;
+
+  const actions = document.createElement('div');
+  actions.className = 'name-actions';
+
+  const askDelete = (): void => {
+    actions.classList.add('two');
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'ranking-button';
+    cancel.textContent = copy.dataDeleteCancel;
+    cancel.addEventListener('click', () => {
+      actions.classList.remove('two');
+      actions.replaceChildren(deleteButton());
+    });
+
+    const confirm = document.createElement('button');
+    confirm.type = 'button';
+    confirm.className = 'ranking-button primary';
+    confirm.textContent = copy.dataDeleteConfirm;
+    confirm.addEventListener('click', () => {
+      void deletePlayer(readOrCreateIdentity()).then(
+        () => {
+          actions.classList.remove('two');
+          actions.replaceChildren(deleteButton());
+          status.textContent = copy.dataDeleted;
+        },
+        () => {
+          status.textContent = copy.dataDeleteFailed;
+        },
+      );
+    });
+    actions.replaceChildren(cancel, confirm);
+  };
+
+  const deleteButton = (): HTMLButtonElement => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'ranking-button';
+    button.textContent = copy.dataDelete;
+    button.addEventListener('click', askDelete);
+    return button;
+  };
+
+  actions.append(deleteButton());
+  danger.append(note, actions);
+
+  panel.append(status, editor, danger, languageToggle(renderPlayerData));
+  root.append(panel);
+}
+
+/**
+ * 画面の頭（戻るボタンと見出し）。
+ * **戻る先はその画面の1つ手前**なので、文言も呼ぶ側が決める（既定はトップ）
+ */
+function menuHeading(title: string, back: () => void, backLabel?: string): HTMLElement {
+  const heading = document.createElement('div');
+  heading.className = 'menu-heading';
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'menu-back';
+  button.textContent = backLabel ?? t().backToMenu;
+  button.addEventListener('click', back);
+
+  const label = document.createElement('h1');
+  label.className = 'course-title';
+  label.textContent = title;
+
+  heading.append(button, label);
+  return heading;
 }
 
 /**
@@ -569,6 +958,19 @@ function ensureBestScoreStyles(): void {
       padding: 4px 8px;
       font-size: 16px;
       color: #16210f;
+    }
+    /*
+     * 登録の結果（「T12 / 340人」など）。**BESTの下に1行。**
+     * ベストの黄色い札と違って、押せないただの知らせなので枠は付けない
+     */
+    #ranking-result[hidden] {
+      display: none;
+    }
+    #ranking-result {
+      display: block;
+      margin: 8px 0 0;
+      font-size: 16px;
+      color: #9ede8a;
     }
   `;
   document.head.append(style);

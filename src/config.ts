@@ -925,6 +925,55 @@ export const CONFIG = {
       },
     },
 
+    /**
+     * オンラインランキング（`docs/ranking.md`）。板（ランキングの単位）ごとに
+     * 合計打数を競う。**練習モードは対象外**（spec §6）。
+     */
+    ranking: {
+      /**
+       * 既定の取得先。**まだ `off`。**
+       *
+       * - `off`  … 入口ごと出さない。サーバも実機確認も済んでいない間はこれ
+       * - `mock` … サーバなしで動く偽データ。**画面と動線の確認はこれで通す**
+       * - `api`  … 本物のWorker（段4で出来たら既定をこれにする）
+       *
+       * `?ranking=api|mock|off` で切り替えると、**言語と同じように保存へ移る**ので
+       * 画面を移っても続く（`sourceStorageKey`）。
+       * GitHub Pages（`/putt/`）はAPIを持たないので、`api` でも自動で `off` に落とす
+       */
+      source: 'off' as 'api' | 'mock' | 'off',
+      /** `?ranking=` の保存先。入口で一度読んで、以後は保存を見る */
+      sourceStorageKey: 'putt-ranking-source',
+      /** `?rankingMock=` の保存先。モックで出す場面（失敗・圏外など）を続かせる */
+      mockScenarioStorageKey: 'putt-ranking-mock-scenario',
+      /**
+       * 板IDに入れる規則の版（`docs/ranking.md` §2-1）。
+       * **`CONFIG.physics`・罰打・カップ判定・コース生成の数値を変えたらここを上げる。**
+       * 上げ忘れると、違う物理で出した打数が同じ板に混ざる
+       */
+      rulesVersion: 1,
+      /** 送信の中身の版。送る項目を変えたら上げる */
+      appVersion: '2026-09-ranking-v1',
+      /** 表示名の最大文字数（NFC正規化したあとのコードポイント数） */
+      nameMaxLength: 16,
+      /** ランキング表に出す上位の件数 */
+      topCount: 10,
+      /** 自分の行の上下に何件まで出すか */
+      nearbyRadius: 3,
+      /** API の待ち時間の上限 [ms]。超えたら失敗として扱い、**ゲームは止めない** */
+      requestTimeoutMs: 8000,
+      /** 匿名IDと認証鍵の保存キー。**端末を変えると引き継げない**（同 §6-1） */
+      identityStorageKey: 'putt-player-identity-v1',
+      /** 表示名の保存キー */
+      nameStorageKey: 'putt-player-name',
+      /** 送れなかった記録を積んでおく保存キー。板ごとに最新の1件だけ持つ */
+      pendingStorageKey: 'putt-pending-submission',
+      /** モックの偽データの保存キー */
+      mockStorageKey: 'putt-ranking-mock-v1',
+      /** モックが作る板の人数。同打数が大量に並ぶ見え方を確認するための数 */
+      mockPlayerCount: 340,
+    },
+
     aim: {
       /**
        * 狙いを左右スワイプで変える感度 [rad/px]。
