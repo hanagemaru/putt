@@ -84,6 +84,8 @@ export interface CourseSetup {
   fringeScale: number;
   /** くびれの深さ（0＝一定幅） */
   waist: number;
+  /** 幅のうねりの大きさ（0＝一定幅）。ホール全体で広い・狭いを繰り返す */
+  widthVariation: number;
   /**
    * ティー側に必ず残す直線区間（ルート全長に対する割合）。
    * **0.4 なら、ティーショットをホール長の4割ぶん真っ直ぐ転がせる**
@@ -129,14 +131,17 @@ const SETUP = CONFIG.course.tourSetups;
 const F = CONFIG.course.labFeatures;
 
 /**
- * **LAB の12ホール。** 仕掛けを1つずつ試すホールと、組み合わせを試すホールを分ける。
+ * **LAB の15ホール。** 仕掛けを1つずつ試すホールと、組み合わせを試すホールを分ける。
  *
  * 実機で「1ホールに全部入れるのではなく、**ホールごとに違う要素・違う組み合わせ**に」
  * と出たので、`tourSetups.laboratory`（仕掛けゼロ）へホール単位で `labFeatures` を足す。
  * H1 は**仕掛けなしの基準**で、他のホールとの違いをここと比べて感じ取る。
  *
- * 並べる順は「単体8本 → 組み合わせ4本」。組み合わせを後ろに置くと、
+ * 並べる順は「単体 → 組み合わせ」。組み合わせを後ろに置くと、
  * 先に単体で覚えた手応えが組み合わせで効くようになる。
+ *
+ * **ここは仕上がったコースではなく、選ぶための見本帳。**
+ * 実機で良かったホールを固定コースへ移す前提で、仕掛けを増やしながら足していく。
  *
  * **全ホール共通で、ティー側にホール長の35%の直線がある**（`teeStraightRun`）。
  * 実機で「S字がティーの近くで曲がるとティーショットを全然しっかり打てない」と出たため。
@@ -146,29 +151,35 @@ const F = CONFIG.course.labFeatures;
 const LAB_HOLES: readonly TourHole[] = [
   //              PAR / 全長 / 形          / その仕掛けの実測
   /* H1  */ { seed: 940, label: '仕掛けなし' },
-  //              3 / 13.0m / serpentine    / 芝4.76m。ここが基準
+  //              3 / 13.0m / serpentine     / 芝4.76m。ここが基準
   /* H2  */ { seed: 201, label: '砲台', setup: F.plateau },
   //              4 / 26.4m / sweepingDogleg / 砲台17cm・花道5.0m
   /* H3  */ { seed: 907, label: 'くびれ', setup: F.waist },
-  //              3 / 10.7m / gentleCurve   / いちばん細いところが7割
-  /* H4  */ { seed: 997, label: 'カップ周りの砂', setup: F.guard },
-  //              4 / 19.0m / sweepingDogleg / カップ2m以内に砂3個。**うち3個が奥**
+  //              3 / 10.7m / gentleCurve    / いちばん細いところが7割
+  /* H4  */ { seed: 484, label: 'カップ周りの砂', setup: F.guard },
+  //              4 / 23.8m / sweepingDogleg / カップ周りに砂3個。**3個とも奥**
   /* H5  */ { seed: 539, label: '細い道', setup: F.narrow },
-  //              4 / 22.3m / gentleCurve   / 芝1.96m・中心線からOBまで2.29m
+  //              4 / 22.3m / gentleCurve    / 芝1.96m・中心線からOBまで2.29m
   /* H6  */ { seed: 973, label: '角', setup: F.corner },
-  //              4 / 27.1m / sweepingDogleg / 回頭117°・遠回り1.35（このコース最大）
+  //              4 / 27.1m / sweepingDogleg / 回頭117°・遠回り1.35
   /* H7  */ { seed: 286, label: '岸なし池', setup: F.bareWater },
-  //              4 / 24.0m / gentleCurve   / 池2個ともフェアウェイが直接水に接する
+  //              4 / 24.0m / gentleCurve    / 池2個ともフェアウェイが直接水に接する
   /* H8  */ { seed: 895, label: 'S字', setup: F.sCurve },
-  //              5 / 28.7m / serpentine    / 回頭165°・遠回り1.15
+  //              5 / 28.7m / serpentine     / 回頭165°・遠回り1.15
   /* H9  */ { seed: 243, label: '砂だらけ', setup: F.variedSand },
   //              4 / 15.6m / sweepingDogleg / 砂3個。短いのに砂で刻ませる
-  /* H10 */ { seed: 282, label: '砲台＋カップ周りの砂', setup: { ...F.plateau, ...F.guard } },
-  //              4 / 25.7m / gentleCurve   / 砲台17cm ＋ カップ周りの砂3個（奥2個）
+  /* H10 */ { seed: 266, label: '砲台＋カップ周りの砂', setup: { ...F.plateau, ...F.guard } },
+  //              4 / 23.3m / serpentine     / 砲台17cm ＋ カップ周りの砂3個（奥2個）
   /* H11 */ { seed: 250, label: '細い道＋くびれ', setup: { ...F.narrow, ...F.waist } },
   //              5 / 30.3m / sweepingDogleg / 芝2.06m・OB2.43m・さらに7割へ絞る
-  /* H12 */ { seed: 1113, label: 'S字＋角＋岸なし池', setup: { ...F.sCurve, ...F.corner, ...F.bareWater } },
-  //              5 / 30.5m / serpentine    / 回頭135°・池2個とも岸なし。**このコース最長**
+  /* H12 */ { seed: 255, label: '幅のうねり', setup: F.wavyWidth },
+  //              4 / 23.6m / serpentine     / 幅が 0.65〜1.35倍 で振れ続ける
+  /* H13 */ { seed: 364, label: '幅のうねり＋カップ周りの砂', setup: { ...F.wavyWidth, ...F.guard } },
+  //              4 / 17.6m / gentleCurve    / 幅0.65〜1.35 ＋ カップ周りの砂3個（奥2個）
+  /* H14 */ { seed: 742, label: '幅のうねり＋角', setup: { ...F.wavyWidth, ...F.corner } },
+  //              4 / 26.2m / sweepingDogleg / 幅0.84〜1.35 ＋ 回頭113°・遠回り1.31
+  /* H15 */ { seed: 1113, label: 'S字＋角＋岸なし池', setup: { ...F.sCurve, ...F.corner, ...F.bareWater } },
+  //              5 / 30.5m / serpentine     / 回頭135°・池2個とも岸なし。**このコース最長**
 ];
 
 /**
@@ -247,8 +258,8 @@ export const TOUR_SETS = [
     name: { ja: 'LAB', en: 'LAB' },
     // **ここだけ12ホール。** 枠に出る一行なので、ホール数もここで伝える
     description: {
-      ja: '実験の12ホール。仕掛けを1つずつ、後半は組み合わせで',
-      en: '12 holes. One new idea per hole, combined in the back half.',
+      ja: '実験の15ホール。仕掛けを1つずつ、後半は組み合わせで',
+      en: '15 holes. One new idea per hole, combined in the back half.',
     },
     generator: 'v2',
     setup: SETUP.laboratory,
@@ -278,6 +289,7 @@ export const DEFAULT_SETUP: CourseSetup = {
   widthScale: 1,
   fringeScale: 1,
   waist: 0,
+  widthVariation: 0,
   teeStraightRun: 0,
 };
 
@@ -293,6 +305,7 @@ export function generateOptionsFor(setup: CourseSetup) {
     widthScale: setup.widthScale,
     fringeScale: setup.fringeScale,
     waist: setup.waist,
+    widthVariation: setup.widthVariation,
     teeStraightRun: setup.teeStraightRun,
   };
 }

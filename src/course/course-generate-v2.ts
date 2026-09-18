@@ -133,6 +133,14 @@ export interface GenerateOptionsV2 {
    */
   waist?: number;
   /**
+   * **幅のうねりの大きさ。** 0 なら一定幅（今までどおり）。
+   *
+   * くびれ（`waist`）が「1か所だけ絞る関門」なのに対し、こちらは
+   * **ホールの端から端まで広い・狭いを繰り返す**。0.35 なら 0.65〜1.35 倍で振れる。
+   * 両方指定したときは掛け合わせる
+   */
+  widthVariation?: number;
+  /**
    * **ティー側に必ず残す直線区間**（ルート全長に対する割合）。0 が既定＝制限なし。
    *
    * 実機で「S字がティーの近くで曲がると、ティーショットを全然しっかり打てない」と出た。
@@ -791,10 +799,14 @@ function placeGuardBunkers(
             B.waterClearance,
       );
       if (nearWater) continue;
+      // **間隔はガードバンカー専用の値**。カップの周りは狭いので、
+      // ルート沿いの砂と同じ間隔を要求すると3個目が入らない
       const tooClose = [...existing, ...bunkers].some(
         (b) =>
           Math.hypot(b.center.x - center.x, b.center.z - center.z) <
-          hazardReach(b.radiusX, b.radiusZ, b.outline, N.bunkerAmplitude) + maxRadius + B.minSpacing,
+          hazardReach(b.radiusX, b.radiusZ, b.outline, N.bunkerAmplitude) +
+            maxRadius +
+            GB.minSpacing,
       );
       if (tooClose) continue;
       const depthLimit = (B.maxBasinGradient * Math.min(radiusX, radiusZ)) / N.bunkerBasinProfile;
@@ -849,6 +861,39 @@ function makePlateau(
     laneFadeAngle: (P2.laneFadeAngle * Math.PI) / 180,
     rise,
   };
+}
+
+/**
+ * 芝幅のプロファイル（うねり）。sin波を何本か重ねて、広い・狭いを繰り返させる。
+ *
+ * 周期を整数にしてあるので **sin(π・f・t) は両端で必ず 0** になり、
+ * ティーとカップの周りは絞りも広げもしない。
+ * 重ねたあと、いちばん振れたところが `variation` ちょうどになるよう正規化する
+ */
+function makeVariedWidthProfile(rng: () => number, variation: number): number[] {
+  const W = V.corridor.varied;
+  const count = V.corridor.profilePoints;
+  const waves = pickInt(rng, W.waves);
+  const freq: number[] = [];
+  const amp: number[] = [];
+  const sign: number[] = [];
+  // 作る前に引き切る。プロファイルの評価では乱数を引かない
+  for (let k = 0; k < waves; k++) {
+    freq.push(pickInt(rng, W.frequency));
+    amp.push(pick(rng, W.amplitude));
+    sign.push(rng() < 0.5 ? -1 : 1);
+  }
+
+  const raw: number[] = [];
+  let peak = 0;
+  for (let i = 0; i < count; i++) {
+    const t = i / (count - 1);
+    let sum = 0;
+    for (let k = 0; k < waves; k++) sum += sign[k] * amp[k] * Math.sin(Math.PI * freq[k] * t);
+    raw.push(sum);
+    peak = Math.max(peak, Math.abs(sum));
+  }
+  return raw.map((v) => Math.max(W.minScale, 1 + (peak > 0 ? (v / peak) * variation : 0)));
 }
 
 /**
@@ -1070,8 +1115,16 @@ function draftCourseV2(seed: number, options: GenerateOptionsV2): DraftV2 {
   const greenWidth = pick(rng, d.greenWidth) * widthScale;
   const roughFringe = pick(rng, d.roughFringe) * fringeScale;
   const deepRoughFringe = pick(rng, d.deepRoughFringe) * fringeScale;
+  // 幅のプロファイル。**使わないつまみでは乱数を1つも引かない**ので、
+  // オフのコースは今までと1ビットも変わらない
   const waist = options.waist ?? 0;
-  const widthProfile = waist > 0 ? makeWidthProfile(rng, waist) : undefined;
+  const variation = options.widthVariation ?? 0;
+  const waistProfile = waist > 0 ? makeWidthProfile(rng, waist) : undefined;
+  const variedProfile = variation > 0 ? makeVariedWidthProfile(rng, variation) : undefined;
+  const widthProfile =
+    waistProfile && variedProfile
+      ? waistProfile.map((v, i) => v * variedProfile[i])
+      : (waistProfile ?? variedProfile);
   // 岸（池の周りのラフ）。**引いた幅が範囲の下位 bareWaterChance に入ったら岸なしにする。**
   // 追加の乱数を引かないので、既定（0）なら今までと同じ値になる
   const drawnFringe = pick(rng, V.waterFringe);
@@ -1101,8 +1154,13 @@ function draftCourseV2(seed: number, options: GenerateOptionsV2): DraftV2 {
     minZ = Math.min(minZ, p.z);
     maxZ = Math.max(maxZ, p.z);
   }
+  // 幅を広げるプロファイル（`widthVariation`）を使うと芝が枠から溢れるので、
+  // いちばん広がるところで枠を取る。**1 を下回る側では広げない**ので、
+  // くびれだけのホールや一定幅のホールは今までとまったく同じ枠になる
+  const profilePeak = widthProfile ? Math.max(1, ...widthProfile) : 1;
   const expand =
-    maxPlayableHalfWidth(greenWidth, roughFringe, deepRoughFringe) * pick(rng, V.boundsExpand);
+    maxPlayableHalfWidth(greenWidth * profilePeak, roughFringe, deepRoughFringe) *
+    pick(rng, V.boundsExpand);
   const round = (v: number) => Math.ceil(v / V.boundsStep) * V.boundsStep;
   const bounds = {
     width: round(maxX - minX + expand * 2),

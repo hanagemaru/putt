@@ -413,15 +413,19 @@ export function surfaceAt(course: CourseDefinition, x: number, z: number): Surfa
   if (isInsideWater(course, x, z, course.waterFringe)) return 'rough';
 
   const band = bandSurfaceAt(course, x, z);
-  // 砲台グリーンの法面は**ラフにする**。通常芝は勾配7.8%で止まらなくなるが、
-  // ラフは27.4%まで止まれるので、ここをラフにして初めて「高い段」が成立する。
-  // 芝の外（セカンドカット・OB）は塗り替えない
-  if ((band === 'green' || band === 'rough') && isPlateauShoulder(course, x, z)) return 'rough';
   // バンカー（生成器v2）。**芝の上だけを砂にする。**
   // OBを砂へ変えることはないので、OB面積比も芝の連結もバンカーの有無で変わらない
   // （砂は罰打なしで打てるので、連結の判定では芝と同じ扱い）。
   // v1のコースはバンカーを持たないので、ここは必ず素通りする
+  //
+  // **砲台の法面より先に見る。** 逆にすると、法面の輪がガードバンカーを横切って
+  // ラフに塗り替えてしまう（実機で「砂がラフで不自然に横切られている」と出た）。
+  // 砂は砂で、坂の上にあっても砂であることは変わらない
   if (band !== 'ob' && isInsideBunker(course, x, z)) return 'bunker';
+  // 砲台グリーンの法面は**ラフにする**。通常芝は勾配7.8%で止まらなくなるが、
+  // ラフは27.4%まで止まれるので、ここをラフにして初めて「高い段」が成立する。
+  // 芝の外（セカンドカット・OB）は塗り替えない
+  if ((band === 'green' || band === 'rough') && isPlateauShoulder(course, x, z)) return 'rough';
   return band;
 }
 

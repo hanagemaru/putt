@@ -651,7 +651,17 @@ export const CONFIG = {
         /** カップの縁からの距離 [m]。砂の半径ぶんは別に足す */
         distance: [0.6, 2.2],
         /** 半径 [m]。ルート沿いのバンカーより小ぶりにして、カップ周りを埋めない */
-        radius: [0.7, 1.6],
+        radius: [0.65, 1.5],
+        /**
+         * **ガードバンカーどうしの間隔 [m]。** ルート沿いの砂（`bunker.minSpacing` 1.2m）
+         * とは別に持つ。カップの周りは狭いので、同じ間隔だと3個目が入らない。
+         *
+         * 実測（400本・3個要求）で、置けた率は間隔がいちばん効いた。
+         * 半径を小ぶりにし、試行を増やし、間隔を 0.9m にして **74.1% → 83.9%**。
+         * 砂の面積はほぼ変わらない（7.49 → 7.56 m2/ホール）ので、
+         * **砂が増えたのではなく、狙った数が入るようになった**
+         */
+        minSpacing: 0.9,
         /** 縦横比 */
         aspect: [0.4, 1.3],
         /**
@@ -671,7 +681,7 @@ export const CONFIG = {
          * 砲台の無いホールでも同じ向きの決め方を使う
          */
         /** 1つあたりの配置試行回数 */
-        maxAttempts: 40,
+        maxAttempts: 80,
       },
 
       /**
@@ -737,12 +747,33 @@ export const CONFIG = {
        * `fringeScale` でラフとセカンドカットを絞ると、OBが手前まで来て初めて効く
        */
       corridor: {
-        /** くびれのプロファイルの点数。ルートを等分する */
+        /** 幅のプロファイルの点数。ルートを等分する */
         profilePoints: 9,
         /** くびれの中心をルートのどこに置くか（0＝ティー / 1＝カップ） */
         waistCenter: [0.35, 0.7],
         /** くびれの広がり。小さいほど局所的に絞る */
         waistSpread: [0.12, 0.26],
+        /**
+         * **幅のうねり。** くびれ（1か所だけ絞る）と違い、
+         * ホールの端から端まで広い・狭いを繰り返す。
+         *
+         * sin波を何本か重ねて作る。周期を整数にしてあるので**両端は必ず 1 に戻る**
+         * （ティーとカップの周りは絞りも広げもしない）。
+         * 重ねたあと、いちばん振れたところが `widthVariation` ちょうどになるよう正規化する
+         */
+        varied: {
+          /** 重ねる波の数 */
+          waves: [2, 3],
+          /** 波の周期。1 なら中央がいちばん振れる、4 なら4回うねる */
+          frequency: [1, 4],
+          /** 波ごとの重み */
+          amplitude: [0.4, 1],
+          /**
+           * 絞りすぎの下限。ここより細くはしない。
+           * 芝幅4.3mのホールで 0.55 なら、いちばん細いところが2.4m
+           */
+          minScale: 0.55,
+        },
       },
 
       /** 池の岸をラフにする幅 [m] */
@@ -884,6 +915,7 @@ export const CONFIG = {
         widthScale: 1,
         fringeScale: 1,
         waist: 0,
+        widthVariation: 0,
       },
       /** 標準。ここから上はうねりを既定（1.0）に固定する（下のコメント参照） */
       standard: {
@@ -899,6 +931,7 @@ export const CONFIG = {
         widthScale: 1,
         fringeScale: 1,
         waist: 0,
+        widthVariation: 0,
       },
       /** 上級。曲がりを少し鋭くする */
       advanced: {
@@ -914,6 +947,7 @@ export const CONFIG = {
         widthScale: 1,
         fringeScale: 1,
         waist: 0,
+        widthVariation: 0,
       },
       /** 最上級。曲率半径の下限を半分にして「角」を作る */
       expert: {
@@ -929,6 +963,7 @@ export const CONFIG = {
         widthScale: 1,
         fringeScale: 1,
         waist: 0,
+        widthVariation: 0,
       },
       /**
        * **実験用。ここは「全ホールに共通の土台」で、仕掛けは1つも入っていない。**
@@ -954,6 +989,7 @@ export const CONFIG = {
         widthScale: 1,
         fringeScale: 1,
         waist: 0,
+        widthVariation: 0,
       },
     },
     /**
@@ -977,6 +1013,11 @@ export const CONFIG = {
       narrow: { widthScale: 0.65, fringeScale: 0.5 },
       /** くびれ。途中で幅をさらに3割絞る */
       waist: { waist: 0.3 },
+      /**
+       * 幅のうねり。ホール全体で広い・狭いを繰り返す。
+       * くびれが「1か所の関門」なのに対し、こちらは**どこも同じ幅ではない**道になる
+       */
+      wavyWidth: { widthVariation: 0.35 },
       /**
        * 角。曲率半径の下限を 0.45 倍にして、カーブではなく角にする。
        *
