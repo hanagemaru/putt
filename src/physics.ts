@@ -124,6 +124,12 @@ export class Roller {
   private grazeChord = 0;
   /** 同じく、カップ中心が進行方向のどちら側にあるか（+1 / -1） */
   private grazeSide = 0;
+  /**
+   * 同じく、入ってきた速度で決まる効きの強さ（0〜1）。
+   * 口を横切る時間は 弦の長さ / 速度 なので、速い球ほど落ち込む間がなく曲がらない。
+   * 落ちる寸前（＝捕まえられる速度の上限）で 1、それより速いほど 0 へ落ちる
+   */
+  private grazeStrength = 0;
 
   constructor(
     private readonly green: Green,
@@ -157,6 +163,7 @@ export class Roller {
     this.ejectedFromCup = false;
     this.grazeChord = 0;
     this.grazeSide = 0;
+    this.grazeStrength = 0;
   }
 
   /** 初速 [m/s] と方向 [rad] で打ち出す */
@@ -289,7 +296,8 @@ export class Roller {
           const uz = dz / len;
           const offset = Math.abs((cx - ex) * uz - (cz - ez) * ux);
           const speed = Math.hypot(this.vx, this.vz);
-          if (speed < this.captureSpeedAt(offset)) {
+          const captureSpeed = this.captureSpeedAt(offset);
+          if (speed < captureSpeed) {
             this.holeOut();
             return true;
           }
@@ -300,6 +308,9 @@ export class Roller {
             this.grazeChord = Math.sqrt(Math.max(0, 1 - ratio * ratio));
             this.grazeSide =
               this.vx * (cz - ez) - this.vz * (cx - ex) > 0 ? 1 : -1;
+            // ここへ来た時点で speed は捕まえられる上限以上なので、比は 0〜1 に収まる。
+            // 落ちる寸前の球で 1（いちばん大きく弾かれる）、速い球ほど 0 へ
+            this.grazeStrength = speed > 0 ? Math.min(1, captureSpeed / speed) : 1;
             this.lipOuts++;
           }
           // 横ずれが竿の当たり判定の内側なら、このあとの竿の判定に任せる
@@ -346,17 +357,20 @@ export class Roller {
 
   /** 竿に触れずに口を横切って出ていく場合。軌道は反転させない */
   private grazeCup(): void {
-    const chord = this.grazeChord;
-    const angle = P.cupGrazeTurn * chord * this.grazeSide;
+    // 効きは「口を横切る長さ（弦）」と「横切る速さ」の両方で決まる。
+    // 弦が長いほど、そして遅いほど落ち込む間があるので大きく弾かれる
+    const effect = this.grazeChord * this.grazeStrength;
+    const angle = P.cupGrazeTurn * effect * this.grazeSide;
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
-    const scale = 1 - P.cupGrazeSpeedLoss * chord;
+    const scale = 1 - P.cupGrazeSpeedLoss * effect;
     const vx = (this.vx * cos - this.vz * sin) * scale;
     const vz = (this.vx * sin + this.vz * cos) * scale;
     this.vx = vx;
     this.vz = vz;
     this.grazeChord = 0;
     this.grazeSide = 0;
+    this.grazeStrength = 0;
     this.path.push(this.x, this.z);
   }
 
