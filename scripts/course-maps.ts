@@ -22,6 +22,7 @@ import { generateCourseDetailed } from '../src/course/course-generate.ts';
 import { bunkerBasinAt, surfaceAt } from '../src/course/course-map.ts';
 import { validateCourse } from '../src/course/course-validate.ts';
 import { TOUR_SETS, generateOptionsFor, setupOf } from '../src/course/tour-holes.ts';
+import type { TourDefinition } from '../src/course/tour-holes.ts';
 import type { CourseDefinition, SurfaceType, TerrainType } from '../src/course/course-types.ts';
 
 const G = CONFIG.green;
@@ -210,7 +211,40 @@ interface HoleCard {
   h: number;
 }
 
-function cardsFor(tour: (typeof TOUR_SETS)[number]): HoleCard[] {
+/**
+ * **いま本番（main）に載っている v1 の3コース。** 見比べるためだけに置いてある写し。
+ *
+ * `git show main:src/course/tour-holes.ts` の `seeds` をそのまま持ってきた値で、
+ * ブランチ側の `TOUR_SETS`（v2の4コース）とは別物。
+ * 仕立ては持たない＝`DEFAULT_SETUP`（うねり等倍・10ft・新しいつまみは全部オフ）。
+ *
+ * **風の丘は選び直す前の並び。** シードの差し替えと並べ替えは実機確認まで済んでいるが、
+ * main へは入っていない（`PROJECT_STATUS.md` の「本番は未反映」）。
+ *
+ * 本番から v1 のコースが消えたら、この定数ごと消してよい。
+ */
+const LIVE_V1_TOURS: readonly TourDefinition[] = [
+  {
+    id: 'breeze',
+    name: { ja: '風の丘', en: 'Windy Hills' },
+    description: { ja: '池と大きな曲がりが少ない、比較的素直なコース', en: '' },
+    seeds: [553, 848, 44, 468, 798, 354, 977, 232, 185],
+  },
+  {
+    id: 'forest',
+    name: { ja: '曲がりの森', en: 'Bending Woods' },
+    description: { ja: 'ドッグレッグとS字、遠回り率の大きいホールを集めたコース', en: '' },
+    seeds: [307, 299, 343, 101, 407, 549, 245, 649, 583],
+  },
+  {
+    id: 'waterside',
+    name: { ja: '水鏡の庭', en: 'Mirror Garden' },
+    description: { ja: '池の数と水面積比が大きいホールを集めたコース', en: '' },
+    seeds: [394, 121, 410, 235, 731, 954, 411, 421, 933],
+  },
+];
+
+function cardsFor(tour: TourDefinition): HoleCard[] {
   const setup = setupOf(tour);
   const options = generateOptionsFor(setup);
   return tour.seeds.map((seed, i) => {
@@ -249,7 +283,7 @@ function escapeHtml(text: string): string {
   return text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 }
 
-const sections = TOUR_SETS.map((tour) => {
+function sectionFor(tour: TourDefinition): string {
   const setup = setupOf(tour);
   const cards = cardsFor(tour);
   const total = cards.reduce((n, c) => n + c.length, 0);
@@ -271,22 +305,31 @@ const sections = TOUR_SETS.map((tour) => {
     })
     .join('\n');
   const avg = (pick: (c: HoleCard) => number) => cards.reduce((n, c) => n + pick(c), 0) / cards.length;
+  const generator = tour.generator ?? 'v1';
+  const setupLine =
+    generator === 'v2'
+      ? `仕立て: うねり×${setup.undulationGain} ・ ${setup.stimpFeet}ft ・ 曲率半径×${setup.turnRadiusScale}
+        ・ S字${setup.wideSCurve ? '大' : '標準'} ・ 岸なし池 ${setup.bareWaterChance} ・ 砂の幅${setup.variedBunkers ? '広' : '標準'}`
+      : `仕立て: 生成器v1（バンカーも高さのハザードも無い）・うねり×${setup.undulationGain} ・ ${setup.stimpFeet}ft`;
+  const title = generator === 'v2' ? tour.name.en : `${tour.name.ja}`;
   return `  <section>
     <div class="course-head">
-      <h2>${escapeHtml(tour.name.en)}<em>${escapeHtml(tour.description.ja)}</em></h2>
+      <h2>${escapeHtml(title)}<em>${escapeHtml(tour.description.ja)}</em></h2>
       <p class="summary">
         全長 ${total.toFixed(0)}m ・ 平均芝幅 ${avg((c) => c.width).toFixed(2)}m ・
         平均曲がり ${avg((c) => c.turn).toFixed(0)}° ・ 遠回り最大 ${Math.max(...cards.map((c) => c.detour)).toFixed(2)} ・
         池 ${cards.reduce((n, c) => n + c.water, 0)}個 ・ 砂 ${cards.reduce((n, c) => n + c.bunkers, 0)}個<br>
-        <span class="setup">仕立て: うねり×${setup.undulationGain} ・ ${setup.stimpFeet}ft ・ 曲率半径×${setup.turnRadiusScale}
-        ・ S字${setup.wideSCurve ? '大' : '標準'} ・ 岸なし池 ${setup.bareWaterChance} ・ 砂の幅${setup.variedBunkers ? '広' : '標準'}</span>
+        <span class="setup">${setupLine}</span>
       </p>
     </div>
     <div class="holes">
 ${holes}
     </div>
   </section>`;
-}).join('\n');
+}
+
+const newSections = TOUR_SETS.map(sectionFor).join('\n');
+const liveSections = LIVE_V1_TOURS.map(sectionFor).join('\n');
 
 const html = `<title>Putt ツアーマップ</title>
 <style>
@@ -332,6 +375,21 @@ const html = `<title>Putt ツアーマップ</title>
   }
   .lead { color: var(--ink-dim); font-size: 13px; margin: 0 0 18px; line-height: 1.8; max-width: 62ch; }
   .lead b { color: var(--ink); font-weight: 600; }
+  /* グループの見出し。v2の新しい4コースと、本番のv1の3コースを分ける */
+  h2.group {
+    font-family: var(--pixel);
+    font-size: 15px;
+    letter-spacing: 0.14em;
+    color: var(--ground);
+    background: var(--accent);
+    display: inline-block;
+    padding: 4px 12px;
+    margin: 8px 0 6px;
+  }
+  h2.group.live { background: var(--bare); }
+  .group-note { font-size: 12px; color: var(--ink-dim); margin: 0 0 22px; line-height: 1.8; max-width: 62ch; }
+  .group-note code { font-family: var(--data); color: var(--ink); }
+  .group-note b { color: var(--ink); }
   .legend {
     display: flex; flex-wrap: wrap; gap: 6px 16px;
     font-size: 12px; color: var(--ink-dim); margin: 0 0 32px;
@@ -397,7 +455,8 @@ const html = `<title>Putt ツアーマップ</title>
 <div class="wrap">
 <h1>Putt ツアーマップ</h1>
 <p class="lead">
-  通常ツアー全${TOUR_SETS.length}コース・${TOUR_SETS.length * 9}ホールを真上から。<br>
+  ブランチの新しい${TOUR_SETS.length}コースと、いま本番で遊べる${LIVE_V1_TOURS.length}コース。
+  合わせて${(TOUR_SETS.length + LIVE_V1_TOURS.length) * 9}ホールを真上から。<br>
   <b>36ホールすべて縮尺が同じ</b>なので、画像の大きさの違いがそのままコースの広さの違いになる。
   明るいほど高く、暗いほど低い（ゲーム本体のマップと同じ濃淡）。
   <b>白い丸がティー、赤い丸がカップ。</b>
@@ -410,9 +469,22 @@ const html = `<title>Putt ツアーマップ</title>
   <span><i class="swatch" style="background:#${G.surfaceColors.water.toString(16).padStart(6, '0')}"></i>池</span>
   <span><i class="swatch" style="background:#${G.surfaceColors.ob.toString(16).padStart(6, '0')}"></i>OB</span>
 </p>
-${sections}
+<h2 class="group">ブランチ / 生成器v2の4コース</h2>
+<p class="group-note"><code>claude/remaining-tasks-9foyzw</code> にある新しいツアー。本番はまだこれではない。</p>
+${newSections}
+
+<h2 class="group live">本番 / 生成器v1の3コース</h2>
+<p class="group-note">
+  いま <b>putt.hanage.app</b> で遊べるツアー（<code>main</code> の <code>TOUR_SETS</code>）。
+  v1にはバンカーも高さのハザードも無い。<br>
+  <b>風の丘は選び直す前の並び</b>のまま（差し替えと並べ替えは実機確認済みだが main へ入っていない）。
+</p>
+${liveSections}
 </div>
 `;
 
 writeFileSync(OUT_PATH, html);
-console.log(`${OUT_PATH} を書き出した（${TOUR_SETS.length}コース / ${TOUR_SETS.length * 9}ホール / ${(html.length / 1024).toFixed(0)}KB）`);
+console.log(
+  `${OUT_PATH} を書き出した（新しい${TOUR_SETS.length}コース ＋ 本番の${LIVE_V1_TOURS.length}コース / ` +
+    `${(TOUR_SETS.length + LIVE_V1_TOURS.length) * 9}ホール / ${(html.length / 1024).toFixed(0)}KB）`,
+);
