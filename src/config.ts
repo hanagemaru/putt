@@ -628,6 +628,75 @@ export const CONFIG = {
         lobed: { amplitude: 0.45, orderMin: 2, orderMax: 3 },
       },
 
+      /**
+       * ガードバンカー（カップの周りに置く砂）。
+       *
+       * **これまでハザードはカップから3m以上離す指定で、奥には座標すら無かった。**
+       * 砂は罰打が無く越えられるので、カップの周りでも詰みにはならない。
+       * 罰されるのは「弱い（手前の砂）」「ずれた（横の砂）」「強すぎ（奥の砂）」で、
+       * **強すぎが罰されるのはこれが初めて**
+       */
+      guardBunker: {
+        /** カップの縁からの距離 [m]。砂の半径ぶんは別に足す */
+        distance: [0.6, 2.2],
+        /** 半径 [m]。ルート沿いのバンカーより小ぶりにして、カップ周りを埋めない */
+        radius: [0.7, 1.6],
+        /** 縦横比 */
+        aspect: [0.4, 1.3],
+        /**
+         * カップの周りに必ず残す通常芝の半径 [m]。
+         * ここへ寄せれば必ず砂を踏まずに入れられる
+         */
+        cupClearance: 0.9,
+        /**
+         * **花道の角度 [度]。** この角度ぶんは連続してバンカーを置かない。
+         * 砂で360°囲むと「どこから寄せても砂」になり、`minClearWidth` で
+         * 芝の逃げ道を残しているのと同じ理由で成立しない
+         */
+        clearAngle: 110,
+        /** 花道の向きを、ティーからカップへの向きから振る量 [rad] */
+        laneSwing: [-0.7, 0.7],
+        /** 1つあたりの配置試行回数 */
+        maxAttempts: 40,
+      },
+
+      /**
+       * 砲台グリーン。カップの周りを一段持ち上げ、**法面だけラフにする**。
+       *
+       * 通常芝は勾配7.8%を超えると止まらないが、ラフは27.4%まで止まれる。
+       * だから法面をラフにすると高低差30〜50cmの段が作れる
+       * （実際のゴルフの砲台グリーンも法面はラフ）。
+       *
+       * 法面の勾配 = 高さ × 1.5 ÷ 法面の幅。
+       * 高さ0.45m・幅1.6m なら 42% で、ラフの上限27.4%を超えて「止まれない法面」になる。
+       * **転げ落ちて戻ってくるのは意図どおり**だが、上限は check:stuck で確かめること
+       */
+      plateau: {
+        /** 上面（平ら・通常芝）の半径 [m]。カップ周りの読みはここで担保する */
+        innerRadius: [1.6, 2.6],
+        /** 法面の幅 [m] */
+        shoulder: [1.1, 2.0],
+        /** 持ち上げる高さ [m] */
+        rise: [0.22, 0.42],
+      },
+
+      /**
+       * 細い道（corridor）とくびれ。**ハザードを置かずに難しくするための値。**
+       *
+       * 実測で、OBは中心線から 5.0〜6.5m 先にある（EXPERT でも5.0m）。
+       * 20m 先のカップを狙って 5m 外すには 14° の誤差が要るので、
+       * **OBは罰打ハザードなのにほぼ発動していなかった。**
+       * `fringeScale` でラフとセカンドカットを絞ると、OBが手前まで来て初めて効く
+       */
+      corridor: {
+        /** くびれのプロファイルの点数。ルートを等分する */
+        profilePoints: 9,
+        /** くびれの中心をルートのどこに置くか（0＝ティー / 1＝カップ） */
+        waistCenter: [0.35, 0.7],
+        /** くびれの広がり。小さいほど局所的に絞る */
+        waistSpread: [0.12, 0.26],
+      },
+
       /** 池の岸をラフにする幅 [m] */
       waterFringe: [0.8, 1.4],
       /** 池の半径 [m]（長い方） */
@@ -743,6 +812,11 @@ export const CONFIG = {
         wideSCurve: false,
         bareWaterChance: 0,
         variedBunkers: false,
+        guardBunkers: 0,
+        plateau: false,
+        widthScale: 1,
+        fringeScale: 1,
+        waist: 0,
       },
       /** 標準。ここから上はうねりを既定（1.0）に固定する（下のコメント参照） */
       standard: {
@@ -752,6 +826,11 @@ export const CONFIG = {
         wideSCurve: true,
         bareWaterChance: 0.3,
         variedBunkers: true,
+        guardBunkers: 0,
+        plateau: false,
+        widthScale: 1,
+        fringeScale: 1,
+        waist: 0,
       },
       /** 上級。曲がりを少し鋭くする */
       advanced: {
@@ -761,6 +840,11 @@ export const CONFIG = {
         wideSCurve: true,
         bareWaterChance: 0.4,
         variedBunkers: true,
+        guardBunkers: 0,
+        plateau: false,
+        widthScale: 1,
+        fringeScale: 1,
+        waist: 0,
       },
       /** 最上級。曲率半径の下限を半分にして「角」を作る */
       expert: {
@@ -770,6 +854,37 @@ export const CONFIG = {
         wideSCurve: true,
         bareWaterChance: 0.5,
         variedBunkers: true,
+        guardBunkers: 0,
+        plateau: false,
+        widthScale: 1,
+        fringeScale: 1,
+        waist: 0,
+      },
+      /**
+       * **実験用。試したい要素を全部入れた9ホール。**
+       *
+       * 上の4コースは1つも変わらない（新しいつまみは全部オフのままで、
+       * オフなら生成器の出力が1ビットも変わらないことを確認してある）。
+       *
+       * 入れたもの:
+       *   - ガードバンカー3個。**カップの奥にも置ける**ので、初めてオーバーが罰される
+       *   - 砲台グリーン。法面をラフにして、通常芝の臨界勾配に縛られず段を作る
+       *   - 細い道。芝を7割・ラフとセカンドカットを6割にして、**OBを手前まで連れてくる**
+       *   - くびれ。ルートの途中で幅をさらに絞る
+       *   - 角（曲率半径×0.6）とS字（`wideSCurve`）
+       */
+      laboratory: {
+        undulationGain: 1,
+        stimpFeet: 10,
+        turnRadiusScale: 0.6,
+        wideSCurve: true,
+        bareWaterChance: 0.5,
+        variedBunkers: true,
+        guardBunkers: 3,
+        plateau: true,
+        widthScale: 0.7,
+        fringeScale: 0.6,
+        waist: 0.3,
       },
     },
   },

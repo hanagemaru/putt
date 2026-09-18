@@ -60,6 +60,92 @@ export function distanceToRoute(course: CourseDefinition, x: number, z: number):
 }
 
 /**
+ * ルートに沿った累積長。幅プロファイルを引くのに要る。
+ * コース定義から決まる純粋な派生値なので、キャッシュの有無で結果は変わらない
+ */
+const routeArcCache = new WeakMap<CourseDefinition, { cum: number[]; total: number }>();
+
+function routeArcs(course: CourseDefinition): { cum: number[]; total: number } {
+  const cached = routeArcCache.get(course);
+  if (cached) return cached;
+  const cum = [0];
+  for (let i = 1; i < course.route.length; i++) {
+    cum.push(
+      cum[i - 1] +
+        Math.hypot(
+          course.route[i].x - course.route[i - 1].x,
+          course.route[i].z - course.route[i - 1].z,
+        ),
+    );
+  }
+  const arcs = { cum, total: cum[cum.length - 1] };
+  routeArcCache.set(course, arcs);
+  return arcs;
+}
+
+/**
+ * ルートまでの最短距離と、その最寄り点のルート上の位置（0＝ティー側 / 1＝カップ側）。
+ * 幅がルートに沿って変わる（`widthProfile`）ので、距離だけでは帯を決められない
+ */
+function nearestOnRoute(course: CourseDefinition, x: number, z: number): { distance: number; t: number } {
+  const { cum, total } = routeArcs(course);
+  let best = Infinity;
+  let bestT = 0;
+  for (let i = 1; i < course.route.length; i++) {
+    const a = course.route[i - 1];
+    const b = course.route[i];
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const lengthSq = dx * dx + dz * dz;
+    const u =
+      lengthSq === 0 ? 0 : Math.min(Math.max(((x - a.x) * dx + (z - a.z) * dz) / lengthSq, 0), 1);
+    const distance = Math.hypot(x - (a.x + dx * u), z - (a.z + dz * u));
+    if (distance < best) {
+      best = distance;
+      bestT = total > 0 ? (cum[i - 1] + Math.sqrt(lengthSq) * u) / total : 0;
+    }
+  }
+  return { distance: best, t: bestT };
+}
+
+/**
+ * ルート位置 t での芝幅の倍率。`widthProfile` は等間隔の点なので線形に繋ぐ。
+ * 省略なら 1（今までと同じ一定幅）
+ */
+export function widthScaleAt(course: CourseDefinition, t: number): number {
+  const profile = course.widthProfile;
+  if (!profile || profile.length === 0) return 1;
+  if (profile.length === 1) return profile[0];
+  const clamped = Math.min(Math.max(t, 0), 1) * (profile.length - 1);
+  const i = Math.min(profile.length - 2, Math.floor(clamped));
+  const u = clamped - i;
+  return profile[i] + (profile[i + 1] - profile[i]) * u;
+}
+
+/**
+ * 砲台グリーンの高さ [m]。上面は平ら、法面だけ滑らかに下る。
+ * `green.ts` がハイトマップへ足すために呼ぶ
+ */
+export function plateauHeightAt(course: CourseDefinition, x: number, z: number): number {
+  const plateau = course.plateau;
+  if (!plateau) return 0;
+  const d = Math.hypot(x - plateau.center.x, z - plateau.center.z);
+  if (d <= plateau.innerRadius) return plateau.rise;
+  if (d >= plateau.outerRadius) return 0;
+  // smoothstep。縁で傾きが 0 になるので、外の地形と段差なく繋がる
+  const u = (d - plateau.innerRadius) / (plateau.outerRadius - plateau.innerRadius);
+  return plateau.rise * (1 - u * u * (3 - 2 * u));
+}
+
+/** その座標が砲台の法面（＝ラフにする帯）の中か */
+function isPlateauShoulder(course: CourseDefinition, x: number, z: number): boolean {
+  const plateau = course.plateau;
+  if (!plateau) return false;
+  const d = Math.hypot(x - plateau.center.x, z - plateau.center.z);
+  return d > plateau.innerRadius && d < plateau.outerRadius;
+}
+
+/**
  * 池ごとの輪郭の歪み。シードとハザードの並び順だけで決まるので、
  * 同じコース定義なら毎回同じ形になる。
  */
@@ -255,18 +341,20 @@ function isProtected(course: CourseDefinition, x: number, z: number): boolean {
  */
 function bandSurfaceAt(course: CourseDefinition, x: number, z: number): SurfaceType {
   const salt = N.streamSalt;
-  const distance = distanceToRoute(course, x, z);
+  // 幅がルートに沿って変わるコース（`widthProfile`）では、最寄り点の位置も要る。
+  // プロファイルが無ければ倍率は 1 で、今までとまったく同じ計算になる
+  const { distance, t } = nearestOnRoute(course, x, z);
+  const halfGreen = (course.greenWidth / 2) * widthScaleAt(course, t);
   // 揺らぎの幅は [-1, 1] に収まるので、どう転んでも結果が変わらない距離ではノイズを引かない。
   // 早期に返しても同じ答えになる（枝刈りであって、場所ごとの結果は変わらない）
-  if (distance <= (course.greenWidth / 2) * (1 - N.greenAmplitude)) return 'green';
+  if (distance <= halfGreen * (1 - N.greenAmplitude)) return 'green';
   const maxPlayable =
-    (course.greenWidth / 2) * (1 + N.greenAmplitude) +
+    halfGreen * (1 + N.greenAmplitude) +
     course.roughFringe * (1 + N.roughAmplitude) +
     course.deepRoughFringe * (1 + N.deepRoughAmplitude);
   if (distance > maxPlayable) return 'ob';
 
-  const greenEdge =
-    (course.greenWidth / 2) * bandScale(course.seed, salt.green, N.greenAmplitude, x, z);
+  const greenEdge = halfGreen * bandScale(course.seed, salt.green, N.greenAmplitude, x, z);
   const roughEdge =
     greenEdge + course.roughFringe * bandScale(course.seed, salt.rough, N.roughAmplitude, x, z);
   const deepRoughEdge =
@@ -292,6 +380,10 @@ export function surfaceAt(course: CourseDefinition, x: number, z: number): Surfa
   if (isInsideWater(course, x, z, course.waterFringe)) return 'rough';
 
   const band = bandSurfaceAt(course, x, z);
+  // 砲台グリーンの法面は**ラフにする**。通常芝は勾配7.8%で止まらなくなるが、
+  // ラフは27.4%まで止まれるので、ここをラフにして初めて「高い段」が成立する。
+  // 芝の外（セカンドカット・OB）は塗り替えない
+  if ((band === 'green' || band === 'rough') && isPlateauShoulder(course, x, z)) return 'rough';
   // バンカー（生成器v2）。**芝の上だけを砂にする。**
   // OBを砂へ変えることはないので、OB面積比も芝の連結もバンカーの有無で変わらない
   // （砂は罰打なしで打てるので、連結の判定では芝と同じ扱い）。

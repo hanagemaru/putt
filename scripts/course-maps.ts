@@ -19,7 +19,7 @@ import { CONFIG } from '../src/config.ts';
 import { Green, defaultGreenParams } from '../src/green.ts';
 import { generateCourseV2Detailed, routeMetrics } from '../src/course/course-generate-v2.ts';
 import { generateCourseDetailed } from '../src/course/course-generate.ts';
-import { bunkerBasinAt, surfaceAt } from '../src/course/course-map.ts';
+import { bunkerBasinAt, plateauHeightAt, surfaceAt } from '../src/course/course-map.ts';
 import { validateCourse } from '../src/course/course-validate.ts';
 import { TOUR_SETS, generateOptionsFor, setupOf } from '../src/course/tour-holes.ts';
 import type { TourDefinition } from '../src/course/tour-holes.ts';
@@ -130,6 +130,7 @@ function renderHole(course: CourseDefinition, undulationGain: number): { png: Ui
       terrain: { type: course.terrain, cup: course.cup, approach: approachDirectionOf(course) },
       heightFeatures: course.heightFeatures,
       bunkerBasin: (x: number, z: number) => bunkerBasinAt(course, x, z),
+      plateau: (x: number, z: number) => plateauHeightAt(course, x, z),
     },
     (x, z) => surfaceAt(course, x, z),
   );

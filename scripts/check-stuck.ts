@@ -34,7 +34,7 @@
 import { CONFIG } from '../src/config.ts';
 import { approachDirection, generateCourse } from '../src/course/course-generate.ts';
 import { generateCourseV2, type GenerateOptionsV2 } from '../src/course/course-generate-v2.ts';
-import { bunkerBasinAt, surfaceAt } from '../src/course/course-map.ts';
+import { bunkerBasinAt, plateauHeightAt, surfaceAt } from '../src/course/course-map.ts';
 import { Green, defaultGreenParams } from '../src/green.ts';
 import { Roller, frictionOnSurface } from '../src/physics.ts';
 import { TOUR_SETS, generateOptionsFor, setupOf } from '../src/course/tour-holes.ts';
@@ -249,6 +249,7 @@ function buildGreen(course: CourseDefinition): Green {
       // 高さのハザード（生成器v2）。v1のコースは持たないので undefined のまま渡る
       heightFeatures: course.heightFeatures,
       bunkerBasin: (x: number, z: number) => bunkerBasinAt(course, x, z),
+      plateau: (x: number, z: number) => plateauHeightAt(course, x, z),
     },
     (x, z) => surfaceAt(course, x, z),
   );

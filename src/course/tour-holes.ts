@@ -74,6 +74,16 @@ export interface CourseSetup {
   bareWaterChance: number;
   /** バンカーの大きさ・形・置き場所・個数の幅を広げる */
   variedBunkers: boolean;
+  /** カップの周りに置くガードバンカーの数（0＝置かない） */
+  guardBunkers: number;
+  /** 砲台グリーン（カップ周りを持ち上げ、法面をラフにする） */
+  plateau: boolean;
+  /** 芝幅の倍率。小さいほど道が細い */
+  widthScale: number;
+  /** ラフ・セカンドカットの幅の倍率。小さいほどOBが手前まで来る */
+  fringeScale: number;
+  /** くびれの深さ（0＝一定幅） */
+  waist: number;
 }
 
 export interface TourDefinition {
@@ -103,6 +113,11 @@ const SETUP = CONFIG.course.tourSetups;
  *   STANDARD 185m / 4.26m / 6個 / 18個 (3.5%) / 4本 / 44° / 1.06
  *   ADVANCED 207m / 4.06m / 4個 / 20個 (4.3%) / 2本 / 50° / 1.27
  *   EXPERT   213m / 3.85m / 8個 / 23個 (3.3%) / 6本 / 84° / 1.39
+ *   LAB      211m / 2.56m / 6個 / 28個        / 4本 / 92° / 1.61
+ *
+ * **LAB は実験用。** 砲台グリーン・カップ周りのガードバンカー・細い道・くびれを全部入れた。
+ * 中心線からOBまでが平均2.61m しかない（既存4コースは5.0〜6.5m）ので、
+ * **OBが初めて罰打ハザードとして働く**。
  *
  * **BEGINNER は実機で「このままでいい」と出たので据え置く。**
  * 新しいつまみは全部オフなので、生成器を触っても出力は1ビットも変わらない
@@ -159,6 +174,22 @@ export const TOUR_SETS = [
     //   H4 (920) 55.6° / H6 (1742) 41.7° / H8 (1545) 27.5° は緩く、角ばかりにしない
     seeds: [1087, 1931, 1612, 920, 1019, 1742, 1146, 1545, 694],
   },
+  {
+    id: 'laboratory',
+    name: { ja: 'LAB', en: 'LAB' },
+    description: {
+      ja: '実験。砲台・カップ周りの砂・細い道・くびれを全部入れた',
+      en: 'Experiment: raised greens, greenside sand, a narrow corridor.',
+    },
+    generator: 'v2',
+    setup: SETUP.laboratory,
+    // 試したい要素を全部入れた9ホール。**上の4コースはこれで1つも変わらない**
+    //   H2 (411) 総回頭角 287.1°・遠回り率1.61 ＝ v1の最大(1.64)に並ぶS字
+    //   H3 (711) 128.3°・遠回り1.42、H7 (603) 118.5°・遠回り1.34
+    //   芝幅は平均2.56m（EXPERT の3.85mよりさらに1.3m狭い）、
+    //   中心線からOBまで平均2.61m（既存4コースは5.0〜6.5m）
+    seeds: [286, 411, 711, 251, 1011, 410, 603, 236, 1008],
+  },
 ] as const satisfies readonly TourDefinition[];
 
 export const DEFAULT_TOUR = TOUR_SETS[0];
@@ -176,6 +207,11 @@ export const DEFAULT_SETUP: CourseSetup = {
   wideSCurve: false,
   bareWaterChance: 0,
   variedBunkers: false,
+  guardBunkers: 0,
+  plateau: false,
+  widthScale: 1,
+  fringeScale: 1,
+  waist: 0,
 };
 
 /** 仕立てから、生成器へ渡すオプションを作る */
@@ -185,6 +221,11 @@ export function generateOptionsFor(setup: CourseSetup) {
     wideSCurve: setup.wideSCurve,
     bareWaterChance: setup.bareWaterChance,
     variedBunkers: setup.variedBunkers,
+    guardBunkers: setup.guardBunkers,
+    plateau: setup.plateau,
+    widthScale: setup.widthScale,
+    fringeScale: setup.fringeScale,
+    waist: setup.waist,
   };
 }
 
