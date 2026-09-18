@@ -84,6 +84,25 @@ export interface CourseSetup {
   fringeScale: number;
   /** くびれの深さ（0＝一定幅） */
   waist: number;
+  /**
+   * ティー側に必ず残す直線区間（ルート全長に対する割合）。
+   * **0.4 なら、ティーショットをホール長の4割ぶん真っ直ぐ転がせる**
+   */
+  teeStraightRun: number;
+}
+
+/**
+ * ホール1本の指定。**シードが正本**で、`setup` はそのホールだけの上書き。
+ *
+ * LAB のように**ホールごとに違う仕掛けを試すコース**で使う。
+ * 上書きしなければコースの仕立て（`TourDefinition.setup`）のまま
+ */
+export interface TourHole {
+  seed: number;
+  /** そのホールだけ仕立てを上書きする（省略＝コースの仕立てのまま） */
+  setup?: Partial<CourseSetup>;
+  /** そのホールで試している仕掛け。マップ一覧とコメントのための短い名前 */
+  label?: string;
 }
 
 export interface TourDefinition {
@@ -95,6 +114,11 @@ export interface TourDefinition {
   description: LocalizedText;
   /** ホール1から順に並べた生成シード */
   seeds: readonly number[];
+  /**
+   * ホールごとの仕立ての上書き。**`seeds` と同じ並び・同じ長さ**。
+   * 省略すると全ホールがコースの仕立てで作られる（既存の4コースはこちら）
+   */
+  holes?: readonly TourHole[];
   /** どの生成器で作るか。**省略時は 'v1'**（過去のセットを作り直さないため） */
   generator?: 'v1' | 'v2';
   /** コースの仕立て。**省略時は config の既定** */
@@ -102,6 +126,50 @@ export interface TourDefinition {
 }
 
 const SETUP = CONFIG.course.tourSetups;
+const F = CONFIG.course.labFeatures;
+
+/**
+ * **LAB の12ホール。** 仕掛けを1つずつ試すホールと、組み合わせを試すホールを分ける。
+ *
+ * 実機で「1ホールに全部入れるのではなく、**ホールごとに違う要素・違う組み合わせ**に」
+ * と出たので、`tourSetups.laboratory`（仕掛けゼロ）へホール単位で `labFeatures` を足す。
+ * H1 は**仕掛けなしの基準**で、他のホールとの違いをここと比べて感じ取る。
+ *
+ * 並べる順は「単体8本 → 組み合わせ4本」。組み合わせを後ろに置くと、
+ * 先に単体で覚えた手応えが組み合わせで効くようになる。
+ *
+ * **全ホール共通で、ティー側にホール長の35%の直線がある**（`teeStraightRun`）。
+ * 実機で「S字がティーの近くで曲がるとティーショットを全然しっかり打てない」と出たため。
+ * 曲がれる量は曲がる区間の長さで頭打ちになるので、
+ * **同じ回頭角を出すには曲率半径を詰めるしかない**（`corner` と `sCurve` が半径も下げる理由）。
+ */
+const LAB_HOLES: readonly TourHole[] = [
+  //              PAR / 全長 / 形          / その仕掛けの実測
+  /* H1  */ { seed: 940, label: '仕掛けなし' },
+  //              3 / 13.0m / serpentine    / 芝4.76m。ここが基準
+  /* H2  */ { seed: 201, label: '砲台', setup: F.plateau },
+  //              4 / 26.4m / sweepingDogleg / 砲台17cm・花道5.0m
+  /* H3  */ { seed: 907, label: 'くびれ', setup: F.waist },
+  //              3 / 10.7m / gentleCurve   / いちばん細いところが7割
+  /* H4  */ { seed: 997, label: 'カップ周りの砂', setup: F.guard },
+  //              4 / 19.0m / sweepingDogleg / カップ2m以内に砂3個。**うち3個が奥**
+  /* H5  */ { seed: 539, label: '細い道', setup: F.narrow },
+  //              4 / 22.3m / gentleCurve   / 芝1.96m・中心線からOBまで2.29m
+  /* H6  */ { seed: 973, label: '角', setup: F.corner },
+  //              4 / 27.1m / sweepingDogleg / 回頭117°・遠回り1.35（このコース最大）
+  /* H7  */ { seed: 286, label: '岸なし池', setup: F.bareWater },
+  //              4 / 24.0m / gentleCurve   / 池2個ともフェアウェイが直接水に接する
+  /* H8  */ { seed: 895, label: 'S字', setup: F.sCurve },
+  //              5 / 28.7m / serpentine    / 回頭165°・遠回り1.15
+  /* H9  */ { seed: 243, label: '砂だらけ', setup: F.variedSand },
+  //              4 / 15.6m / sweepingDogleg / 砂3個。短いのに砂で刻ませる
+  /* H10 */ { seed: 282, label: '砲台＋カップ周りの砂', setup: { ...F.plateau, ...F.guard } },
+  //              4 / 25.7m / gentleCurve   / 砲台17cm ＋ カップ周りの砂3個（奥2個）
+  /* H11 */ { seed: 250, label: '細い道＋くびれ', setup: { ...F.narrow, ...F.waist } },
+  //              5 / 30.3m / sweepingDogleg / 芝2.06m・OB2.43m・さらに7割へ絞る
+  /* H12 */ { seed: 1113, label: 'S字＋角＋岸なし池', setup: { ...F.sCurve, ...F.corner, ...F.bareWater } },
+  //              5 / 30.5m / serpentine    / 回頭135°・池2個とも岸なし。**このコース最長**
+];
 
 /**
  * 通常ツアーの4コース。**やさしい順に並べる**（一覧はこの順で出る）。
@@ -177,20 +245,18 @@ export const TOUR_SETS = [
   {
     id: 'laboratory',
     name: { ja: 'LAB', en: 'LAB' },
+    // **ここだけ12ホール。** 枠に出る一行なので、ホール数もここで伝える
     description: {
-      ja: '実験。砲台・カップ周りの砂・細い道・くびれを全部入れた',
-      en: 'Experiment: raised greens, greenside sand, a narrow corridor.',
+      ja: '実験の12ホール。仕掛けを1つずつ、後半は組み合わせで',
+      en: '12 holes. One new idea per hole, combined in the back half.',
     },
     generator: 'v2',
     setup: SETUP.laboratory,
-    // 試したい要素を全部入れた9ホール。**上の4コースはこれで1つも変わらない**
-    //   H2 (411) 総回頭角 287.1°・遠回り率1.61 ＝ v1の最大(1.64)に並ぶS字
-    //   H3 (711) 128.3°・遠回り1.42、H7 (603) 118.5°・遠回り1.34
-    //   芝幅は平均2.56m（EXPERT の3.85mよりさらに1.3m狭い）、
-    //   中心線からOBまで平均2.61m（既存4コースは5.0〜6.5m）
-    seeds: [286, 411, 711, 251, 1011, 410, 603, 236, 1008],
+    // **正本は `LAB_HOLES`。** シード列はそこから写すのではなく、そこから作る
+    seeds: LAB_HOLES.map((hole) => hole.seed),
+    holes: LAB_HOLES,
   },
-] as const satisfies readonly TourDefinition[];
+] satisfies readonly TourDefinition[];
 
 export const DEFAULT_TOUR = TOUR_SETS[0];
 
@@ -212,6 +278,7 @@ export const DEFAULT_SETUP: CourseSetup = {
   widthScale: 1,
   fringeScale: 1,
   waist: 0,
+  teeStraightRun: 0,
 };
 
 /** 仕立てから、生成器へ渡すオプションを作る */
@@ -226,10 +293,27 @@ export function generateOptionsFor(setup: CourseSetup) {
     widthScale: setup.widthScale,
     fringeScale: setup.fringeScale,
     waist: setup.waist,
+    teeStraightRun: setup.teeStraightRun,
   };
 }
 
 /** そのツアーの仕立て。省略しているセットは既定値を返す */
 export function setupOf(tour: TourDefinition): CourseSetup {
   return tour.setup ?? DEFAULT_SETUP;
+}
+
+/**
+ * そのツアーの**ホール1本**の仕立て。
+ * `holes[index].setup` があればコースの仕立てへ重ねる（無ければコースのまま）
+ */
+export function setupOfHole(tour: TourDefinition, index: number): CourseSetup {
+  const base = setupOf(tour);
+  const override = tour.holes?.[index]?.setup;
+  return override ? { ...base, ...override } : base;
+}
+
+/** シードからそのホールの仕立てを引く。**シードはツアー内で重複しない** */
+export function setupOfSeed(tour: TourDefinition, seed: number): CourseSetup {
+  const index = tour.seeds.indexOf(seed);
+  return index < 0 ? setupOf(tour) : setupOfHole(tour, index);
 }

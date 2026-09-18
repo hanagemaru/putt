@@ -118,8 +118,16 @@ export interface GreenPlateau {
   center: CoursePoint;
   /** 上面（平ら・通常芝）の半径 [m] */
   innerRadius: number;
-  /** 法面の外側の半径 [m]。ここで高さが元に戻る */
-  outerRadius: number;
+  /** 法面（ラフ・急）の幅 [m]。横と奥はこの幅で落ちる */
+  shoulder: number;
+  /** 花道（通常芝・緩い坂）の長さ [m]。`shoulder` より長い */
+  laneRun: number;
+  /** 花道の向き [rad]。**カップから見て花道のある側**（+Z を 0） */
+  laneBearing: number;
+  /** 花道の角度の半幅 [rad]。この中は通常芝のまま */
+  laneHalfAngle: number;
+  /** 法面へ戻し終える角度 [rad]。半幅との差が緩衝帯（ラフ） */
+  laneFadeAngle: number;
   /** 持ち上げる高さ [m] */
   rise: number;
 }

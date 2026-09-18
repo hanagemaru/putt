@@ -19,9 +19,19 @@ import { CONFIG } from '../src/config.ts';
 import { Green, defaultGreenParams } from '../src/green.ts';
 import { generateCourseV2Detailed, routeMetrics } from '../src/course/course-generate-v2.ts';
 import { generateCourseDetailed } from '../src/course/course-generate.ts';
-import { bunkerBasinAt, plateauHeightAt, surfaceAt } from '../src/course/course-map.ts';
+import {
+  bunkerBasinAt,
+  plateauHeightAt,
+  surfaceAt,
+  teeStraightDistance,
+} from '../src/course/course-map.ts';
 import { validateCourse } from '../src/course/course-validate.ts';
-import { TOUR_SETS, generateOptionsFor, setupOf } from '../src/course/tour-holes.ts';
+import {
+  TOUR_SETS,
+  generateOptionsFor,
+  setupOf,
+  setupOfHole,
+} from '../src/course/tour-holes.ts';
 import type { TourDefinition } from '../src/course/tour-holes.ts';
 import type { CourseDefinition, SurfaceType, TerrainType } from '../src/course/course-types.ts';
 
@@ -29,7 +39,7 @@ const G = CONFIG.green;
 const SHADE = G.shade;
 
 /**
- * 1メートルあたりのピクセル数。**36ホールすべてで同じ**なので、
+ * 1メートルあたりのピクセル数。**全ホールで同じ**なので、
  * 画像の大きさの違いがそのままコースの広さの違いになる。
  * いちばん大きい枠が 22.5m × 44m なので、11px/m で 248 × 484px。
  * CSS 側も等倍で置く（`width: 100%` にすると縮尺が揃わなくなる）
@@ -207,6 +217,14 @@ interface HoleCard {
   bareShore: boolean;
   bunkers: number;
   bunkerRatio: number;
+  /** ティーから真っ直ぐ転がせる距離 [m] */
+  teeRun: number;
+  /** 同じものをホール長で割った割合。**1/3 を下回ると1打目が打てない** */
+  teeRunRatio: number;
+  /** 砲台グリーンの高さ [m]。無ければ 0 */
+  plateauRise: number;
+  /** そのホールで試している仕掛け（LAB だけ）。無ければ空 */
+  label: string;
   png: string;
   w: number;
   h: number;
@@ -246,17 +264,18 @@ const LIVE_V1_TOURS: readonly TourDefinition[] = [
 ];
 
 function cardsFor(tour: TourDefinition): HoleCard[] {
-  const setup = setupOf(tour);
-  const options = generateOptionsFor(setup);
   return tour.seeds.map((seed, i) => {
+    // **仕立てはホールごとに違うことがある**（LAB はホール単位で仕掛けを入れ替える）
+    const setup = setupOfHole(tour, i);
     const generated =
       (tour.generator ?? 'v1') === 'v2'
-        ? generateCourseV2Detailed(seed, options)
+        ? generateCourseV2Detailed(seed, generateOptionsFor(setup))
         : generateCourseDetailed(seed);
     const course = generated.course;
     const shape = 'plan' in generated ? generated.plan.shape : course.name;
     const metrics = routeMetrics(course.route);
     const image = renderHole(course, setup.undulationGain);
+    const teeRun = teeStraightDistance(course);
     return {
       hole: i + 1,
       seed,
@@ -271,6 +290,11 @@ function cardsFor(tour: TourDefinition): HoleCard[] {
       bareShore: course.waterFringe === 0,
       bunkers: (course.bunkers ?? []).length,
       bunkerRatio: validateCourse(course, { cellSize: 0.2 }).areaRatio.bunker * 100,
+      teeRun,
+      // ホール長で切る（真っ直ぐ抜ける道ならホール長を超えて測れてしまう）
+      teeRunRatio: metrics.length > 0 ? Math.min(teeRun, metrics.length) / metrics.length : 0,
+      plateauRise: course.plateau?.rise ?? 0,
+      label: tour.holes?.[i]?.label ?? '',
       png: Buffer.from(image.png).toString('base64'),
       w: image.w,
       h: image.h,
@@ -291,15 +315,20 @@ function sectionFor(tour: TourDefinition): string {
   const holes = cards
     .map((c) => {
       const tags = [
+        c.label ? `<span class="tag feat">${escapeHtml(c.label)}</span>` : '',
         c.detour >= 1.15 ? '<span class="tag turn">回り込む</span>' : '',
         c.bareShore && c.water > 0 ? '<span class="tag bare">岸なし池</span>' : '',
+        // ティーショットがホール長の1/3も転がせないホールは、1打目が意味を失う
+        c.teeRunRatio < 1 / 3 ? '<span class="tag short">1打目が短い</span>' : '',
       ].join('');
+      const plateau = c.plateauRise > 0 ? ` ・ 砲台 ${(c.plateauRise * 100).toFixed(0)}cm` : '';
       return `      <figure>
         <img src="data:image/png;base64,${c.png}" width="${c.w}" height="${c.h}" alt="ホール${c.hole}を真上から">
         <figcaption>
           <span class="hole-no">H${c.hole}</span> <span class="par">PAR ${c.par}</span> ${c.length.toFixed(1)}m${tags}
           <span class="facts">seed ${c.seed} ・ ${escapeHtml(c.shape)} ・ ${escapeHtml(c.terrain)}<br>
           芝幅 ${c.width.toFixed(1)}m ・ 曲がり ${c.turn.toFixed(0)}° ・ 遠回り ${c.detour.toFixed(2)}<br>
+          1打目 ${c.teeRun.toFixed(1)}m（${(c.teeRunRatio * 100).toFixed(0)}%）${plateau}<br>
           池 ${c.water} ・ 砂 ${c.bunkers}（${c.bunkerRatio.toFixed(1)}%）</span>
         </figcaption>
       </figure>`;
@@ -308,10 +337,14 @@ function sectionFor(tour: TourDefinition): string {
   const avg = (pick: (c: HoleCard) => number) => cards.reduce((n, c) => n + pick(c), 0) / cards.length;
   const generator = tour.generator ?? 'v1';
   const setupLine =
-    generator === 'v2'
-      ? `仕立て: うねり×${setup.undulationGain} ・ ${setup.stimpFeet}ft ・ 曲率半径×${setup.turnRadiusScale}
-        ・ S字${setup.wideSCurve ? '大' : '標準'} ・ 岸なし池 ${setup.bareWaterChance} ・ 砂の幅${setup.variedBunkers ? '広' : '標準'}`
-      : `仕立て: 生成器v1（バンカーも高さのハザードも無い）・うねり×${setup.undulationGain} ・ ${setup.stimpFeet}ft`;
+    generator !== 'v2'
+      ? `仕立て: 生成器v1（バンカーも高さのハザードも無い）・うねり×${setup.undulationGain} ・ ${setup.stimpFeet}ft`
+      : tour.holes
+        ? // ホールごとに仕掛けを入れ替えるコースは、コース単位の値を並べても意味がない
+          `仕立て: ホールごとに違う（各ホールの札を見る）・うねり×${setup.undulationGain} ・ ${setup.stimpFeet}ft
+        ・ ティー側の直線 ${(setup.teeStraightRun * 100).toFixed(0)}%`
+        : `仕立て: うねり×${setup.undulationGain} ・ ${setup.stimpFeet}ft ・ 曲率半径×${setup.turnRadiusScale}
+        ・ S字${setup.wideSCurve ? '大' : '標準'} ・ 岸なし池 ${setup.bareWaterChance} ・ 砂の幅${setup.variedBunkers ? '広' : '標準'}`;
   const title = generator === 'v2' ? tour.name.en : `${tour.name.ja}`;
   return `  <section>
     <div class="course-head">
@@ -320,6 +353,8 @@ function sectionFor(tour: TourDefinition): string {
         全長 ${total.toFixed(0)}m ・ 平均芝幅 ${avg((c) => c.width).toFixed(2)}m ・
         平均曲がり ${avg((c) => c.turn).toFixed(0)}° ・ 遠回り最大 ${Math.max(...cards.map((c) => c.detour)).toFixed(2)} ・
         池 ${cards.reduce((n, c) => n + c.water, 0)}個 ・ 砂 ${cards.reduce((n, c) => n + c.bunkers, 0)}個<br>
+        1打目の最短 ${Math.min(...cards.map((c) => c.teeRunRatio * 100)).toFixed(0)}% ・
+        平均 ${avg((c) => c.teeRunRatio * 100).toFixed(0)}%（ホール長に対して真っ直ぐ転がせる割合）<br>
         <span class="setup">${setupLine}</span>
       </p>
     </div>
@@ -351,6 +386,10 @@ const html = `<title>Putt ツアーマップ</title>
     --turn-bg: #6b4118;
     --bare: #a8d6ff;
     --bare-bg: #18456b;
+    --feat: #e8ffb0;
+    --feat-bg: #3d5210;
+    --short: #ffb0b0;
+    --short-bg: #6b1818;
     /* ゲーム本体と同じドット絵フォント。無ければ等幅へ落とす */
     --pixel: "DotGothic16", "Hiragino Sans", system-ui, sans-serif;
     --data: ui-monospace, "SFMono-Regular", Menlo, "Hiragino Sans", monospace;
@@ -450,6 +489,8 @@ const html = `<title>Putt ツアーマップ</title>
   }
   .tag.turn { background: var(--turn-bg); color: var(--turn); }
   .tag.bare { background: var(--bare-bg); color: var(--bare); }
+  .tag.feat { background: var(--feat-bg); color: var(--feat); }
+  .tag.short { background: var(--short-bg); color: var(--short); }
   @media (max-width: 300px) { .holes { grid-template-columns: 1fr; } }
 </style>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
@@ -457,8 +498,8 @@ const html = `<title>Putt ツアーマップ</title>
 <h1>Putt ツアーマップ</h1>
 <p class="lead">
   ブランチの新しい${TOUR_SETS.length}コースと、いま本番で遊べる${LIVE_V1_TOURS.length}コース。
-  合わせて${(TOUR_SETS.length + LIVE_V1_TOURS.length) * 9}ホールを真上から。<br>
-  <b>36ホールすべて縮尺が同じ</b>なので、画像の大きさの違いがそのままコースの広さの違いになる。
+  合わせて${[...TOUR_SETS, ...LIVE_V1_TOURS].reduce((n, t) => n + t.seeds.length, 0)}ホールを真上から。<br>
+  <b>すべて縮尺が同じ</b>なので、画像の大きさの違いがそのままコースの広さの違いになる。
   明るいほど高く、暗いほど低い（ゲーム本体のマップと同じ濃淡）。
   <b>白い丸がティー、赤い丸がカップ。</b>
 </p>
@@ -487,5 +528,6 @@ ${liveSections}
 writeFileSync(OUT_PATH, html);
 console.log(
   `${OUT_PATH} を書き出した（新しい${TOUR_SETS.length}コース ＋ 本番の${LIVE_V1_TOURS.length}コース / ` +
-    `${(TOUR_SETS.length + LIVE_V1_TOURS.length) * 9}ホール / ${(html.length / 1024).toFixed(0)}KB）`,
+    `${[...TOUR_SETS, ...LIVE_V1_TOURS].reduce((n, t) => n + t.seeds.length, 0)}ホール` +
+      ` / ${(html.length / 1024).toFixed(0)}KB）`,
 );

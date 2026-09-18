@@ -30,8 +30,9 @@ import {
   DEFAULT_SETUP,
   TOUR_SETS,
   generateOptionsFor,
-  setupOf,
+  setupOfSeed,
   tourById,
+  type CourseSetup,
 } from './course/tour-holes';
 import { CourseMapMarker } from './course-map-marker';
 import { ensurePixelFont } from './pixel-font';
@@ -79,10 +80,10 @@ const TERRAIN_LABEL: Record<TerrainType, string> = {
 function courseWithSeed(value: number): CourseDefinition {
   const seed = value >>> 0;
   if (usePrototypeCourse) return { ...PROTOTYPE_COURSE, seed };
-  if (useGeneratorV2) return generateCourseV2(seed, generateOptionsFor(generatorSetup));
+  if (useGeneratorV2) return generateCourseV2(seed, generateOptionsFor(setupForSeed(seed)));
   // ツアーは自分が使う生成器をセット定義に持つ。**省略しているセットは今までどおりv1**
   if (mode === 'tour' && selectedTour.generator === 'v2') {
-    return generateCourseV2(seed, generateOptionsFor(courseSetup));
+    return generateCourseV2(seed, generateOptionsFor(setupForSeed(seed)));
   }
   return generateCourse(seed);
 }
@@ -112,10 +113,9 @@ const useGeneratorV2 = urlParams.get('gen') === 'v2';
  * ここを通さないと**同じシードでも別のホールになる**。
  * 省略・不明なIDのときは既定の仕立て（＝生成器の素の出力）
  */
-const generatorSetup = (() => {
+const generatorTour = (() => {
   const id = urlParams.get('setup');
-  const tour = id === null ? null : TOUR_SETS.find((t) => t.id === id);
-  return tour ? setupOf(tour) : DEFAULT_SETUP;
+  return (id === null ? undefined : TOUR_SETS.find((t) => t.id === id)) ?? null;
 })();
 
 /** 遊び方（spec §6）。通常ツアーは固定9ホールを順に回り、練習は同じホールを打ち直す */
@@ -142,13 +142,21 @@ function modeFromUrl(): GameMode {
 const mode = modeFromUrl();
 
 /**
- * コースの仕立て（うねり・速さ・曲がりの鋭さ・S字・岸なしの池・バンカーの幅）。
+ * コースの仕立て（うねり・速さ・曲がりの鋭さ・S字・岸なしの池・バンカーの幅・砲台…）。
+ *
+ * **ホールごとに違うことがある。** LAB はホール単位で仕掛けを入れ替えるので、
+ * コース単位の値ではなく**シードから引く**。シードはツアー内で重複しない。
  *
  * 通常ツアーはセット定義のものを使う。練習・`?seed=`・`?gen=v2` は既定で回すが、
  * `?setup=<ツアーID>` を付けたときだけそのツアーの仕立てで出す
- * （**ツアーのホールを1本ずつ確かめるため**）
+ * （**ツアーのホールを1本ずつ確かめるため**。そのツアーに属すシードなら、
+ * そのホール用の上書きまで効く）
  */
-const courseSetup = mode === 'tour' ? setupOf(selectedTour) : generatorSetup;
+function setupForSeed(value: number): CourseSetup {
+  const seed = value >>> 0;
+  if (mode === 'tour') return setupOfSeed(selectedTour, seed);
+  return generatorTour ? setupOfSeed(generatorTour, seed) : DEFAULT_SETUP;
+}
 
 /** 通常ツアーのラウンド状態。**練習モードでは null**（ホールを進めず、同じホールを打ち直す） */
 const round = mode === 'tour' ? new Round(selectedTour.seeds) : null;
@@ -199,7 +207,7 @@ function greenParamsFor(target: CourseDefinition, amplitude: number) {
     length: target.bounds.length,
     // コースの仕立ての倍率を掛ける。**絶対値ではなく倍率にしてある**ので、
     // アンジュレーション比較モード（`UNDULATION_MODES`）は今までどおり効く
-    undulationAmplitude: amplitude * courseSetup.undulationGain,
+    undulationAmplitude: amplitude * setupForSeed(target.seed).undulationGain,
     terrain: {
       type: target.terrain,
       cup: target.cup,
@@ -219,7 +227,7 @@ function greenParamsFor(target: CourseDefinition, amplitude: number) {
  */
 function makeRoller(): Roller {
   const next = new Roller(green, course.cup);
-  next.stimpFeet = courseSetup.stimpFeet;
+  next.stimpFeet = setupForSeed(course.seed).stimpFeet;
   return next;
 }
 
