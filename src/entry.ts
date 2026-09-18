@@ -396,11 +396,9 @@ function courseEntry(tour: TourDefinition): HTMLElement {
   name.className = 'course-name';
   name.textContent = tour.name[language()];
 
-  const description = document.createElement('div');
-  description.className = 'course-description';
-  description.textContent = tour.description[language()];
-
-  card.append(name, description);
+  // **説明は出さない。** 実機で「コース選択の説明はなしでいい」と出た。
+  // 名前と自己ベストだけのほうが、4枠が縦に並んだときに読み比べやすい
+  card.append(name);
 
   const best = bestLabel(tour);
   if (best) {
@@ -966,13 +964,6 @@ function ensureMenuStyles(): void {
     .course-name {
       font-size: 16px;
       color: #9ede8a;
-    }
-    .course-description {
-      margin-top: 7px;
-      font-size: 16px;
-      line-height: 1.5;
-      letter-spacing: 0.02em;
-      color: #bcd0c0;
     }
     /* 自己ベストと再開はドット絵のラベル。角丸にせず枠で囲む */
     .course-best {
