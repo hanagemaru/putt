@@ -30,6 +30,7 @@ import {
   DEFAULT_SETUP,
   TOUR_SETS,
   generateOptionsFor,
+  generatorOfSeed,
   setupOfSeed,
   tourById,
   type CourseSetup,
@@ -81,8 +82,8 @@ function courseWithSeed(value: number): CourseDefinition {
   const seed = value >>> 0;
   if (usePrototypeCourse) return { ...PROTOTYPE_COURSE, seed };
   if (useGeneratorV2) return generateCourseV2(seed, generateOptionsFor(setupForSeed(seed)));
-  // ツアーは自分が使う生成器をセット定義に持つ。**省略しているセットは今までどおりv1**
-  if (mode === 'tour' && selectedTour.generator === 'v2') {
+  // 生成器はツアーが持つが、**ホール単位で上書きできる**（BEGINNER は v1 と v2 を混ぜている）
+  if (mode === 'tour' && generatorOfSeed(selectedTour, seed) === 'v2') {
     return generateCourseV2(seed, generateOptionsFor(setupForSeed(seed)));
   }
   return generateCourse(seed);

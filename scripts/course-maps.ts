@@ -31,6 +31,7 @@ import {
   generateOptionsFor,
   setupOf,
   setupOfHole,
+  generatorOfHole,
 } from '../src/course/tour-holes.ts';
 import type { TourDefinition } from '../src/course/tour-holes.ts';
 import type { CourseDefinition, SurfaceType, TerrainType } from '../src/course/course-types.ts';
@@ -267,8 +268,9 @@ function cardsFor(tour: TourDefinition): HoleCard[] {
   return tour.seeds.map((seed, i) => {
     // **仕立てはホールごとに違うことがある**（LAB はホール単位で仕掛けを入れ替える）
     const setup = setupOfHole(tour, i);
+    // **生成器もホールごと**（BEGINNER は v1 の風の丘と v2 を混ぜている）
     const generated =
-      (tour.generator ?? 'v1') === 'v2'
+      generatorOfHole(tour, i) === 'v2'
         ? generateCourseV2Detailed(seed, generateOptionsFor(setup))
         : generateCourseDetailed(seed);
     const course = generated.course;
@@ -342,7 +344,8 @@ function sectionFor(tour: TourDefinition): string {
       : tour.holes
         ? // ホールごとに仕掛けを入れ替えるコースは、コース単位の値を並べても意味がない
           `仕立て: ホールごとに違う（各ホールの札を見る）・うねり×${setup.undulationGain} ・ ${setup.stimpFeet}ft
-        ・ ティー側の直線 ${(setup.teeStraightRun * 100).toFixed(0)}%`
+        ・ ティー側の直線 ${(setup.teeStraightRun * 100).toFixed(0)}%
+        ${tour.holes.some((h) => h.generator === 'v1') ? '・ **生成器v1のホールを混ぜている**' : ''}`
         : `仕立て: うねり×${setup.undulationGain} ・ ${setup.stimpFeet}ft ・ 曲率半径×${setup.turnRadiusScale}
         ・ S字${setup.wideSCurve ? '大' : '標準'} ・ 岸なし池 ${setup.bareWaterChance} ・ 砂の幅${setup.variedBunkers ? '広' : '標準'}`;
   const title = generator === 'v2' ? tour.name.en : `${tour.name.ja}`;

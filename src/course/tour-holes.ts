@@ -91,6 +91,14 @@ export interface TourHole {
   seed: number;
   /** そのホールだけ仕立てを上書きする（省略＝コースの仕立てのまま） */
   setup?: Partial<CourseSetup>;
+  /**
+   * そのホールだけ別の生成器で作る（省略＝コースの生成器）。
+   *
+   * **BEGINNER だけが使う。** 本番の風の丘（v1）といまのビギナー（v2）を混ぜてあり、
+   * v1 は「狭くて真っ直ぐでハザード無し」、v2 は「広くて曲がってバンカーあり」と
+   * 性格がはっきり違うので、混ぜると9ホールの振れ幅が広がる
+   */
+  generator?: 'v1' | 'v2';
   /** そのホールで試している仕掛け。マップ一覧とコメントのための短い名前 */
   label?: string;
 }
@@ -133,10 +141,12 @@ const F = CONFIG.course.holeFeatures;
  *              芝幅の平均 / 全長 / 仕掛けの数
  *   STANDARD   4.36m / 192m / 1ホールにつき 0〜2個。池と砂は控えめ
  *   ADVANCED   3.65m / 210m / 角・岸なし池が入り、組み合わせが半分
- *   EXPERT     2.97m / 201m / 細い道が土台。ほぼ全ホールが組み合わせ
+ *   EXPERT     3.05m / 230m / 細い道が土台。ほぼ全ホールが組み合わせ
  *
- * **EXPERT は最長ではない。** 狭さと曲がりで難しくしてあるので、全長は ADVANCED より短い。
- * 長さで殴るのではなく、同じ距離を通すのが難しい。
+ * ⚠️ **EXPERT は一度 201m で出して失敗している。** 実機で
+ * 「体感は順番どおりだが、スコアは ADVANCED より4打良かった」となった。
+ * 狭さだけでは打数が増えない（狭ければ短く刻んで安全に運べてしまう）。
+ * **打数に効くのは長さ**なので、狭さを保ったまま各PARの帯の長い側へ寄せて 230m にした。
  *
  * ## どのコースにも池も砂も無いホールを2本入れる
  *
@@ -162,6 +172,48 @@ const F = CONFIG.course.holeFeatures;
  *     `defaultGreenParams` の0.15で測ると本番の判定と食い違う）
  *   - 砲台のあるホールは花道が坂の上まで通常芝で繋がっている
  */
+
+/**
+ * **BEGINNER。本番の風の丘（v1）と、いままでのビギナー（v2）を混ぜた9ホール。**
+ *
+ * 2つのセットは性格がはっきり違う。
+ *
+ *              全長 / 芝幅 / 曲がり / ハザード
+ *   風の丘(v1)  178m / 3.87m / 17° / **池も砂もゼロ**。6本が「むずかしい・ストレート」で似ている
+ *   ビギナー(v2) 152m / 5.17m / 27° / 砂8個。短くて広く、少し曲がる
+ *
+ * **似たものを並べないことだけを条件に9本選んだ。** v1 からは狭くて真っ直ぐな性格を、
+ * v2 からは広くて曲がってバンカーのある性格を取る。
+ * v1 の「むずかしい・ストレート」は5本もあって互いにそっくりなので、2本だけ使う。
+ *
+ * PAR5 は v2 を優先した。**v1 と v2 で par の境目が違う**ためで
+ * （v1 は 22m 以上が PAR5、v2 は 27.5m 以上）、v1 の PAR5 は 24.7m と短く、
+ * 同じ PAR5 でも寄せやすさが揃わない。長い側の1本だけ v1 から取っている。
+ *
+ * 並べる順は**隣り合うホールで形も地形も繰り返さない**。最終ホールが最長。
+ * 合計 PAR36 / 163m（風の丘178m といままでのビギナー152m の間）。
+ */
+const BEGINNER_HOLES: readonly TourHole[] = [
+  //            PAR / 全長 / 芝幅 / 形            / 地形
+  /* H1 */ { seed: 553, generator: 'v1', label: '風の丘' },
+  //            3 /  9.2m / 4.71m / やさしい・S字     / ポテチ。曲がり52°はこのコース最大
+  /* H2 */ { seed: 1038, generator: 'v2' },
+  //            3 / 10.9m / 5.60m / sweepingDogleg / 2段。このコースで最も広い
+  /* H3 */ { seed: 2967, generator: 'v2' },
+  //            4 / 13.4m / 5.54m / gentleCurve    / ポテチ。いちばん短いPAR4
+  /* H4 */ { seed: 232, generator: 'v1', label: '風の丘' },
+  //            4 / 22.0m / 3.87m / むずかしい・ストレート / ランダム。長くて狭い。ハザードなし
+  /* H5 */ { seed: 2358, generator: 'v2' },
+  //            4 / 14.7m / 5.39m / sweepingDogleg / 受け。砂1個
+  /* H6 */ { seed: 848, generator: 'v1', label: '風の丘' },
+  //            4 / 20.4m / 3.13m / むずかしい・ストレート / ポテチ。**このコースで最も狭い**
+  /* H7 */ { seed: 1502, generator: 'v2' },
+  //            4 / 17.5m / 5.50m / serpentine     / ランダム。砂なしで広い
+  /* H8 */ { seed: 185, generator: 'v1', label: '風の丘' },
+  //            5 / 26.2m / 3.70m / むずかしい・ストレート / 2段。真っ直ぐ長い
+  /* H9 */ { seed: 2207, generator: 'v2' },
+  //            5 / 28.3m / 4.26m / gentleCurve    / ランダム。**このコース最長**
+];
 
 /** STANDARD。広くて、仕掛けは1つずつ来る */
 const STANDARD_HOLES: readonly TourHole[] = [
@@ -208,26 +260,33 @@ const ADVANCED_HOLES: readonly TourHole[] = [
   //              5 / 29.3m / 3.26m / serpentine     / 池2個とも岸なし ＋ 砂3個。**最長**
 ];
 
-/** EXPERT。細い道が土台で、ほぼ全ホールが組み合わせ */
+/**
+ * EXPERT。細い道が土台で、ほぼ全ホールが組み合わせ。
+ *
+ * **実機で「体感は順番どおりだが、スコアは ADVANCED より4打良かった」と出たので伸ばした。**
+ * 201m → 230m（ADVANCED 210m より20m長い）。狭さは変えていない（芝幅3.05m）ので、
+ * **長くて狭い**になった。各PARの帯の長い側から選び直している
+ * （PAR3は12.3m以上／PAR4は25.5m以上／PAR5は34.9m以上。帯の上限は13・27.5・35.5m）。
+ */
 const EXPERT_HOLES: readonly TourHole[] = [
-  /* H1 */ { seed: 1196, label: '砲台＋カップ周りの砂', setup: { ...F.plateau, ...F.guard } },
-  //              3 / 11.8m / 5.48m / sweepingDogleg / 砲台12cm ＋ 砂3個（3個とも奥）
-  /* H2 */ { seed: 539, label: '細い道', setup: F.narrow },
-  //              4 / 22.3m / 1.96m / gentleCurve    / ★池も砂も無い。OBまで2.29m
-  /* H3 */ { seed: 902, label: '細い道＋角', setup: { ...F.narrow, ...F.corner } },
-  //              4 / 26.4m / 2.80m / sweepingDogleg / 回頭118°・遠回り1.38
-  /* H4 */ { seed: 1034, label: 'S字＋細い道', setup: { ...F.sCurve, ...F.narrow } },
-  //              4 / 26.2m / 2.41m / serpentine     / 回頭156°・遠回り1.18
-  /* H5 */ { seed: 1404, label: '岸なし池＋角', setup: { ...F.bareWater, ...F.corner } },
-  //              4 / 24.8m / 3.38m / sweepingDogleg / 池2個とも岸なし ＋ 回頭94°・遠回り1.22
-  /* H6 */ { seed: 1315, label: '細い道', setup: F.narrow },
-  //              3 / 12.0m / 3.00m / serpentine     / ★池も砂も無い。短いのに道だけ細い
-  /* H7 */ { seed: 250, label: '細い道＋くびれ', setup: { ...F.narrow, ...F.waist } },
-  //              5 / 30.3m / 2.06m / sweepingDogleg / OB2.43m からさらに7割へ絞る
-  /* H8 */ { seed: 643, label: '砲台＋カップ周りの砂＋細い道', setup: { ...F.plateau, ...F.guard, ...F.narrow } },
-  //              4 / 16.6m / 3.04m / gentleCurve    / 砲台15cm ＋ 砂3個（3個とも奥）＋ 細い道
-  /* H9 */ { seed: 1113, label: 'S字＋角＋岸なし池', setup: { ...F.sCurve, ...F.corner, ...F.bareWater } },
-  //              5 / 30.5m / 3.36m / serpentine     / 回頭135°・池2個とも岸なし。**最長**
+  /* H1 */ { seed: 1114, label: '細い道', setup: F.narrow },
+  //              3 / 12.9m / 3.12m / serpentine     / ★池も砂も無い。PAR3の上限いっぱい
+  /* H2 */ { seed: 387, label: '砲台＋カップ周りの砂＋細い道', setup: { ...F.plateau, ...F.guard, ...F.narrow } },
+  //              4 / 27.4m / 2.92m / gentleCurve    / 砲台17cm ＋ 砂3個 ＋ OBまで3.30m
+  /* H3 */ { seed: 1788, label: 'S字＋細い道', setup: { ...F.sCurve, ...F.narrow } },
+  //              4 / 27.2m / 2.78m / serpentine     / 回頭123°・OBまで3.00m
+  /* H4 */ { seed: 1371, label: '細い道', setup: F.narrow },
+  //              4 / 26.8m / 1.97m / gentleCurve    / ★池も砂も無い。**芝1.97m・OBまで2.39m**
+  /* H5 */ { seed: 994, label: '岸なし池＋角', setup: { ...F.bareWater, ...F.corner } },
+  //              4 / 27.4m / 3.74m / sweepingDogleg / 池2個とも岸なし ＋ 回頭87°・遠回り1.17
+  /* H6 */ { seed: 1963, label: '細い道＋角', setup: { ...F.narrow, ...F.corner } },
+  //              4 / 25.5m / 1.99m / serpentine     / 回頭100° ＋ 芝1.99m。1打目41%はこのコース最短
+  /* H7 */ { seed: 1637, label: '砲台＋カップ周りの砂', setup: { ...F.plateau, ...F.guard } },
+  //              3 / 12.3m / 5.20m / gentleCurve    / 砲台12cm ＋ 砂3個（奥2個）。ここだけ広い
+  /* H8 */ { seed: 1737, label: 'S字＋角＋岸なし池', setup: { ...F.sCurve, ...F.corner, ...F.bareWater } },
+  //              5 / 34.9m / 3.28m / serpentine     / **回頭176°・遠回り1.26。このコース最大の曲がり**
+  /* H9 */ { seed: 1645, label: '細い道＋くびれ', setup: { ...F.narrow, ...F.waist } },
+  //              5 / 35.2m / 2.46m / gentleCurve    / OBまで2.64m からさらに7割。**最長**
 ];
 
 /**
@@ -255,12 +314,14 @@ export const TOUR_SETS = [
     id: 'beginner',
     name: { ja: 'BEGINNER', en: 'BEGINNER' },
     description: {
-      ja: '短くて広い。池が無く、起伏もほとんど無い',
-      en: 'Short and wide. No water, almost no slope.',
+      ja: '池が無い。広くて曲がる道と、狭くて真っ直ぐな道が混ざる',
+      en: 'No water. Wide bending holes mixed with narrow straight ones.',
     },
+    // 生成器は**ホールごと**に指定する（v1 の風の丘と v2 のビギナーを混ぜているため）
     generator: 'v2',
     setup: SETUP.beginner,
-    seeds: [1038, 2967, 2358, 1502, 2461, 2090, 2980, 668, 2207],
+    seeds: BEGINNER_HOLES.map((hole) => hole.seed),
+    holes: BEGINNER_HOLES,
   },
   {
     id: 'standard',
@@ -360,4 +421,18 @@ export function setupOfHole(tour: TourDefinition, index: number): CourseSetup {
 export function setupOfSeed(tour: TourDefinition, seed: number): CourseSetup {
   const index = tour.seeds.indexOf(seed);
   return index < 0 ? setupOf(tour) : setupOfHole(tour, index);
+}
+
+/**
+ * そのツアーの**ホール1本**を作る生成器。
+ * ホールが指定していればそれ、無ければコースの指定、それも無ければ v1
+ */
+export function generatorOfHole(tour: TourDefinition, index: number): 'v1' | 'v2' {
+  return tour.holes?.[index]?.generator ?? tour.generator ?? 'v1';
+}
+
+/** シードからその生成器を引く。**シードはツアー内で重複しない** */
+export function generatorOfSeed(tour: TourDefinition, seed: number): 'v1' | 'v2' {
+  const index = tour.seeds.indexOf(seed);
+  return index < 0 ? (tour.generator ?? 'v1') : generatorOfHole(tour, index);
 }

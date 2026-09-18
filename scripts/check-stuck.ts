@@ -46,6 +46,7 @@ import {
   DEFAULT_SETUP,
   TOUR_SETS,
   generateOptionsFor,
+  generatorOfSeed,
   setupOfSeed,
   type CourseSetup,
   type TourDefinition,
@@ -235,9 +236,13 @@ function setupFor(seed: number): CourseSetup {
   return ARGS.tour ? setupOfSeed(ARGS.tour, seed) : ARGS.setup;
 }
 
-/** 調べる対象のコースを作る。生成器の違いはここ1箇所だけに閉じる */
+/**
+ * 調べる対象のコースを作る。生成器の違いはここ1箇所だけに閉じる。
+ * **`--tour=` のときはホールごとの生成器まで効く**（BEGINNER は v1 と v2 を混ぜている）
+ */
 function generateFor(seed: number, gen: Args['gen']): CourseDefinition {
-  return gen === 'v2'
+  const actual = ARGS.tour ? generatorOfSeed(ARGS.tour, seed) : gen;
+  return actual === 'v2'
     ? generateCourseV2(seed, generateOptionsFor(setupFor(seed)))
     : generateCourse(seed);
 }
