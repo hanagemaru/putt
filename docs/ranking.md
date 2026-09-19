@@ -1,7 +1,8 @@
 # オンラインランキング 設計と実装
 
 作成: 2026-09-16 / 更新: 2026-09-17 /
-状態: **§7 の 1〜3 は実装済み・実機確認OK（2026-09-17）。次は段4（D1の作成と、登録・取得のAPI）**
+状態: **§7 の 1〜4 は実装済み（1〜3は実機確認OK・2026-09-17）。
+残りは D1 の作成と、リプレイ検証（段5）**
 
 決めたこと: **無料枠のまま**・**検証はGitHub ActionsのバッチでNodeで再生**・
 **同打数は `T3` 同順位**・**ギブアップを含むラウンドも登録可**（詳細は §8）。
@@ -411,7 +412,8 @@ Putt の `wrangler.jsonc` は現在 Static Assets だけで `main` を持たな�
 2. ~~**ホールの規則の切り出し**（§4-6の1）~~ **実装済み。`src/hole-sim.ts`**
 3. ~~**器**: Worker と D1 のスキーマ、`/api/health`、identity・表示名・`DELETE /api/player`~~
    **実装済み。ただしD1そのものはまだ作っていない**（下の §10）
-4. **登録と取得**（段1の検証まで）＋モックを本物に差し替え・保留再送・失敗時の握り潰し
+4. ~~**登録と取得**（段1の検証まで）＋モックを本物に差し替え・保留再送・失敗時の握り潰し~~
+   **実装済み（2026-09-19）。D1を作れば動く**
 5. **リプレイ検証（段2）**: `scripts/verify-records.ts`（仮）と定期ワークフロー。
    `pending` を読んで再生し、`verified` / `suspicious` を書き戻す
 6. **プライバシーの文言とハブ側の更新**（実装と同じ変更で）
@@ -458,7 +460,8 @@ Putt の `wrangler.jsonc` は現在 Static Assets だけで `main` を持たな�
 | `src/ranking-client.ts` | 画面が見る窓口。identity・表示名・保留の再送・API呼び出し |
 | `src/ranking-view.ts` | ランキング表と、名前を決める1枚 |
 | `src/hole-sim.ts` | 罰打・打ち直しの位置・ホールアウト・ギブアップの線（§4-6の1） |
-| `src/server/worker.ts` | `/api/health`・`PUT /api/player`・`DELETE /api/player` |
+| `src/server/worker.ts` | `/api/health`・`/api/rankings`・`/api/records`・`/api/player`（PUT / DELETE） |
+| `src/server/record-validation.ts` | 段1の検証。形と常識だけを見て、**合計は数え直す** |
 | `migrations/0001_ranking.sql` | 4つの表（§5-1のまま） |
 
 ### 10-2. 設計から変えたところ
@@ -496,11 +499,43 @@ Putt の `wrangler.jsonc` は現在 Static Assets だけで `main` を持たな�
 **枠の中のスクロールで最後まで見られた**（`#score-card.list` の作りがそのまま効いている）。
 「ランキング」を一覧の上へ1行で置く案は**採らない**。
 
-### 10-4. 次にやること
+### 10-4. 登録と取得（段4・2026-09-19）
 
-- **D1を作る。** `npx wrangler d1 create putt-ranking` → 出た `database_id` を
-  `wrangler.jsonc` のコメントを外して書き、`npm run db:migrate` を通す。
-  作るまでは `/api/player` が 503 を返すだけで、ゲームの配信には影響しない
-- 段4（登録と取得）。`POST /api/records` と `GET /api/rankings` はいま 501 を返す。
-  ここで**打ち出しの列**（`SubmitRecordRequest.shots`、いまは空配列）も積み始める
-- プライバシーの文言（§5-3）は、**登録が本当に動き出す段4と同じ変更で**ハブ側を直す
+- **`POST /api/records`**: 自己ベストのときだけ書き換える（`WHERE excluded.total_strokes <
+  records.total_strokes`）。同じ `submissionId` は `submission_log` で弾き、
+  **1回目と同じ答えを返す**（電波が切れて送り直しても二重登録にならない）
+- **`GET /api/rankings`**: 上位10件＋自分の周辺±3。
+  **同打数は `RANK()`（打数だけで並べる）で同じ番号**になり、次が飛ぶ。
+  切り出しは `ROW_NUMBER()`（打数 → 到達時刻 → playerId）で行う。
+  `suspicious` は板から外し、`pending`（検証待ち）は載せる
+- **段1の検証**（`src/server/record-validation.ts`）: ホールの形・par・打数の範囲、
+  **合計を数え直して突き合わせ**、規則の版、ありえない初速、打数より多い打ち出し。
+  `shots` は空でもよい（途中保存から再開したラウンドでは揃わない）
+- **打ち出しの列を積み始めた。** `launch()` が `[初速, 方向]` をホールごとに溜め、
+  ホールアウトで `Round` に入り、ラウンド完走でそのまま送られる。
+  進行の保存にも入るが**後から足した任意項目**なので、古い保存の復元は壊れない
+- 登録直後の状態は `CONFIG.game.ranking.server.initialStatus`。
+  **段5（リプレイ検証）を入れたら `pending` にする**
+
+手元の D1（`wrangler dev --local`）で確認したこと:
+
+| 見たところ | 結果 |
+|---|---|
+| 登録・二重送信・悪いスコア・良いスコア・同打数 | 期待どおり（同打数は `newBest: false`） |
+| 同打数4人 → `T2`、次が `6` | ゴルフ流になっている |
+| 37人の板で圏外の人を見る | 上位10＋周辺±3、間に `…` が1本 |
+| 他人のIDを名乗る | 401（credential のハッシュが合わない） |
+| 合計不一致・版違い・初速50m/s・打ちすぎ・板IDが変 | 422 で理由付き |
+| 連打 | 429（用途ごとに数える） |
+| ビルドしたゲームをWorkerから配って画面から取得・表示名の更新 | 表も `PUT /api/player` も通る |
+
+### 10-5. 次にやること
+
+- **D1を作る（残っているのはこれだけ）。**
+  `npx wrangler d1 create putt-ranking` → 出た `database_id` を `wrangler.jsonc` の
+  コメントを外して書き、`npm run db:migrate`。**Cloudflareの認証が要る作業**
+- **既定を `api` にするのは固定コースの確定後**（`CONFIG.game.ranking.source`）。
+  板IDはシード列から作るので、確定前に集めた記録は差し替えで別の板に取り残される
+- 段5（リプレイ検証）: `scripts/verify-records.ts` と定期ワークフロー。
+  `pending` を読んで再生し、`verified` / `suspicious` を書き戻す
+- プライバシーの文言（§5-3）は、**登録が本当に動き出すのと同じ変更で**ハブ側を直す
