@@ -17,6 +17,7 @@ import {
 } from './course-noise';
 
 const N = CONFIG.course.edgeNoise;
+const B = CONFIG.course.generatorV2.bunker;
 
 const BAND_FBM: FbmParams = {
   octaves: N.bandOctaves,
@@ -276,6 +277,7 @@ function isInsideSand(
   outline: AngularHarmonics[],
   x: number,
   z: number,
+  margin = 0,
 ): boolean {
   const baseX = (x - bunker.center.x) / bunker.radiusX;
   const baseZ = (z - bunker.center.z) / bunker.radiusZ;
@@ -283,7 +285,11 @@ function isInsideSand(
   const theta = Math.atan2(baseZ, baseX);
   const amplitude = bunker.outline?.amplitude ?? N.bunkerAmplitude;
   const limit = 1 + amplitude * evalAngularHarmonics(outline, theta);
-  return Math.hypot(baseX, baseZ) <= limit;
+  if (margin <= 0) return Math.hypot(baseX, baseZ) <= limit;
+  // 縁を外へ広げる。池の岸（`isInsideHazard` の fringe）と同じやり方
+  const dx = (x - bunker.center.x) / (bunker.radiusX + margin);
+  const dz = (z - bunker.center.z) / (bunker.radiusZ + margin);
+  return Math.hypot(dx, dz) <= limit;
 }
 
 /**
@@ -309,12 +315,12 @@ function sandNormalizedRadius(
 /**
  * バンカーの内側か。**v1のコースはバンカーを持たないので、そのまま false を返す。**
  */
-function isInsideBunker(course: CourseDefinition, x: number, z: number): boolean {
+function isInsideBunker(course: CourseDefinition, x: number, z: number, margin = 0): boolean {
   const bunkers = course.bunkers;
   if (!bunkers || bunkers.length === 0) return false;
   const shapes = bunkerShapes(course);
   for (let i = 0; i < bunkers.length; i++) {
-    if (isInsideSand(bunkers[i], shapes[i], x, z)) return true;
+    if (isInsideSand(bunkers[i], shapes[i], x, z, margin)) return true;
   }
   return false;
 }
@@ -413,15 +419,20 @@ export function surfaceAt(course: CourseDefinition, x: number, z: number): Surfa
   if (isInsideWater(course, x, z, course.waterFringe)) return 'rough';
 
   const band = bandSurfaceAt(course, x, z);
-  // バンカー（生成器v2）。**芝の上だけを砂にする。**
-  // OBを砂へ変えることはないので、OB面積比も芝の連結もバンカーの有無で変わらない
-  // （砂は罰打なしで打てるので、連結の判定では芝と同じ扱い）。
-  // v1のコースはバンカーを持たないので、ここは必ず素通りする
+  // バンカー（生成器v2）。**帯に関わらず砂として塗る。**
+  //
+  // 以前は芝の上だけを砂にしていたので、半径がOBへ届いた砂はそこで切り落とされ、
+  // 見た目には「砂がOBへめり込む」状態になっていた（実機で EXPERT H1 の指摘）。
+  // 置くのをやめると砂の少ないホールが増えるので、**境界のほうを砂の形へ合わせる**。
+  // OB側へはみ出した分は、すぐ下で打てる地面に変える。
   //
   // **砲台の法面より先に見る。** 逆にすると、法面の輪がガードバンカーを横切って
   // ラフに塗り替えてしまう（実機で「砂がラフで不自然に横切られている」と出た）。
   // 砂は砂で、坂の上にあっても砂であることは変わらない
-  if (band !== 'ob' && isInsideBunker(course, x, z)) return 'bunker';
+  if (isInsideBunker(course, x, z)) return 'bunker';
+  // **OB境界を砂の形に沿って膨らませる。** 砂の縁の外 `obClearance` ぶんは必ず打てる地面。
+  // 実際のゴルフでバンカーが直接OBへ繋がることはない
+  if (band === 'ob' && isInsideBunker(course, x, z, B.obClearance)) return 'deepRough';
   // 砲台グリーンの法面は**ラフにする**。通常芝は勾配7.8%で止まらなくなるが、
   // ラフは27.4%まで止まれるので、ここをラフにして初めて「高い段」が成立する。
   // 芝の外（セカンドカット・OB）は塗り替えない
