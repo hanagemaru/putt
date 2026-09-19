@@ -13,29 +13,56 @@ const R = CONFIG.game.ranking;
 /** 名前を入れていない人の表示名。サーバも同じ既定を使う */
 export const DEFAULT_PLAYER_NAME = 'PLAYER';
 
-/**
- * 通常ツアーを作っている生成器。**板IDに入るので、v2へ繋ぐときにここを変える。**
- * 変えれば板が分かれ、v1のコースで出した打数がv2のコースの記録に混ざらない。
- * 将来 `TourDefinition.generator` を足したらそちらを正本にする（`docs/ranking.md` §2-1）
- */
 export type GeneratorVersion = 'v1' | 'v2';
-export const TOUR_GENERATOR: GeneratorVersion = 'v1';
+
+/**
+ * 板IDを決めるのに要るぶんだけのツアー（`TourDefinition` がそのまま入る）。
+ * **course の型を持ち込まないため**に、構造だけで受ける（ここはWorkerからも読む）
+ */
+export interface TourIdentity {
+  id: string;
+  seeds: readonly number[];
+  generator?: GeneratorVersion;
+  setup?: unknown;
+  holes?: readonly unknown[];
+}
+
+/** FNV-1a 32bit。`src/round-storage.ts` の `seedsId` と同じ作り */
+function fnv1a(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+/**
+ * コースの作り方そのものの指紋。**これが同じなら、出てくる27ホールは同じ。**
+ *
+ * シード列だけでは足りない。いまの固定コースは
+ * **ホールごとの仕立て（`holes[].setup`）と生成器（`holes[].generator`）**でも中身が変わるので、
+ * 「シードは同じまま細い道を1本足す」と別のコースになるのに板が分かれない。
+ * 生成に効くものを全部入れて、**中身が変わったら板も分かれる**ようにする。
+ *
+ * 名前と説明は入れない（変えても同じコースなので、板を分ける理由がない）。
+ */
+export function tourFingerprint(tour: TourIdentity): string {
+  return fnv1a(
+    JSON.stringify([tour.seeds, tour.generator ?? 'v1', tour.setup ?? null, tour.holes ?? null]),
+  );
+}
 
 /**
  * 板（ランキングの単位）のID。**これが違えば別のランキング。**
  *
- *   `tour:<tourId>:<generator>:<seedsId>:r<rulesVersion>`
+ *   `tour:<tourId>:<generator>:<fingerprint>:r<rulesVersion>`
  *
- * `seedsId` はシード列のFNV-1a（`src/round-storage.ts`）。
- * **固定ホールを選び直せば板が自動的に分かれる**ので、古い記録が新しいコースの
+ * **コースの中身を変えれば板が自動的に分かれる**ので、古い記録が新しいコースの
  * 記録として混ざることはない。自己ベスト（`TourBestScoreStore`）と同じ守り方。
  */
-export function tourBoardId(
-  tourId: string,
-  generator: GeneratorVersion,
-  seedsId: string,
-): string {
-  return `tour:${tourId}:${generator}:${seedsId}:r${R.rulesVersion}`;
+export function tourBoardId(tour: TourIdentity): string {
+  return `tour:${tour.id}:${tour.generator ?? 'v1'}:${tourFingerprint(tour)}:r${R.rulesVersion}`;
 }
 
 /** 板IDの形。サーバが受け取った文字列を検証するのに使う */

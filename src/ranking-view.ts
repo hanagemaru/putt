@@ -244,13 +244,9 @@ export function ensureRankingStyles(): void {
   style.id = 'ranking-styles';
   style.textContent = `
     /*
-     * 表の枠。**画面に収め、中身だけを縦にスクロールさせる。**
-     * 板が育つほど行は増えるので、枠ごと伸ばすと「戻る」が画面から消える
-     */
-    /*
      * 板（コース）の切り替え。**画面を分けずにここで切り替える。**
-     * 3つを1行に収めるため、字は視点バー（.camera-button）と同じ12px。
-     * 英語のコース名は長いので、収まらないぶんは枠の中で折り返す
+     * 4コース（BEGINNER/STANDARD/ADVANCED/EXPERT）を1行に収めるため、
+     * 字は視点バー（.camera-button）と同じ12px。320pxの端末で1つ58pxになる
      */
     .ranking-tabs {
       display: flex;
@@ -269,6 +265,8 @@ export function ensureRankingStyles(): void {
       background: #27431f;
       box-shadow: 0 4px 0 #0d140d;
       padding: 8px 4px;
+      /* 4コース分が1行に収まるぎりぎり。字が伸びても隣へはみ出させない */
+      overflow: hidden;
       font-family: inherit;
       font-size: 12px;
       line-height: 1.3;
@@ -367,6 +365,10 @@ export function ensureRankingStyles(): void {
       gap: 8px;
       justify-content: stretch;
     }
+    /*
+     * 表の枠。**画面に収め、中身だけを縦にスクロールさせる。**
+     * 板が育つほど行は増えるので、枠ごと伸ばすと「戻る」が画面から消える
+     */
     .ranking-frame {
       margin-top: 14px;
       border: 3px solid #1b3318;

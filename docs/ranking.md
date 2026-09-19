@@ -48,15 +48,17 @@
 ランキングは**板（board）ごと**に持つ。板IDは文字列1本で表し、これが違えば別のランキング。
 
 ```
-tour:<tourId>:<generator>:<seedsId>:r<rulesVersion>     例) tour:breeze:v1:8f3a1c2d:r1
-weekly:<challenge.id>:r<rulesVersion>                   例) weekly:weekly-v1-2026-09-14:r1
+tour:<tourId>:<generator>:<fingerprint>:r<rulesVersion>   例) tour:expert:v2:91cc132:r1
+weekly:<challenge.id>:r<rulesVersion>                     例) weekly:weekly-v1-2026-09-14:r1
 ```
 
-- `seedsId` は `src/round-storage.ts` の既存関数（シード列のFNV-1a）をそのまま使う。
-  **固定ホールを選び直せば板が自動的に分かれる**ので、古い記録が新しいコースの記録として
-  混ざることは起きない。自己ベスト（`TourBestScoreStore`）と同じ守り方
-- `generator` は `TourDefinition.generator`（v1 / v2、7-1で追加予定）。
-  シード列が同じでも生成器が違えばまったく別のコースなので、`seedsId` とは別に入れる
+- `fingerprint` は**コースの作り方そのもののFNV-1a**（`tourFingerprint`）。
+  シード列・生成器・コースの仕立て（`setup`）・ホールごとの上書き（`holes`）を全部入れる。
+  **シード列だけでは足りない**（2026-09-19）。いまの固定コースは
+  「シードは同じまま細い道を1本足す」で中身が変わるので、シードだけだと板が分かれない
+- 名前と説明は指紋に入れない（変えても同じコースなので、板を分ける理由がない）
+- `generator` は `TourDefinition.generator`。指紋にも入っているが、
+  **板IDを見ただけで世代が分かる**ように表にも出す
 - `rulesVersion` は**手で上げる定数**。`CONFIG.physics`・罰打・カップ判定・コース生成の
   数値を変えたら、過去の記録と比べられなくなるので上げる。上げ忘れを機械では検出できないので、
   `src/config.ts` の物理まわりにコメントで明示する（**触ったら上げる**）

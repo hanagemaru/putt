@@ -2,7 +2,7 @@ import { CONFIG } from './config';
 import { DEFAULT_TOUR, TOUR_SETS, tourById, type TourDefinition } from './course/tour-holes';
 import { TourBestScoreStore, type BestScoreUpdate } from './best-score-storage';
 import { Round, onRoundComplete, type RoundResult } from './round';
-import { RoundProgressStore, seedsId } from './round-storage';
+import { RoundProgressStore } from './round-storage';
 import {
   deletePlayer,
   flushPendingSubmissions,
@@ -13,12 +13,7 @@ import {
   updatePlayerName,
   fetchRanking,
 } from './ranking-client';
-import {
-  TOUR_GENERATOR,
-  tourBoardId,
-  type RankingBoard,
-  type SubmitRecordRequest,
-} from './ranking-shared';
+import { tourBoardId, type RankingBoard, type SubmitRecordRequest } from './ranking-shared';
 import { rankingNotice, rankingTable, showNameOverlay } from './ranking-view';
 import { ensurePixelFont } from './pixel-font';
 import * as i18n from './i18n';
@@ -246,9 +241,9 @@ function appendRankingAction(tour: TourDefinition): HTMLButtonElement | null {
   return button;
 }
 
-/** 板ID（ランキングの単位）。**シード列が変われば別の板になる** */
+/** 板ID（ランキングの単位）。**コースの作り方が変われば別の板になる** */
 function boardIdFor(tour: TourDefinition): string {
-  return tourBoardId(tour.id, TOUR_GENERATOR, seedsId(tour.seeds));
+  return tourBoardId(tour);
 }
 
 /**
@@ -296,7 +291,7 @@ function buildSubmission(
     // 打ち出しの列（`docs/ranking.md` §4-1）。**後から再生するためだけに送る。**
     // 途中保存から再開したラウンドでは揃わないホールがあるので、その穴は空で送る
     shots: result.scores.map((hole) => hole.shots ?? []),
-    generator: TOUR_GENERATOR,
+    generator: tour.generator ?? 'v1',
     rulesVersion: R.rulesVersion,
     appVersion: R.appVersion,
     putterPowerScale: readPutterPowerScale(),
@@ -367,9 +362,11 @@ function renderTopMenu(): void {
 function renderTourSelection(): void {
   const root = prepareMenuRoot();
   root.replaceChildren();
+  // 見出しを上へ貼り付けるため、スクロール領域の上余白をパネル側へ移す（下の CSS）
+  root.classList.add('tour-scroll');
 
   const panel = document.createElement('main');
-  panel.className = 'menu-panel course-panel';
+  panel.className = 'menu-panel course-panel tour-panel';
 
   const heading = document.createElement('div');
   heading.className = 'menu-heading';
@@ -831,11 +828,9 @@ function courseEntry(tour: TourDefinition): HTMLElement {
   name.className = 'course-name';
   name.textContent = tour.name[language()];
 
-  const description = document.createElement('div');
-  description.className = 'course-description';
-  description.textContent = tour.description[language()];
-
-  card.append(name, description);
+  // **説明は出さない。** 実機で「コース選択の説明はなしでいい」と出た。
+  // 名前と自己ベストだけのほうが、4枠が縦に並んだときに読み比べやすい
+  card.append(name);
 
   const best = bestLabel(tour);
   if (best) {
@@ -852,7 +847,9 @@ function courseEntry(tour: TourDefinition): HTMLElement {
   actions.className = 'course-actions';
 
   const resume = resumeLabel(tour);
-  const restart = courseAction(t().startOver, !resume, () => {
+  // **続きが無いときは「スタート」。** 「はじめから」は「HOLE nから再開」と
+  // 並んで初めて意味が通る言い方なので、並ばないときは使わない
+  const restart = courseAction(resume ? t().startOver : t().start, !resume, () => {
     // 続きを捨てて回り直す。始める前に保存を消しておく
     if (resume) progressStore(tour).clear();
     navigateTo({ tour: tour.id });
@@ -982,6 +979,8 @@ function prepareMenuRoot(): HTMLElement {
     root.id = 'menu-root';
     document.body.append(root);
   }
+  // 画面ごとの指定は毎回落とす。コース一覧だけが `tour-scroll` を足す
+  root.classList.remove('tour-scroll');
   return root;
 }
 
@@ -1331,6 +1330,42 @@ function ensureMenuStyles(): void {
     .course-best-row {
       margin-top: 10px;
     }
+    /*
+     * コース一覧。**4コースはどの端末でも1画面に収まらない**（390x844 で 1008px）。
+     * 1枚は「名前・説明・44pxのボタン」なので、これ以上は詰められない。
+     *
+     * 収めるのを諦めるかわりに、**「← トップ」を上へ貼り付けて画面から消さない**。
+     * スクロールで戻る道が消えたように見えるのがいちばん困る（パター選択と同じ理由）。
+     * 貼り付けた帯は下をくぐるカードが透けないよう、枠と同じ色で塗って境目を引く
+     */
+    /*
+     * 上余白はスクロール領域（#menu-root）ではなくパネルの外側マージンへ移す。
+     * 領域側に padding があると、貼り付けた見出しはその内側で止まり、
+     * **上の24pxをカードが素通りして見える**
+     */
+    #menu-root.tour-scroll {
+      padding-top: 0;
+    }
+    #menu-root.tour-scroll .menu-panel {
+      margin-top: max(24px, env(safe-area-inset-top));
+    }
+    .tour-panel .menu-heading {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      gap: 12px;
+      background: #0f170f;
+      border-bottom: 3px solid #1b3318;
+      margin: -22px -16px 0;
+      padding: 22px 16px 12px;
+    }
+    .tour-panel .course-title {
+      font-size: 24px;
+    }
+    .tour-panel .course-list {
+      gap: 10px;
+      margin-top: 14px;
+    }
     /* パター選択 */
     /*
      * 4本を1画面に収める。スクロールさせると「← トップ」が上へ消えて、
@@ -1376,13 +1411,6 @@ function ensureMenuStyles(): void {
     .course-name {
       font-size: 16px;
       color: #9ede8a;
-    }
-    .course-description {
-      margin-top: 7px;
-      font-size: 16px;
-      line-height: 1.5;
-      letter-spacing: 0.02em;
-      color: #bcd0c0;
     }
     /* 自己ベストと再開はドット絵のラベル。角丸にせず枠で囲む */
     .course-best {
