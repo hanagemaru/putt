@@ -3,7 +3,7 @@
 // 参照実装は Multicolor Sweeper の `src/server/worker.ts`。**構造はそのまま踏襲する。**
 // 違うのは競う値（クリア時間 → 合計打数）と、板が増え続けることの2点。
 //
-//   GET    /api/health   … 死活と、D1が繋がっているか
+//   GET    /api/health   … 死活と、D1が繋がっているか・表ができているか
 //   GET    /api/rankings … 板1枚（上位＋自分の周辺＋自分の順位）
 //   POST   /api/records  … 登録（段1の検証まで）
 //   PUT    /api/player   … 表示名の登録・変更
@@ -507,13 +507,32 @@ async function handleSubmit(request: Request, db: D1Database): Promise<Response>
   return json(response);
 }
 
+/**
+ * 表ができているか。**繋いだだけでスキーマを流していない状態**を見分けるために引く。
+ * 1行も読まない `LIMIT 1` なので、無料枠の行数にも実質響かない
+ */
+async function schemaReady(db: D1Database): Promise<boolean> {
+  try {
+    await db.prepare('SELECT 1 FROM records LIMIT 1').first();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function handleRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   // Static Assets が先に当たるので、ここへ来るのは /api/* と、資産の無いパスだけ
   if (!url.pathname.startsWith('/api/')) return new Response('Not Found', { status: 404 });
 
   if (request.method === 'GET' && url.pathname === '/api/health') {
-    return json({ ok: true, database: Boolean(env.DB) });
+    // `database` はバインディングの有無、`schema` は表ができているか。
+    // **2つを分けて返す**ので、「D1は繋がっているが移行を流していない」が一目で分かる
+    return json({
+      ok: true,
+      database: Boolean(env.DB),
+      schema: env.DB ? await schemaReady(env.DB) : false,
+    });
   }
 
   const db = env.DB;
