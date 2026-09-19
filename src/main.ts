@@ -11,10 +11,12 @@
 // **走行中に俯瞰へ切り替えない。** 一人称のまま最後まで見せて、分析は止まってから（§3）。
 import * as THREE from 'three';
 import { CONFIG } from './config';
+import type { ObBoundaryLine } from './green';
 import {
   Green,
   GreenMesh,
   createHole,
+  createObBoundaryLine,
   createSurround,
   createTrees,
   defaultGreenParams,
@@ -41,7 +43,11 @@ import * as i18n from './i18n';
 import { language, t } from './i18n';
 import { Round, type HoleScore } from './round';
 import { RoundProgressStore } from './round-storage';
-import { SmoothLineOverlay, type BallOccluder } from './smooth-line-overlay';
+import {
+  SmoothLineOverlay,
+  type BallOccluder,
+  type ObBoundaryOverlay,
+} from './smooth-line-overlay';
 import { StrokeView } from './stroke-view';
 import {
   CameraRig,
@@ -352,6 +358,8 @@ scene.add(props);
 const terrain = new THREE.Group();
 scene.add(terrain);
 let greenMesh: GreenMesh;
+/** OB境界の線。ホールを作り直すたびに差し替わる */
+let obLine: ObBoundaryLine | null = null;
 
 /** URL の ?seed=... 。同じグリーンをもう一度出したいときのため */
 function seedFromUrl(): number | null {
@@ -381,6 +389,10 @@ function buildTerrain(): void {
   greenMesh = new GreenMesh(green, shade, visualHeightScale);
   terrain.add(greenMesh.mesh);
   terrain.add(createHole(green, visualHeightScale, course.cup));
+  // OB境界の線。3Dではなく高解像度Canvasへ重ねるので、シーンには入れない。
+  // 分類を持たない検証用グリーンには境界が無いので null が返る
+  obLine = createObBoundaryLine(green, visualHeightScale);
+  obLine?.setMapMode(showingCourseMap());
   props.add(createSurround(green, visualHeightScale));
   props.add(createTrees(green, seed, visualHeightScale));
 }
@@ -507,10 +519,17 @@ function layoutMapMarkers(): void {
   cupMarker.layout(camera.fov, height, ratio);
 }
 
+/** コースマップを表示中か。マーカーとOB線の見せ方がここで変わる */
+function showingCourseMap(): boolean {
+  return state === 'ADDRESS' && aimView === 'MAP';
+}
+
 /** マップのマーカーを現在のボール・カップへ合わせ、マップの間だけ表示する */
 function syncMapMarkers(): void {
-  const showing = state === 'ADDRESS' && aimView === 'MAP';
+  const showing = showingCourseMap();
   mapMarkers.visible = showing;
+  // マップは図として読むところなので、線を距離で薄くせず、木にも地形にも隠さない
+  obLine?.setMapMode(showing);
   if (!showing) return;
   const M = G.courseMap;
   const lift = M.markerLift;
@@ -648,20 +667,35 @@ function guideBallOccluder(): BallOccluder | null {
   };
 }
 
+/** OB境界を高解像度Canvasへ渡す */
+function obBoundaryOverlay(): ObBoundaryOverlay | null {
+  if (!obLine) return null;
+  const L = CONFIG.obLine;
+  return {
+    points: obLine.points,
+    color: L.color,
+    widthPx: L.widthPx,
+    opacity: L.opacity,
+    farOpacity: L.farOpacity,
+    fadeNear: L.fadeNear,
+    fadeFar: L.fadeFar,
+    mapMode: obLine.mapMode,
+  };
+}
+
 function updateSmoothLines(): void {
-  if (lineMode !== 'SMOOTH') {
-    smoothLines.clear();
-    return;
-  }
-  const showAim = aimGuideShouldShow();
+  // OB境界は補助線のモードとは無関係に出すので、ここで早期に抜けない
+  const smooth = lineMode === 'SMOOTH';
+  const showAim = smooth && aimGuideShouldShow();
   smoothLines.draw(
     camera,
     aimGuidePositions,
     showAim,
     trailPositions,
     trailPointCount,
-    trailShouldShow(),
+    smooth && trailShouldShow(),
     showAim ? guideBallOccluder() : null,
+    obBoundaryOverlay(),
   );
 }
 
