@@ -391,11 +391,16 @@ EXPERT H2 のS字と H5 の角が「回り込む」判断になっているか�
     `?rankingMock=empty|crowded|fail-submit|fail-fetch|pending` で分岐を意図的に出せる
   - ホールの規則（罰打・打ち直し・ホールアウト・ギブアップの線）は `src/hole-sim.ts` へ。
     **挙動は変えていない。** 後のリプレイ検証と同じ規則を見るための切り出し
-  - サーバは `/api/health`・`/api/rankings`・`/api/records`・`/api/player`（PUT / DELETE）。
-    検証は段1（形・常識・レート制限・二重登録）まで。**嘘のスコアそのものはまだ通る**
+  - サーバは `/api/health`・`/api/rankings`・`/api/records`・`/api/player`（PUT / DELETE）
+  - **リプレイ検証まで入った**（`scripts/verify-records.ts` を6時間ごとのワークフローで回す）。
+    登録は `pending` で即座に板へ載り、後から `verified` / `suspicious` が付く。
+    **打数を偽った記録は板から外れる**（本人にだけ `確認中`）
+  - ホールの組み立ては `src/course/hole-build.ts` に1本化した。
+    **ゲーム・詰み検証・リプレイ検証が同じ関数を通る**（切り出し前後で36ホール一致を確認）
   - 打ち出しの列（初速と方向）をホールごとに記録して送っている。段5の再生に使う
   - **D1は作成済み**（`putt-ranking`・APAC・2026-09-19）。`wrangler.jsonc` に繋いだ。
     スキーマの適用は `npm run db:migrate`（`DEPLOY.md`）
+  - **残るは「既定を `api` にする」判断だけ。** それがランキングの公開になる
   - **実機確認の結果（2026-09-17）**: モックで一巡し、**ラウンド終了からの登録まで問題なし**。
     1回目の指摘（板の一覧が遠い・言語トグルとコースの説明が不要・自分の順位が分からない）は
     タブ化と「あなた」の行で直し、2回目で確認できた

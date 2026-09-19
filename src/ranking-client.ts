@@ -77,7 +77,7 @@ export function rankingSource(): RankingSource {
 
 /**
  * モックで作る場面（`src/ranking-mock.ts`）。**実機で見たい分岐をここで指定する。**
- * `?rankingMock=empty|crowded|fail-submit|fail-fetch|pending`
+ * `?rankingMock=empty|crowded|fail-submit|fail-fetch|checking`
  */
 export function mockScenario(): MockScenario {
   return (
@@ -86,7 +86,7 @@ export function mockScenario(): MockScenario {
       'crowded',
       'fail-submit',
       'fail-fetch',
-      'pending',
+      'checking',
     ]) ?? 'normal'
   );
 }

@@ -1,8 +1,8 @@
 # オンラインランキング 設計と実装
 
 作成: 2026-09-16 / 更新: 2026-09-17 /
-状態: **§7 の 1〜4 は実装済み（1〜3は実機確認OK・2026-09-17）。
-残りは D1 の作成と、リプレイ検証（段5）**
+状態: **§7 の 1〜5 まで実装済み（1〜3は実機確認OK・2026-09-17）。D1も作成済み。
+残りは「既定を `api` にする」判断と、プライバシーの文言**
 
 決めたこと: **無料枠のまま**・**検証はGitHub ActionsのバッチでNodeで再生**・
 **同打数は `T3` 同順位**・**ギブアップを含むラウンドも登録可**（詳細は §8）。
@@ -416,8 +416,8 @@ Putt の `wrangler.jsonc` は現在 Static Assets だけで `main` を持たな�
    **実装済み。ただしD1そのものはまだ作っていない**（下の §10）
 4. ~~**登録と取得**（段1の検証まで）＋モックを本物に差し替え・保留再送・失敗時の握り潰し~~
    **実装済み（2026-09-19）。D1を作れば動く**
-5. **リプレイ検証（段2）**: `scripts/verify-records.ts`（仮）と定期ワークフロー。
-   `pending` を読んで再生し、`verified` / `suspicious` を書き戻す
+5. ~~**リプレイ検証（段2）**~~ **実装済み（2026-09-19）。**
+   `scripts/verify-records.ts` と `.github/workflows/verify-ranking.yml`（6時間ごと）
 6. **プライバシーの文言とハブ側の更新**（実装と同じ変更で）
 7. 週替わりチャレンジの板を足す（画面接続が済んでから）
 
@@ -464,6 +464,8 @@ Putt の `wrangler.jsonc` は現在 Static Assets だけで `main` を持たな�
 | `src/hole-sim.ts` | 罰打・打ち直しの位置・ホールアウト・ギブアップの線（§4-6の1） |
 | `src/server/worker.ts` | `/api/health`・`/api/rankings`・`/api/records`・`/api/player`（PUT / DELETE） |
 | `src/server/record-validation.ts` | 段1の検証。形と常識だけを見て、**合計は数え直す** |
+| `src/course/hole-build.ts` | ホールの組み立て（コース→グリーン→転がり）。**ゲーム・詰み検証・リプレイ検証が同じここを通る** |
+| `scripts/verify-records.ts` | 段2のバッチ。`pending` を再生して判定を書き戻す |
 | `migrations/0001_ranking.sql` | 4つの表（§5-1のまま） |
 
 ### 10-2. 設計から変えたところ
@@ -531,12 +533,58 @@ Putt の `wrangler.jsonc` は現在 Static Assets だけで `main` を持たな�
 | 連打 | 429（用途ごとに数える） |
 | ビルドしたゲームをWorkerから配って画面から取得・表示名の更新 | 表も `PUT /api/player` も通る |
 
-### 10-5. 次にやること
+### 10-5. リプレイ検証（段5・2026-09-19）
 
-- ~~**D1を作る。**~~ **2026-09-19 に作成済み**（`putt-ranking`・APAC）。
-  `wrangler.jsonc` の `d1_databases` に繋いである。スキーマの適用は `npm run db:migrate`
-- **既定を `api` にするのは固定コースの確定後**（`CONFIG.game.ranking.source`）。
-  板IDはシード列から作るので、確定前に集めた記録は差し替えで別の板に取り残される
-- 段5（リプレイ検証）: `scripts/verify-records.ts` と定期ワークフロー。
-  `pending` を読んで再生し、`verified` / `suspicious` を書き戻す
-- プライバシーの文言（§5-3）は、**登録が本当に動き出すのと同じ変更で**ハブ側を直す
+**Workerの外で回す**（案A）。GitHub Actions が6時間ごとに `scripts/verify-records.ts` を
+走らせ、`pending` の記録を再生して `verified` / `suspicious` を書き戻す。
+
+#### ホールの組み立てを1本化した（`src/course/hole-build.ts`）
+
+再生でいちばん怖いのは**コースの作り方が1mmずれること**。ずれれば「本人の画面では42打・
+サーバでは43打」になり、しかもそれが他人の順位を動かす。
+
+組み立ては `main.ts` と `scripts/check-stuck.ts` に**同じものが2つ**あった
+（検証を足せば3つ目になる）ので、`hole-build.ts` へ出して3か所とも同じ関数を通した。
+
+- `tourHoleCourse(tour, seed)` … 生成器はツアーが持つが、**ホール単位で上書きできる**
+- `buildHoleGreen(course, setup)` … うねりの振幅は **`LIVE_UNDULATION_AMPLITUDE`**。
+  本番は `main.ts` の既定モードで `compareEnhancedAmplitude`（0.20）を使っており、
+  **`defaultGreenParams()` の 0.15 ではない**。ここを取り違えると転がりが変わる
+- `buildHoleRoller(green, course, setup)` … グリーンの速さは仕立てが決める
+
+**切り出しの前後で4コース36ホールのダイジェスト（高さ41×41点＋サーフェス）が完全一致**する
+ことを確かめてある。`npm run check:stuck -- --tour=beginner` も通る。
+
+#### 判定
+
+| 結果 | いつ | どうなる |
+|---|---|---|
+| `verified` | 再生した打数・カップインが全ホール一致 | そのまま板に載る |
+| `suspicious` | 1ホールでも合わない | **板から外れる**。本人にだけ `確認中` |
+| 保留（`pending` のまま） | 打ち出しの列が無い・止まらない・古い板 | 板には載ったまま |
+
+**分からないものを `suspicious` にしない。** 疑わしきは罰せず、判定できないものは保留にする。
+
+#### `pending` は板に載る
+
+登録の直後は `pending`（`CONFIG...server.initialStatus`）。判定は数時間遅れるので、
+**その間も順位は出す**。ラウンド終了カードも「確認中」ではなく順位を出す
+（`確認中` と出すのは、板から外れて順位が無くなったときだけ）。
+
+#### 手元のD1で通したこと
+
+| 試したこと | 結果 |
+|---|---|
+| 正しい記録を `POST /api/records` | `status: pending` で受理、順位1位 |
+| それを検証 | **`verified`（9ホール458ms）** |
+| 打数を1ずつ減らして申告 | **段1で弾かれた**（`too many shots`。打った数より打数が少ない） |
+| 打数はそのままで「全ホールカップインした」と嘘 | 段1は通って `pending`・1位（同点）→ **検証が57msで `suspicious`** |
+| そのあとの板 | 嘘の記録は**消えて**、本人からは `yourRank: null` ＋ 自分の記録あり（＝`確認中`） |
+| もう一度検証 | `検証待ち: 0件`（二度判定しない） |
+
+### 10-6. 次にやること
+
+- **既定を `api` にする**（`CONFIG.game.ranking.source`）。**これで公開になる。**
+  いまは `off` なので、`?ranking=api` を付けた人にしか見えない
+- プライバシーの文言（§5-3）は、**公開と同じ変更で**ハブ側（`hanage.app/privacy/`）を直す
+- 週替わりチャレンジの板（§7 の7）。画面接続が済んでから

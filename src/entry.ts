@@ -138,14 +138,11 @@ function setupTourBestTracking(tour: TourDefinition): void {
       return;
     }
     const response = outcome.response;
-    if (response.status !== 'verified') {
-      // 段2の検証待ち。板には出さず、本人にだけ断る
-      setRankingStatus(t().rankingChecking);
-      return;
-    }
+    // **`pending`（検証待ち）でも板には載っているので、順位はそのまま出す。**
+    // 順位が無いのは板から外れたとき（`suspicious`）だけで、そこで初めて「確認中」と断る
     setRankingStatus(
       response.rank === null
-        ? ''
+        ? t().rankingChecking
         : i18n.standingLabel(response.rank, response.tied, response.playerCount),
     );
   };

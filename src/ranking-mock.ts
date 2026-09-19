@@ -10,7 +10,7 @@
 //   crowded      … 同打数が大量に並ぶ板（`T12` の見え方の確認）
 //   fail-submit  … 登録が必ず失敗する（`あとで登録します` の確認）
 //   fail-fetch   … 取得が必ず失敗する（`いま見られません` の確認）
-//   pending      … 登録は通るが検証待ちになる（`確認中` の確認）
+//   checking     … 登録は通るが板から外れる（`確認中` の確認）
 //
 // 本物ができたら `src/ranking-client.ts` の差し替えだけで消える。ここはそのとき捨てる。
 
@@ -28,7 +28,13 @@ import {
 
 const R = CONFIG.game.ranking;
 
-export type MockScenario = 'normal' | 'empty' | 'crowded' | 'fail-submit' | 'fail-fetch' | 'pending';
+export type MockScenario =
+  | 'normal'
+  | 'empty'
+  | 'crowded'
+  | 'fail-submit'
+  | 'fail-fetch'
+  | 'checking';
 
 /** mulberry32。コース生成と同じ実装。板IDが同じなら毎回同じ顔ぶれになる */
 function makeRng(seed: number): () => number {
@@ -191,7 +197,8 @@ export function mockSubmitRecord(
   store.name = request.displayName;
   const previous = store.records[request.boardId];
   const newBest = !previous || request.totalStrokes < previous.strokes;
-  const status = scenario === 'pending' ? 'pending' : 'verified';
+  // 「確認中」は**板から外れている**状態。検証待ち（pending）は板に載るので順位が出る
+  const status = scenario === 'checking' ? 'suspicious' : 'verified';
 
   if (newBest) {
     store.records[request.boardId] = {

@@ -1410,6 +1410,21 @@ export const CONFIG = {
       mockPlayerCount: 340,
 
       /**
+       * リプレイ検証（段2。`scripts/verify-records.ts`）の数値。
+       * **Workerの中では回さない**（無料枠の10ms CPUに入らない）ので、
+       * ここはGitHub Actionsのバッチだけが読む
+       */
+      verify: {
+        /** 1回のバッチで見る件数の上限。取りこぼしは次の回で拾う */
+        batchLimit: 200,
+        /**
+         * 1打の再生を打ち切る歩数。固定タイムステップ1/240秒なので 240×60 で60秒ぶん。
+         * **止まらない打ち出しで無限に回らない**ための保険で、越えたら判定しない
+         */
+        maxStepsPerShot: 240 * 60,
+      },
+
+      /**
        * サーバ（`src/server/worker.ts`）側の数値。
        * **ランキングのAPIは誰でも直接叩ける**ので、上限は必ず要る（`docs/ranking.md` §4-4）
        */
@@ -1433,11 +1448,11 @@ export const CONFIG = {
         /**
          * 登録を受けた直後の状態（`docs/ranking.md` §4-4）。
          *
-         * **段5（リプレイ検証）を入れたら `pending` にする。** いまは段1の検証
-         * （形・常識・レート制限・二重登録）しか無いので、そこを通ったものは
-         * `verified` と呼ぶ。動いていない検証を待っているように見せない
+         * **`pending`（検証待ち）。** リプレイ検証は定期バッチが後から判定するので、
+         * 登録の瞬間には決まらない。`pending` でも**板には載る**ので、
+         * 本人にも他人にも順位は見えている（`suspicious` になったものだけ外れる）
          */
-        initialStatus: 'verified' as 'verified' | 'pending',
+        initialStatus: 'pending' as 'verified' | 'pending',
 
         // --- 段1の常識チェック（同 §4-4）。**ありえない値を弾くだけ** ---
         /** 1ラウンドのホール数の上限。通常ツアー9・週替わり3 */

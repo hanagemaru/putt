@@ -13,6 +13,7 @@
     "db:migrate": "wrangler d1 migrations apply putt-ranking --remote",
     "validate:course": "node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/validate-course.ts",
     "validate:challenge": "node --experimental-transform-types --import ./scripts/ts-resolve.mjs scripts/validate-challenge.ts",
+    "verify:records": "node --experimental-transform-types --import ./scripts/ts-resolve.mjs scripts/verify-records.ts",
     "check:stuck": "node --experimental-transform-types --import ./scripts/ts-resolve.mjs scripts/check-stuck.ts",
     "maps": "node --experimental-transform-types --import ./scripts/ts-resolve.mjs scripts/course-maps.ts",
     "font:pixel": "node scripts/build-pixel-font.mjs",

@@ -34,6 +34,7 @@
 import { CONFIG } from '../src/config.ts';
 import { approachDirection, generateCourse } from '../src/course/course-generate.ts';
 import { generateCourseV2 } from '../src/course/course-generate-v2.ts';
+import { buildHoleGreen } from '../src/course/hole-build.ts';
 import {
   bunkerBasinAt,
   plateauHeightAt,
@@ -272,27 +273,9 @@ const SEEDS: number[] =
 
 // --- 下ごしらえ -----------------------------------------------------------
 
-/** main.ts の greenParamsFor と同じ組み立て。物理に効くのは高さだけなので見た目倍率は要らない */
+/** 組み立ては `src/course/hole-build.ts` に1本化してある（ゲーム本体・リプレイ検証と同じ） */
 function buildGreen(course: CourseDefinition): Green {
-  return new Green(
-    {
-      ...defaultGreenParams(),
-      seed: course.seed,
-      width: course.bounds.width,
-      length: course.bounds.length,
-      undulationAmplitude: UNDULATION_AMPLITUDE * setupFor(course.seed).undulationGain,
-      terrain: {
-        type: course.terrain,
-        cup: course.cup,
-        approach: approachDirection(course),
-      },
-      // 高さのハザード（生成器v2）。v1のコースは持たないので undefined のまま渡る
-      heightFeatures: course.heightFeatures,
-      bunkerBasin: (x: number, z: number) => bunkerBasinAt(course, x, z),
-      plateau: (x: number, z: number) => plateauHeightAt(course, x, z),
-    },
-    (x, z) => surfaceAt(course, x, z),
-  );
+  return buildHoleGreen(course, setupFor(course.seed), UNDULATION_AMPLITUDE);
 }
 
 function isPlayable(surface: SurfaceType): boolean {

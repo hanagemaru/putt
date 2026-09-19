@@ -17,7 +17,6 @@ import {
   createHole,
   createSurround,
   createTrees,
-  defaultGreenParams,
   defaultShadeParams,
 } from './green';
 import { Roller } from './physics';
@@ -27,16 +26,20 @@ import {
   penaltyStrokes,
   returnsToShotStart,
 } from './hole-sim';
-import { bunkerBasinAt, plateauHeightAt, surfaceAt } from './course/course-map';
+import { surfaceAt } from './course/course-map';
+import {
+  buildHoleRoller,
+  holeGreenParams,
+  tourHoleCourse,
+} from './course/hole-build';
 import { PROTOTYPE_COURSE } from './course/prototype-course';
-import { approachDirection, generateCourse } from './course/course-generate';
+import { generateCourse } from './course/course-generate';
 import { generateCourseV2 } from './course/course-generate-v2';
 import type { CourseDefinition, TerrainType } from './course/course-types';
 import {
   DEFAULT_SETUP,
   TOUR_SETS,
   generateOptionsFor,
-  generatorOfSeed,
   setupOfSeed,
   tourById,
   type CourseSetup,
@@ -88,10 +91,9 @@ function courseWithSeed(value: number): CourseDefinition {
   const seed = value >>> 0;
   if (usePrototypeCourse) return { ...PROTOTYPE_COURSE, seed };
   if (useGeneratorV2) return generateCourseV2(seed, generateOptionsFor(setupForSeed(seed)));
-  // 生成器はツアーが持つが、**ホール単位で上書きできる**（BEGINNER は v1 と v2 を混ぜている）
-  if (mode === 'tour' && generatorOfSeed(selectedTour, seed) === 'v2') {
-    return generateCourseV2(seed, generateOptionsFor(setupForSeed(seed)));
-  }
+  // 生成器はツアーが持つが、**ホール単位で上書きできる**（BEGINNER は v1 と v2 を混ぜている）。
+  // 組み立ては `hole-build.ts` に1本化してある（検証側と食い違わせないため）
+  if (mode === 'tour') return tourHoleCourse(selectedTour, seed);
   return generateCourse(seed);
 }
 
@@ -207,25 +209,8 @@ if (round && roundStore) {
  * 地形の性格はコース定義が持ち、カップと最終アプローチの向きを基準に形を置く。
  */
 function greenParamsFor(target: CourseDefinition, amplitude: number) {
-  return {
-    ...defaultGreenParams(),
-    seed: target.seed,
-    width: target.bounds.width,
-    length: target.bounds.length,
-    // コースの仕立ての倍率を掛ける。**絶対値ではなく倍率にしてある**ので、
-    // アンジュレーション比較モード（`UNDULATION_MODES`）は今までどおり効く
-    undulationAmplitude: amplitude * setupForSeed(target.seed).undulationGain,
-    terrain: {
-      type: target.terrain,
-      cup: target.cup,
-      approach: approachDirection(target),
-    },
-    // 高さのハザード（生成器v2）。v1のコースは持たないので undefined のまま渡る
-    heightFeatures: target.heightFeatures,
-    // バンカーのすり鉢。縁を砂の輪郭に合わせるので、コース定義を知っている側から渡す
-    bunkerBasin: (x: number, z: number) => bunkerBasinAt(target, x, z),
-    plateau: (x: number, z: number) => plateauHeightAt(target, x, z),
-  };
+  // 中身は `hole-build.ts`。**検証側と同じ組み立てを通す**（`docs/ranking.md` §4-6）
+  return holeGreenParams(target, setupForSeed(target.seed), amplitude);
 }
 
 /**
@@ -233,9 +218,7 @@ function greenParamsFor(target: CourseDefinition, amplitude: number) {
  * **グリーンの速さはコースの仕立てが決める**ので、作り直すたびにここを通す
  */
 function makeRoller(): Roller {
-  const next = new Roller(green, course.cup);
-  next.stimpFeet = setupForSeed(course.seed).stimpFeet;
-  return next;
+  return buildHoleRoller(green, course, setupForSeed(course.seed));
 }
 
 // --- シーン ---------------------------------------------------------------
