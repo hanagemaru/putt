@@ -53,6 +53,12 @@ export interface GreenParams {
    * 関数として渡してもらう。省略（v1のコース・green-test）なら地形は変わらない
    */
   bunkerBasin?: (x: number, z: number) => number;
+  /**
+   * 砲台グリーンの高さ [m] を返す関数（`plateauHeightAt`）。
+   * バンカーのすり鉢と同じ理由で、コース定義を知っている側から渡してもらう。
+   * 省略なら地形は変わらない
+   */
+  plateau?: (x: number, z: number) => number;
 }
 
 export function defaultGreenParams(): GreenParams {
@@ -232,6 +238,7 @@ export class Green {
     // 先に足すと正規化に巻き込まれ、config で指定した高さが出なくなる
     const features = params.heightFeatures ?? [];
     const basin = params.bunkerBasin;
+    const plateau = params.plateau;
 
     this.minHeight = Infinity;
     this.maxHeight = -Infinity;
@@ -242,6 +249,8 @@ export class Green {
         let h = shapeAt(x, z) + undulation[j * this.resX + i] * scale;
         for (const feature of features) h += heightFeatureAt(feature, x, z);
         if (basin) h += basin(x, z);
+        // 砲台グリーン。うねりの正規化より後に足すので、指定した高さがそのまま出る
+        if (plateau) h += plateau(x, z);
         this.heights[j * this.resX + i] = h;
         if (h < this.minHeight) this.minHeight = h;
         if (h > this.maxHeight) this.maxHeight = h;
