@@ -15,7 +15,7 @@ import {
   Green,
   GreenMesh,
   createHole,
-  createObStakes,
+  createObBoundaryLine,
   createSurround,
   createTrees,
   defaultGreenParams,
@@ -382,11 +382,12 @@ function buildTerrain(): void {
   greenMesh = new GreenMesh(green, shade, visualHeightScale);
   terrain.add(greenMesh.mesh);
   terrain.add(createHole(green, visualHeightScale, course.cup));
+  // OB境界の線。地面の読みに関わるので、木や地面（props）ではなく地形側に置く。
+  // 分類を持たない検証用グリーンには境界が無いので null が返る
+  const obLine = createObBoundaryLine(green, visualHeightScale);
+  if (obLine) terrain.add(obLine);
   props.add(createSurround(green, visualHeightScale));
   props.add(createTrees(green, seed, visualHeightScale));
-  // OB境界の白杭。分類を持たない検証用グリーンでは境界が無いので null が返る
-  const stakes = createObStakes(green, visualHeightScale);
-  if (stakes) props.add(stakes);
 }
 
 /**

@@ -544,33 +544,6 @@ export class GreenMesh {
   }
 }
 
-/** 描き先の高さ [px]。低解像度ターゲットへ描いている間はそちらの高さを使う */
-function renderTargetHeightPx(renderer: THREE.WebGLRenderer, size: THREE.Vector2): number {
-  const target = renderer.getRenderTarget();
-  return target ? target.height : renderer.getDrawingBufferSize(size).y;
-}
-
-/**
- * 細い円柱が低解像度のドットを割って消えないよう、XZ方向だけ太らせる倍率。
- * 旗竿とOBの白杭で同じ式を使う。
- *
- * 円柱の直径がターゲット上で何 px に見えるかは `diameterPx = (2r / (2 d tan(fov/2))) * H`。
- * 足りないぶんだけ掛けるので、**画面上の幅が `minPixelWidth` px を超えて太ることはない**。
- * 高さは変えないので、鉛直の基準としての役割も保たれる。
- */
-function minPixelWidthScale(
-  radius: number,
-  maxRadius: number,
-  minPixelWidth: number,
-  distance: number,
-  viewportHeightPx: number,
-  tanHalfFov: number,
-): number {
-  const diameterPx = (radius * viewportHeightPx) / Math.max(distance * tanHalfFov, 0.0001);
-  const neededScale = minPixelWidth / Math.max(diameterPx, 0.0001);
-  return THREE.MathUtils.clamp(neededScale, 1, maxRadius / radius);
-}
-
 /**
  * カップ（§1）。直径 108mm、深さ 100mm の円筒。見た目は暗い円で十分。
  * 旗竿は必ず鉛直に立てる。傾き表現の基準になる。
@@ -608,7 +581,8 @@ export function createHole(
   bottom.position.set(position.x, surfaceY - h.depth, position.z);
   group.add(bottom);
 
-  // 旗竿。近くでは自然な細さにし、遠くでは低解像度レンダー上の最低幅だけを確保する（`minPixelWidthScale`）
+  // 旗竿。近くでは自然な細さにし、遠くでは低解像度レンダー上の最低幅だけを確保する。
+  // 高さは変えず XZ 方向だけ拡大するので、鉛直の基準としての役割は保たれる。
   const stick = new THREE.Mesh(
     new THREE.CylinderGeometry(h.flagstickRadius, h.flagstickRadius, h.flagstickHeight, 8),
     new THREE.MeshLambertMaterial({ color: h.flagstickColor }),
@@ -621,20 +595,20 @@ export function createHole(
   stick.onBeforeRender = (renderer, _scene, camera) => {
     if (!(camera instanceof THREE.PerspectiveCamera)) return;
 
-    const viewportHeightPx = renderTargetHeightPx(renderer, renderSize);
+    const target = renderer.getRenderTarget();
+    const viewportHeightPx = target ? target.height : renderer.getDrawingBufferSize(renderSize).y;
     stick.getWorldPosition(stickWorld);
     camera.getWorldPosition(cameraWorld);
     const distance = Math.max(cameraWorld.distanceTo(stickWorld), 0.001);
     const tanHalfFov = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
 
-    const scaleXZ = minPixelWidthScale(
-      h.flagstickRadius,
-      h.flagstickMaxRadius,
-      h.flagstickMinPixelWidth,
-      distance,
-      viewportHeightPx,
-      tanHalfFov,
-    );
+    // 円柱の直径がレンダーターゲット上で何 px に見えるか。
+    // diameterPx = (2r / (2 d tan(fov/2))) * viewportHeight
+    const diameterPx =
+      (h.flagstickRadius * viewportHeightPx) / Math.max(distance * tanHalfFov, 0.0001);
+    const neededScale = h.flagstickMinPixelWidth / Math.max(diameterPx, 0.0001);
+    const maxScale = h.flagstickMaxRadius / h.flagstickRadius;
+    const scaleXZ = THREE.MathUtils.clamp(neededScale, 1, maxScale);
 
     if (Math.abs(stick.scale.x - scaleXZ) > 0.0001) {
       stick.scale.set(scaleXZ, 1, scaleXZ);
@@ -670,143 +644,188 @@ export function createSurround(green: Green, heightScale = 1): THREE.Mesh {
   return mesh;
 }
 
-/**
- * OB境界に沿って白杭を立てる位置を拾う。
- *
- * 形は `surfaceAt` からしか読まない。**生成器にも `CONFIG.course.edgeNoise` にも触れない**ので、
- * 既存ホールの外形・自己ベスト・ラウンド進行は一切変わらない（backlog §5-1 の注意）。
- *
- * 拾うのは「OB側で、打てる地面と隣り合っているマス」だけ。池際は打てない地面どうしの境なので
- * 対象にしない（白杭はOBの印であって、ハザードの印ではない）。
- */
-function pickObStakeSpots(green: Green): CoursePoint[] {
-  const s = CONFIG.obStakes;
-  const spots: CoursePoint[] = [];
-  const halfWidth = green.width / 2 - s.boundsMargin;
-  const halfLength = green.length / 2 - s.boundsMargin;
-  if (halfWidth <= 0 || halfLength <= 0) return spots;
-
-  const nx = Math.floor((halfWidth * 2) / s.sampleCell) + 1;
-  const nz = Math.floor((halfLength * 2) / s.sampleCell) + 1;
-  // 隣を見るたびに分類し直すと `surfaceAt` を4倍呼ぶことになるので、先に1枚のグリッドにする
-  const isOb = new Uint8Array(nx * nz);
-  const isPlayable = new Uint8Array(nx * nz);
-  for (let j = 0; j < nz; j++) {
-    const z = -halfLength + j * s.sampleCell;
-    for (let i = 0; i < nx; i++) {
-      const x = -halfWidth + i * s.sampleCell;
-      const surface = green.surfaceAt(x, z);
-      isOb[j * nx + i] = surface === 'ob' ? 1 : 0;
-      isPlayable[j * nx + i] = surface !== 'ob' && surface !== 'water' ? 1 : 0;
-    }
-  }
-
-  const spacingSq = s.spacing * s.spacing;
-  for (let j = 0; j < nz; j++) {
-    for (let i = 0; i < nx; i++) {
-      const a = j * nx + i;
-      if (!isOb[a]) continue;
-      // 打てる隣の反対側が「OBの奥」。複数あれば足して均す
-      let outX = 0;
-      let outZ = 0;
-      if (i > 0 && isPlayable[a - 1]) outX += 1;
-      if (i + 1 < nx && isPlayable[a + 1]) outX -= 1;
-      if (j > 0 && isPlayable[a - nx]) outZ += 1;
-      if (j + 1 < nz && isPlayable[a + nx]) outZ -= 1;
-      if (outX === 0 && outZ === 0) continue;
-
-      let x = -halfWidth + i * s.sampleCell;
-      let z = -halfLength + j * s.sampleCell;
-      const norm = Math.hypot(outX, outZ);
-      const px = x + (outX / norm) * s.outset;
-      const pz = z + (outZ / norm) * s.outset;
-      // 逃がした先がまだOBのときだけ動かす。境界が細い所で打てる地面へ戻ってしまわないように
-      if (green.surfaceAt(px, pz) === 'ob') {
-        x = px;
-        z = pz;
-      }
-
-      if (spots.some((p) => (p.x - x) ** 2 + (p.z - z) ** 2 < spacingSq)) continue;
-      spots.push({ x, z });
-      if (spots.length >= s.maxCount) return spots;
-    }
-  }
-  return spots;
+/** OB境界の線を引く対象か。池は打てないがOBではないので、ここでは「向こう側」に入れる */
+function isBeyondBoundary(surface: SurfaceType): boolean {
+  return surface === 'ob' || surface === 'water';
 }
 
 /**
- * OB境界の白杭。**見た目だけの目印で、物理には一切関わらない。**
- *
- * 芝の濃淡は高さで大きく振れるため、地面の色だけでは「暗い＝OB」が場所によって逆を向く
- * （`CONFIG.obStakes` に実測値）。高さの濃淡を受けない縦の目印を足して、
- * 一人称でも俯瞰マップでも同じ意味で読めるようにする。
- *
- * 1本ずつのメッシュにすると1ホールで百数十のドローコールになるので InstancedMesh にまとめる。
- * 遠距離でドットに埋もれないための太らせは、旗竿と同じ `minPixelWidthScale` を本数ぶん掛ける。
+ * 格子の辺の上で、打てる地面とその向こうの境目を二分探索で詰める。
+ * 格子の目をそのまま繋ぐと階段になるので、**実際の境界位置まで寄せてから**線を引く。
  */
-export function createObStakes(green: Green, heightScale = 1): THREE.InstancedMesh | null {
-  const s = CONFIG.obStakes;
-  const spots = pickObStakeSpots(green);
-  if (spots.length === 0) return null;
-
-  const mesh = new THREE.InstancedMesh(
-    new THREE.CylinderGeometry(s.radius, s.radius, s.height, s.radialSegments),
-    new THREE.MeshLambertMaterial({ color: s.color }),
-    spots.length,
-  );
-
-  // 円柱の原点は中心なので、地面から高さの半分だけ上げると根元が接地する
-  const centers = spots.map((p) => ({
-    x: p.x,
-    y: green.sampleHeight(p.x, p.z) * heightScale + s.height / 2,
-    z: p.z,
-  }));
-  const scales = new Float32Array(spots.length).fill(1);
-  const matrix = new THREE.Matrix4();
-  const position = new THREE.Vector3();
-  const quaternion = new THREE.Quaternion();
-  const scale = new THREE.Vector3(1, 1, 1);
-  for (let i = 0; i < centers.length; i++) {
-    position.set(centers[i].x, centers[i].y, centers[i].z);
-    mesh.setMatrixAt(i, matrix.compose(position, quaternion, scale));
-  }
-  mesh.instanceMatrix.needsUpdate = true;
-  mesh.computeBoundingSphere();
-
-  const renderSize = new THREE.Vector2();
-  const cameraWorld = new THREE.Vector3();
-  mesh.onBeforeRender = (renderer, _scene, camera) => {
-    if (!(camera instanceof THREE.PerspectiveCamera)) return;
-    const viewportHeightPx = renderTargetHeightPx(renderer, renderSize);
-    const tanHalfFov = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
-    camera.getWorldPosition(cameraWorld);
-
-    let changed = false;
-    for (let i = 0; i < centers.length; i++) {
-      const c = centers[i];
-      const distance = Math.max(
-        Math.hypot(cameraWorld.x - c.x, cameraWorld.y - c.y, cameraWorld.z - c.z),
-        0.001,
-      );
-      const scaleXZ = minPixelWidthScale(
-        s.radius,
-        s.maxRadius,
-        s.minPixelWidth,
-        distance,
-        viewportHeightPx,
-        tanHalfFov,
-      );
-      if (Math.abs(scales[i] - scaleXZ) <= 0.0001) continue;
-      scales[i] = scaleXZ;
-      position.set(c.x, c.y, c.z);
-      scale.set(scaleXZ, 1, scaleXZ);
-      mesh.setMatrixAt(i, matrix.compose(position, quaternion, scale));
-      changed = true;
+function refineCrossing(
+  green: Green,
+  inX: number,
+  inZ: number,
+  outX: number,
+  outZ: number,
+): CoursePoint {
+  let ax = inX;
+  let az = inZ;
+  let bx = outX;
+  let bz = outZ;
+  for (let step = 0; step < CONFIG.obLine.refineSteps; step++) {
+    const mx = (ax + bx) / 2;
+    const mz = (az + bz) / 2;
+    if (isBeyondBoundary(green.surfaceAt(mx, mz))) {
+      bx = mx;
+      bz = mz;
+    } else {
+      ax = mx;
+      az = mz;
     }
-    if (changed) mesh.instanceMatrix.needsUpdate = true;
+  }
+  return { x: (ax + bx) / 2, z: (az + bz) / 2 };
+}
+
+/** 格子の辺1本ぶんの交点。`ok` が false なら、その辺は線を引かない（池際） */
+interface Crossing {
+  point: CoursePoint | null;
+  ok: boolean;
+}
+
+const NO_CROSSING: Crossing = { point: null, ok: false };
+
+/**
+ * OB境界の線。**見た目だけの目印で、物理には一切関わらない。**
+ *
+ * 形は `green.surfaceAt` からしか読まない。**生成器にも `CONFIG.course.edgeNoise` にも
+ * 触れない**ので、既存ホールの外形・自己ベスト・ラウンド進行は変わらない（backlog §5-1）。
+ *
+ * マーチングスクエアで「打てる地面 / その向こう」の境界を線分の集まりとして取り出す。
+ * 輪郭として順番に繋ぐ必要はないので `LineSegments` 1つ、ドローコールも1つで済む。
+ *
+ * 池際には引かない（OBの印であって、ハザードの印ではない）。
+ */
+export function createObBoundaryLine(green: Green, heightScale = 1): THREE.LineSegments | null {
+  const L = CONFIG.obLine;
+  const halfWidth = green.width / 2;
+  const halfLength = green.length / 2;
+  const nx = Math.floor(green.width / L.sampleCell) + 1;
+  const nz = Math.floor(green.length / L.sampleCell) + 1;
+  if (nx < 2 || nz < 2) return null;
+
+  const gridX = (i: number): number => -halfWidth + i * L.sampleCell;
+  const gridZ = (j: number): number => -halfLength + j * L.sampleCell;
+
+  // 先に格子を1枚作る。辺の交点は隣り合うマスで共有するので、分類も探索も1回ずつで済む
+  const surfaces: SurfaceType[] = new Array(nx * nz);
+  const beyond = new Uint8Array(nx * nz);
+  for (let j = 0; j < nz; j++) {
+    for (let i = 0; i < nx; i++) {
+      const surface = green.surfaceAt(gridX(i), gridZ(j));
+      surfaces[j * nx + i] = surface;
+      beyond[j * nx + i] = isBeyondBoundary(surface) ? 1 : 0;
+    }
+  }
+
+  /** 格子点 a（打てる）と b（向こう側）の間の交点。向こう側が池なら引かない */
+  const crossingBetween = (ai: number, aj: number, bi: number, bj: number): Crossing => {
+    const a = aj * nx + ai;
+    const b = bj * nx + bi;
+    if (beyond[a] === beyond[b]) return NO_CROSSING;
+    const insideIsA = beyond[a] === 0;
+    const outsideSurface = insideIsA ? surfaces[b] : surfaces[a];
+    if (outsideSurface !== 'ob') return NO_CROSSING;
+    const point = insideIsA
+      ? refineCrossing(green, gridX(ai), gridZ(aj), gridX(bi), gridZ(bj))
+      : refineCrossing(green, gridX(bi), gridZ(bj), gridX(ai), gridZ(aj));
+    return { point, ok: true };
   };
 
-  return mesh;
+  // 横の辺（i → i+1）と縦の辺（j → j+1）の交点。
+  // 横の辺は上下2つのマスで共有するので、1行ぶん持ち越して二度探索しない
+  const horizontal: Crossing[] = new Array(nx - 1);
+  const horizontalNext: Crossing[] = new Array(nx - 1);
+  const vertical: Crossing[] = new Array(nx);
+
+  for (let i = 0; i < nx - 1; i++) horizontal[i] = crossingBetween(i, 0, i + 1, 0);
+
+  const points: number[] = [];
+  const push = (p: CoursePoint): void => {
+    points.push(p.x, green.sampleHeight(p.x, p.z) * heightScale + L.lift, p.z);
+  };
+
+  for (let j = 0; j < nz - 1; j++) {
+    for (let i = 0; i < nx - 1; i++) horizontalNext[i] = crossingBetween(i, j + 1, i + 1, j + 1);
+    for (let i = 0; i < nx; i++) vertical[i] = crossingBetween(i, j, i, j + 1);
+
+    for (let i = 0; i < nx - 1; i++) {
+      // マスの4隅。左下 a・右下 b・右上 c・左上 d
+      const a = beyond[j * nx + i];
+      const b = beyond[j * nx + i + 1];
+      const c = beyond[(j + 1) * nx + i + 1];
+      const d = beyond[(j + 1) * nx + i];
+      const code = a | (b << 1) | (c << 2) | (d << 3);
+      if (code === 0 || code === 15) continue;
+
+      const bottom = horizontal[i];
+      const top = horizontalNext[i];
+      const left = vertical[i];
+      const right = vertical[i + 1];
+
+      // 交点が2つ揃った辺の組を繋ぐ。どちらかが池際（ok=false）なら、その線分は引かない
+      const link = (p: Crossing, q: Crossing): void => {
+        if (!p.ok || !q.ok || !p.point || !q.point) return;
+        if (points.length / 6 >= L.maxSegments) return;
+        push(p.point);
+        push(q.point);
+      };
+
+      switch (code) {
+        case 1:
+        case 14:
+          link(left, bottom);
+          break;
+        case 2:
+        case 13:
+          link(bottom, right);
+          break;
+        case 3:
+        case 12:
+          link(left, right);
+          break;
+        case 4:
+        case 11:
+          link(right, top);
+          break;
+        case 6:
+        case 9:
+          link(bottom, top);
+          break;
+        case 7:
+        case 8:
+          link(left, top);
+          break;
+        // 対角だけが向こう側。どちらの繋ぎ方もありうるが、
+        // 0.25m のマスで見た目に差は出ないので素直に2本引く
+        case 5:
+          link(left, bottom);
+          link(right, top);
+          break;
+        case 10:
+          link(bottom, right);
+          link(left, top);
+          break;
+      }
+    }
+
+    // 次の行へ。今のマスの上辺が、次の行のマスの下辺になる
+    for (let i = 0; i < nx - 1; i++) horizontal[i] = horizontalNext[i];
+  }
+
+  if (points.length === 0) return null;
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+  const line = new THREE.LineSegments(
+    geometry,
+    // ライトを受けない素の色。芝の濃淡に引きずられず、遠くでも陰でも同じ濃さで出る。
+    // `THREE.Line` は常に1デバイスピクセル幅なので、**低解像度ターゲット上では1ドット**。
+    // 方向ガイドと同じ太さ・同じ粒になる
+    new THREE.LineBasicMaterial({ color: L.color }),
+  );
+  return line;
 }
 
 /**
