@@ -439,7 +439,7 @@ function renderRanking(tour: TourDefinition = DEFAULT_TOUR): void {
     );
   };
 
-  panel.append(tabs, you.element, slot, deleteRecordsLink());
+  panel.append(tabs, you.element, slot, dataNotice(), deleteRecordsLink());
   root.append(panel);
   load();
 }
@@ -547,6 +547,24 @@ function readoutPair(label: string): { element: HTMLElement; value: HTMLElement 
 
   element.append(labelNode, value);
   return { element, value };
+}
+
+/**
+ * 何を預かるかの一行（`docs/ranking.md` §5-3）。
+ * **消し方のすぐ上に置く。** 預ける話と消す話を同じ場所で読めるようにするため。
+ * 詳しい条文はハブのプライバシーポリシー（`hanage.app/privacy/`）に置く
+ */
+function dataNotice(): HTMLElement {
+  const copy = t();
+  const box = document.createElement('div');
+  box.className = 'ranking-privacy';
+
+  const note = document.createElement('p');
+  note.className = 'name-note';
+  note.textContent = copy.dataNote;
+
+  box.append(note, externalMenuLink(copy.privacy, hubUrl(PRIVACY_PATH)));
+  return box;
 }
 
 /**

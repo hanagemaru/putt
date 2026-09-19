@@ -422,7 +422,8 @@ Putt の `wrangler.jsonc` は現在 Static Assets だけで `main` を持たな�
    **実装済み（2026-09-19）。D1を作れば動く**
 5. ~~**リプレイ検証（段2）**~~ **実装済み（2026-09-19）。**
    `scripts/verify-records.ts` と `.github/workflows/verify-ranking.yml`（6時間ごと）
-6. **プライバシーの文言とハブ側の更新**（実装と同じ変更で）
+6. **プライバシーの文言とハブ側の更新**（実装と同じ変更で）。
+   ゲーム側は実装済み（§10-7）。**ハブ（`hanage.app/privacy/`）の差し替えが残り**
 7. 週替わりチャレンジの板を足す（画面接続が済んでから）
 
 **1〜3は固定コースの確定を待たずに着手できる。**
@@ -641,9 +642,78 @@ Putt の `wrangler.jsonc` は現在 Static Assets だけで `main` を持たな�
 罰打の規則そのものは `src/hole-sim.ts` の `penaltyStrokes()` 1か所。
 ゲーム本体と検証が同じ関数を見ているので、**そこだけ直せば両方が揃う。**
 
-### 10-7. 次にやること
+### 10-7. プライバシーの文言（§7 の6・2026-09-19）
 
-- **既定を `api` にする**（`CONFIG.game.ranking.source`）。**これで公開になる。**
-  いまは `off` なので、`?ranking=api` を付けた人にしか見えない
-- プライバシーの文言（§5-3）は、**公開と同じ変更で**ハブ側（`hanage.app/privacy/`）を直す
+ゲーム側は入れた。**ランキング画面の、消し方のすぐ上に一行**置いてある
+（`dataNotice()`）。預ける話と消す話を同じ場所で読めるようにするため。
+
+> あずかるのは、この端末の匿名IDと名前・スコア・打ち出しの記録だけです。IPアドレスは保存しません。
+> 　[プライバシー]（ハブへ）
+
+320×568 の実測で、日本語3行・英語4行。表の下に収まり、横はみ出しなし。
+
+**残りはハブ側**（`https://hanage.app/privacy/` とその `/en`）。このリポジトリからは触れないので、
+差し替える文面を下書きとして置く。**実装と食い違わないよう、ここを正本にして貼る。**
+
+#### ハブへ貼る下書き（日本語）
+
+> ### パッティングゲームのランキングについて
+>
+> ランキングに記録を登録すると、次のものをお預かりします。
+>
+> - **端末ごとの匿名ID**（ランダムな文字列。氏名やメールアドレスとは結び付きません）
+> - **登録に使う鍵のハッシュ**（本人以外が同じIDで登録できないようにするためのものです）
+> - **表示名**（ご自身で入力いただいたもの）
+> - **スコア**（合計打数・ホールごとの打数・カップインしたかどうか）
+> - **打ち出しの記録**（1打ごとの初速と方向。不正なスコアを見分けるために使います）
+> - 登録した日時
+>
+> **氏名・メールアドレス・アカウント・位置情報はお預かりしません。**
+> IPアドレスは保存せず、短時間に大量の登録を防ぐための照合にハッシュとして使い、
+> **24時間で破棄します。**
+>
+> 用途はランキングの表示と、不正なスコアの確認のみです。第三者へ提供しません。
+> 保管先は Cloudflare D1（アジア太平洋地域）です。
+>
+> **削除**: ゲーム内のランキング画面にある「記録を全部消す」からいつでも削除できます。
+> 名前・スコア・打ち出しの記録がその場で消え、取り消しはできません。
+> 記録は端末ごとに保存しているため、**別の端末へ引き継ぐことはできません。**
+
+#### 英語（`/en`）
+
+> ### About the putting game ranking
+>
+> When you post a score to the ranking, we keep:
+>
+> - an **anonymous ID for your device** (a random string, not linked to your name or email)
+> - a **hash of the key** used to post, so nobody else can post as you
+> - the **display name** you chose
+> - your **scores** (total strokes, per-hole strokes, whether you holed out)
+> - your **shots** (the speed and direction of each putt), used to check for impossible scores
+> - the time you posted
+>
+> **We do not collect your name, email, account or location.** We do not store IP addresses;
+> we use a hash of one to rate-limit posting and **discard it after 24 hours.**
+>
+> We use this only to show the ranking and to check for cheating. We do not share it.
+> It is stored in Cloudflare D1 (Asia-Pacific).
+>
+> **Deletion**: use "Delete my records" on the ranking screen at any time. Your name, scores and
+> shots are deleted immediately and cannot be restored. Records live on one device only and
+> **cannot be moved to another device.**
+
+### 10-8. 次にやること
+
+公開までに、この順で3つ。**順番を入れ替えない。**
+
+1. **このブランチを main へ入れる。** `Apply D1 migrations` は main にファイルが無いと押せない
+2. **Actions の `Apply D1 migrations` を1回実行**（`dry: true` で一覧を見てから `false` で適用）。
+   `0002_flagged_status.sql` が本番へ入る。**記録がゼロのいまなら何も失わない**
+3. **既定を `api` にする**（`CONFIG.game.ranking.source`）。**これで公開になる。**
+   いまは `off` なので、`?ranking=api` を付けた人にしか見えない
+
+残り:
+
+- プライバシーの文言は**ゲーム側は実装済み**（§10-7）。ハブ側（`hanage.app/privacy/`）へ
+  §10-7 の下書きを貼るのが残り。**公開と同じタイミングで**
 - 週替わりチャレンジの板（§7 の7）。画面接続が済んでから

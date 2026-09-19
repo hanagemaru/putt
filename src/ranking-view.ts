@@ -347,9 +347,17 @@ export function ensureRankingStyles(): void {
     .ranking-readout-value {
       color: #ffe66d;
     }
+    /* 何を預かるか。消し方のすぐ上に、同じ大きさの文字で置く */
+    .ranking-privacy {
+      margin-top: 18px;
+      text-align: center;
+    }
+    .ranking-privacy .menu-text-link {
+      margin-top: 6px;
+    }
     /* 記録の削除。めったに押さないので一番下に文字だけで置く */
     .ranking-danger {
-      margin-top: 20px;
+      margin-top: 14px;
       text-align: center;
     }
     .ranking-danger .name-note {

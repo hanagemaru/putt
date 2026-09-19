@@ -65,6 +65,12 @@ const COPY = {
     /** 送信に失敗・オフライン。保留に積んだ状態 */
     rankingHeld: 'あとで登録します',
     rankingSee: 'ランキング',
+    /**
+     * ランキング画面の下に出す、何を預かるかの一行（`docs/ranking.md` §5-3）。
+     * **消し方（この下の「記録を削除」）と同じ場所に置く。**
+     * 詳しい話はハブのプライバシーポリシーへ送る
+     */
+    dataNote: 'あずかるのは、この端末の匿名IDと名前・スコア・打ち出しの記録だけです。IPアドレスは保存しません。',
     /** 名前を決める画面 */
     nameTitle: '名前を決めてください',
     nameNote: 'ランキングに出る名前です（16文字まで）',
@@ -188,6 +194,8 @@ const COPY = {
     rankingChecking: 'CHECKING',
     rankingHeld: "WE'LL SUBMIT THIS LATER",
     rankingSee: 'RANKING',
+    dataNote:
+      "We keep an anonymous ID for this device, your name, your scores and your shots. We don't store IP addresses.",
     nameTitle: 'CHOOSE A NAME',
     nameNote: 'This name shows on the ranking (16 characters max)',
     nameSave: 'SAVE',
