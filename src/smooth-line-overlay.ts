@@ -1,5 +1,22 @@
 import * as THREE from 'three';
 
+/** OB境界の濃さを丸める段数。1本ずつ stroke しないための粒度 */
+const OB_ALPHA_LEVELS = 8;
+
+/** OB境界を高解像度Canvasへ描くときの見た目。`?obline=smooth` の比較用 */
+export interface ObBoundaryOverlay {
+  /** 線分の端点。3つで1点、2点で1本 */
+  points: Float32Array;
+  color: number;
+  widthPx: number;
+  opacity: number;
+  farOpacity: number;
+  fadeNear: number;
+  fadeFar: number;
+  /** マップ表示中は距離で薄くしない */
+  mapMode: boolean;
+}
+
 /** 画面上でガイドを隠すボールの円。中心と半径は CSS px */
 export interface BallOccluder {
   x: number;
@@ -16,6 +33,7 @@ export class SmoothLineOverlay {
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
   private readonly tmp = new THREE.Vector3();
+  private readonly cameraTmp = new THREE.Vector3();
   private cssWidth = 1;
   private cssHeight = 1;
 
@@ -67,12 +85,69 @@ export class SmoothLineOverlay {
     trailCount: number,
     trailVisible: boolean,
     guideOccluder: BallOccluder | null = null,
+    obBoundary: ObBoundaryOverlay | null = null,
   ): void {
     this.clear();
+    // OB境界は補助線より下に敷く
+    if (obBoundary) this.drawObBoundary(camera, obBoundary);
     if (aimVisible) this.drawTaperedGuide(camera, aimPositions, guideOccluder);
     if (trailVisible && trailCount > 1) {
       this.drawPath(camera, trailPositions, trailCount, this.trailColor);
     }
+  }
+
+  /**
+   * OB境界（`?obline=smooth` の比較用）。
+   *
+   * 3Dのドット化とは別にこの高解像度Canvasへ描くので**なめらかに出る**代わりに、
+   * このCanvasは深度を持てないので**地形にも木にも隠れない**。
+   * 距離で薄くするのは3D版と同じ式を CPU 側でやる。
+   */
+  private drawObBoundary(camera: THREE.PerspectiveCamera, ob: ObBoundaryOverlay): void {
+    const segments = ob.points.length / 6;
+    if (segments === 0) return;
+    const cameraWorld = this.cameraTmp;
+    camera.getWorldPosition(cameraWorld);
+    const span = Math.max(ob.fadeFar - ob.fadeNear, 0.0001);
+
+    // 濃さは線分ごとに違うが、1本ずつ stroke すると毎フレーム数百回になる。
+    // 段に丸めて同じ濃さのものをまとめ、段の数だけ stroke する
+    const paths: Path2D[] = [];
+    for (let i = 0; i <= OB_ALPHA_LEVELS; i++) paths.push(new Path2D());
+    let drew = false;
+
+    for (let s = 0; s < segments; s++) {
+      const a = this.projectPoint(camera, ob.points, s * 2);
+      const b = this.projectPoint(camera, ob.points, s * 2 + 1);
+      if (!a || !b) continue;
+      let alpha = ob.opacity;
+      if (!ob.mapMode) {
+        // 線分の中点までの距離で決める。3D版はピクセルごとだが、見た目の差は出ない
+        const mx = (ob.points[s * 6] + ob.points[s * 6 + 3]) / 2;
+        const my = (ob.points[s * 6 + 1] + ob.points[s * 6 + 4]) / 2;
+        const mz = (ob.points[s * 6 + 2] + ob.points[s * 6 + 5]) / 2;
+        const distance = Math.hypot(cameraWorld.x - mx, cameraWorld.y - my, cameraWorld.z - mz);
+        const t = Math.min(Math.max((distance - ob.fadeNear) / span, 0), 1);
+        alpha = ob.opacity + (ob.farOpacity - ob.opacity) * t;
+      }
+      const level = Math.round((alpha / Math.max(ob.opacity, 0.0001)) * OB_ALPHA_LEVELS);
+      paths[Math.min(Math.max(level, 0), OB_ALPHA_LEVELS)].moveTo(a.x, a.y);
+      paths[Math.min(Math.max(level, 0), OB_ALPHA_LEVELS)].lineTo(b.x, b.y);
+      drew = true;
+    }
+    if (!drew) return;
+
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.strokeStyle = new THREE.Color(ob.color).getStyle();
+    ctx.lineWidth = ob.widthPx;
+    for (let i = 0; i <= OB_ALPHA_LEVELS; i++) {
+      const alpha = (i / OB_ALPHA_LEVELS) * ob.opacity;
+      if (alpha <= 0.001) continue;
+      ctx.globalAlpha = alpha;
+      ctx.stroke(paths[i]);
+    }
+    ctx.restore();
   }
 
   /**

@@ -10,7 +10,7 @@
 //
 // **走行中に俯瞰へ切り替えない。** 一人称のまま最後まで見せて、分析は止まってから（§3）。
 import * as THREE from 'three';
-import { CONFIG } from './config';
+import { CONFIG, type ObLineStyle } from './config';
 import type { ObBoundaryLine } from './green';
 import {
   Green,
@@ -43,7 +43,11 @@ import * as i18n from './i18n';
 import { language, t } from './i18n';
 import { Round, type HoleScore } from './round';
 import { RoundProgressStore } from './round-storage';
-import { SmoothLineOverlay, type BallOccluder } from './smooth-line-overlay';
+import {
+  SmoothLineOverlay,
+  type BallOccluder,
+  type ObBoundaryOverlay,
+} from './smooth-line-overlay';
 import { StrokeView } from './stroke-view';
 import {
   CameraRig,
@@ -357,6 +361,15 @@ let greenMesh: GreenMesh;
 /** OB境界の線。ホールを作り直すたびに差し替わる */
 let obLine: ObBoundaryLine | null = null;
 
+/**
+ * OB境界の線の出し方。実機で見比べるための切り替えで、既定は `CONFIG.obLine.style`。
+ * `?gen=v2` `?setup=` と同じく、比較のためだけの入口
+ */
+const obLineStyle: ObLineStyle = ((): ObLineStyle => {
+  const raw = urlParams.get('obline');
+  return raw === 'dot' || raw === 'ribbon' || raw === 'smooth' ? raw : CONFIG.obLine.style;
+})();
+
 /** URL の ?seed=... 。同じグリーンをもう一度出したいときのため */
 function seedFromUrl(): number | null {
   const raw = urlParams.get('seed');
@@ -387,9 +400,9 @@ function buildTerrain(): void {
   terrain.add(createHole(green, visualHeightScale, course.cup));
   // OB境界の線。地面の読みに関わるので、木や地面（props）ではなく地形側に置く。
   // 分類を持たない検証用グリーンには境界が無いので null が返る
-  obLine = createObBoundaryLine(green, visualHeightScale);
+  obLine = createObBoundaryLine(green, visualHeightScale, obLineStyle);
   if (obLine) {
-    terrain.add(obLine.object);
+    if (obLine.object) terrain.add(obLine.object);
     obLine.setMapMode(showingCourseMap());
   }
   props.add(createSurround(green, visualHeightScale));
@@ -666,20 +679,35 @@ function guideBallOccluder(): BallOccluder | null {
   };
 }
 
+/** `?obline=smooth` のときだけ、OB境界を高解像度Canvasへ渡す */
+function obBoundaryOverlay(): ObBoundaryOverlay | null {
+  if (obLineStyle !== 'smooth' || !obLine) return null;
+  const L = CONFIG.obLine;
+  return {
+    points: obLine.points,
+    color: L.color,
+    widthPx: L.smoothWidthPx,
+    opacity: L.opacity,
+    farOpacity: L.farOpacity,
+    fadeNear: L.fadeNear,
+    fadeFar: L.fadeFar,
+    mapMode: obLine.mapMode,
+  };
+}
+
 function updateSmoothLines(): void {
-  if (lineMode !== 'SMOOTH') {
-    smoothLines.clear();
-    return;
-  }
-  const showAim = aimGuideShouldShow();
+  // OB境界の `smooth` は補助線のモードとは無関係に出すので、ここで早期に抜けない
+  const smooth = lineMode === 'SMOOTH';
+  const showAim = smooth && aimGuideShouldShow();
   smoothLines.draw(
     camera,
     aimGuidePositions,
     showAim,
     trailPositions,
     trailPointCount,
-    trailShouldShow(),
+    smooth && trailShouldShow(),
     showAim ? guideBallOccluder() : null,
+    obBoundaryOverlay(),
   );
 }
 
