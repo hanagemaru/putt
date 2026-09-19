@@ -19,20 +19,29 @@ import {
   createObBoundaryLine,
   createSurround,
   createTrees,
-  defaultGreenParams,
   defaultShadeParams,
 } from './green';
 import { Roller } from './physics';
-import { bunkerBasinAt, plateauHeightAt, surfaceAt } from './course/course-map';
+import {
+  giveUpAvailable,
+  isHoledOut,
+  penaltyStrokes,
+  returnsToShotStart,
+} from './hole-sim';
+import { surfaceAt } from './course/course-map';
+import {
+  buildHoleRoller,
+  holeGreenParams,
+  tourHoleCourse,
+} from './course/hole-build';
 import { PROTOTYPE_COURSE } from './course/prototype-course';
-import { approachDirection, generateCourse } from './course/course-generate';
+import { generateCourse } from './course/course-generate';
 import { generateCourseV2 } from './course/course-generate-v2';
 import type { CourseDefinition, TerrainType } from './course/course-types';
 import {
   DEFAULT_SETUP,
   TOUR_SETS,
   generateOptionsFor,
-  generatorOfSeed,
   setupOfSeed,
   tourById,
   type CourseSetup,
@@ -41,7 +50,7 @@ import { CourseMapMarker } from './course-map-marker';
 import { ensurePixelFont } from './pixel-font';
 import * as i18n from './i18n';
 import { language, t } from './i18n';
-import { Round, type HoleScore } from './round';
+import { Round, type HoleScore, type ShotRecord } from './round';
 import { RoundProgressStore } from './round-storage';
 import {
   SmoothLineOverlay,
@@ -88,10 +97,9 @@ function courseWithSeed(value: number): CourseDefinition {
   const seed = value >>> 0;
   if (usePrototypeCourse) return { ...PROTOTYPE_COURSE, seed };
   if (useGeneratorV2) return generateCourseV2(seed, generateOptionsFor(setupForSeed(seed)));
-  // 生成器はツアーが持つが、**ホール単位で上書きできる**（BEGINNER は v1 と v2 を混ぜている）
-  if (mode === 'tour' && generatorOfSeed(selectedTour, seed) === 'v2') {
-    return generateCourseV2(seed, generateOptionsFor(setupForSeed(seed)));
-  }
+  // 生成器はツアーが持つが、**ホール単位で上書きできる**（BEGINNER は v1 と v2 を混ぜている）。
+  // 組み立ては `hole-build.ts` に1本化してある（検証側と食い違わせないため）
+  if (mode === 'tour') return tourHoleCourse(selectedTour, seed);
   return generateCourse(seed);
 }
 
@@ -207,25 +215,8 @@ if (round && roundStore) {
  * 地形の性格はコース定義が持ち、カップと最終アプローチの向きを基準に形を置く。
  */
 function greenParamsFor(target: CourseDefinition, amplitude: number) {
-  return {
-    ...defaultGreenParams(),
-    seed: target.seed,
-    width: target.bounds.width,
-    length: target.bounds.length,
-    // コースの仕立ての倍率を掛ける。**絶対値ではなく倍率にしてある**ので、
-    // アンジュレーション比較モード（`UNDULATION_MODES`）は今までどおり効く
-    undulationAmplitude: amplitude * setupForSeed(target.seed).undulationGain,
-    terrain: {
-      type: target.terrain,
-      cup: target.cup,
-      approach: approachDirection(target),
-    },
-    // 高さのハザード（生成器v2）。v1のコースは持たないので undefined のまま渡る
-    heightFeatures: target.heightFeatures,
-    // バンカーのすり鉢。縁を砂の輪郭に合わせるので、コース定義を知っている側から渡す
-    bunkerBasin: (x: number, z: number) => bunkerBasinAt(target, x, z),
-    plateau: (x: number, z: number) => plateauHeightAt(target, x, z),
-  };
+  // 中身は `hole-build.ts`。**検証側と同じ組み立てを通す**（`docs/ranking.md` §4-6）
+  return holeGreenParams(target, setupForSeed(target.seed), amplitude);
 }
 
 /**
@@ -233,9 +224,7 @@ function greenParamsFor(target: CourseDefinition, amplitude: number) {
  * **グリーンの速さはコースの仕立てが決める**ので、作り直すたびにここを通す
  */
 function makeRoller(): Roller {
-  const next = new Roller(green, course.cup);
-  next.stimpFeet = setupForSeed(course.seed).stimpFeet;
-  return next;
+  return buildHoleRoller(green, course, setupForSeed(course.seed));
 }
 
 // --- シーン ---------------------------------------------------------------
@@ -595,6 +584,11 @@ let aim = 0;
 /** ボール→カップ方向。狙いの振れ幅はここから測る */
 let aimBase = 0;
 let shots = 0;
+/**
+ * このホールの打ち出しの列（`docs/ranking.md` §4-1）。
+ * **ランキングへ送って後から再生するためだけに持つ。** ゲームの進行には使わない
+ */
+let holeShots: ShotRecord[] = [];
 let penaltyApplied = false;
 let lastResult = '';
 let notice = '';
@@ -940,6 +934,8 @@ function returnToAddress(): void {
 function launch(speedMs: number, launchAngle: number): void {
   // 画面の左＝狙い方向。スワイプが画面下へ流れた分だけ狙いの左へ出る
   const direction = aim - launchAngle;
+  // 打つ前に記録する。打った位置は前の打の結果なので、初速と方向だけで再生できる
+  holeShots.push([speedMs, direction]);
   shotStart.copy(ball);
   penaltyApplied = false;
   cupViewUsed = false;
@@ -1025,11 +1021,10 @@ function resumeFollowFromCup(): void {
 /** ボールが完全に停止してから呼ぶ。ここで初めて俯瞰と軌跡を出す（§3） */
 function enterResult(): void {
   state = 'RESULT';
-  if (
-    !penaltyApplied &&
-    (roller.status === 'water' || roller.status === 'outOfBounds')
-  ) {
-    shots += 1;
+  // 罰打の規則は `hole-sim.ts` が正本。検証側も同じ関数を見る
+  const penalty = penaltyStrokes(roller.status);
+  if (!penaltyApplied && penalty > 0) {
+    shots += penalty;
     penaltyApplied = true;
   }
   syncLineVisibility();
@@ -1045,7 +1040,7 @@ function enterResult(): void {
 }
 
 function penaltyResultPending(): boolean {
-  return roller.status === 'water' || roller.status === 'outOfBounds';
+  return penaltyStrokes(roller.status) > 0;
 }
 
 /** 結果テキスト（§3）。打ち出しラインへの射影で オーバー／ショート と左右のズレを出す */
@@ -1069,8 +1064,8 @@ function describeResult(): string {
 
 /** RESULT でタップされた。ホールが続いている場合だけ次のパットへ */
 function nextPutt(): void {
-  if (roller.status === 'water' || roller.status === 'outOfBounds') {
-    // 打つ前の位置へ戻す。打数はそのまま
+  if (returnsToShotStart(roller.status)) {
+    // 打つ前の位置へ戻す。打数はそのまま（罰打は RESULT で足し済み）
     ball.copy(shotStart);
   }
   roller.place(ball.x, ball.y);
@@ -1083,7 +1078,7 @@ function nextPutt(): void {
  * 自然に終わるのはカップインだけ（もう一方の出口はギブアップ）
  */
 function holeFinished(): boolean {
-  return roller.status === 'holed';
+  return isHoledOut(roller.status);
 }
 
 /**
@@ -1093,8 +1088,8 @@ function holeFinished(): boolean {
  */
 function canGiveUp(): boolean {
   if (state !== 'ADDRESS' && state !== 'RESULT') return false;
-  if (roller.status === 'holed') return false;
-  return shots >= course.par * G.round.giveUpParMultiple;
+  if (isHoledOut(roller.status)) return false;
+  return giveUpAvailable(shots, course.par);
 }
 
 /**
@@ -1120,6 +1115,7 @@ function restartPracticeHole(): void {
   ball.set(course.tee.x, course.tee.z);
   shotStart.copy(ball);
   shots = 0;
+  holeShots = [];
   lastResult = '';
   lastSwing = '';
   roller.place(ball.x, ball.y);
@@ -1141,7 +1137,7 @@ function practiceEndPending(): boolean {
 function enterHoleOut(): void {
   if (!round) return;
   state = 'HOLE_OUT';
-  round.recordHole(course.par, shots, roller.status === 'holed');
+  round.recordHole(course.par, shots, isHoledOut(roller.status), holeShots);
   // スコアが確定した時点で保存する。1打ごとには保存しない（復元はホールの頭からなので、
   // それ以上の頻度に意味がない）。
   // 最終ホールのあとは再開できるホールがない。ここで残すと終わったラウンドを
@@ -1231,6 +1227,8 @@ function loadHole(next: number): void {
   shotStart.copy(ball);
   roller.place(ball.x, ball.y);
   shots = 0;
+  // ホールが変われば打ち出しの列も新しく始める
+  holeShots = [];
   lastResult = '';
   lastSwing = '';
   trailPointCount = 0;

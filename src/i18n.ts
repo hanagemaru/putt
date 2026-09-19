@@ -46,6 +46,53 @@ const COPY = {
       fang: 'ネオマレット',
     },
 
+    // --- オンラインランキング（docs/ranking.md §6） ---
+    /** トップのボタン。押すとどの板（コース）かを選ぶ画面へ */
+    ranking: 'ランキング',
+    /** 板の一覧とランキング表の見出し */
+    rankingTitle: 'ランキング',
+    /** 表の上に置く「あなた」の行。自分の順位を表の中から探させない */
+    you: 'あなた',
+    colRank: '順位',
+    colName: '名前',
+    rankingEmpty: 'まだ登録がありません',
+    rankingLoading: '読み込み中…',
+    /** 取得に失敗したとき。**ゲームは普通に遊べる**ことが伝わる言い方にする */
+    rankingUnavailable: 'いま見られません',
+    rankingRetry: 'もう一度',
+    /** 段2の検証待ち。本人にだけ見せる */
+    rankingChecking: '確認中',
+    /** 送信に失敗・オフライン。保留に積んだ状態 */
+    rankingHeld: 'あとで登録します',
+    rankingSee: 'ランキング',
+    /**
+     * ランキング画面の下に出す、何を預かるかの一行（`docs/ranking.md` §5-3）。
+     * **消し方（この下の「記録を削除」）と同じ場所に置く。**
+     * 詳しい話はハブのプライバシーポリシーへ送る
+     */
+    dataNote: 'あずかるのは、この端末の匿名IDと名前・スコア・打ち出しの記録だけです。IPアドレスは保存しません。',
+    /** 名前を決める画面 */
+    nameTitle: '名前を決めてください',
+    nameNote: 'ランキングに出る名前です（16文字まで）',
+    nameSave: '決定',
+    nameLater: 'あとで',
+    /**
+     * 「あなた」の行に置くボタン。**名前の隣に並ぶので短くする**
+     * （長いと名前のほうが省略されて、誰の行か分からなくなる）
+     */
+    nameEdit: '変える',
+    /** まだ決めていない人へ。変えるものが無い状態で「変える」と言わない */
+    nameSet: '決める',
+    /** 名前を決めていない人の欄。隣に「名前を決める」が並ぶので短くする */
+    nameUnset: '名前なし',
+    /** 記録の削除（プライバシー。消し方が無い状態で公開しない） */
+    dataDelete: '記録を全部消す',
+    dataDeleteNote: 'この端末の名前と、登録した記録を消します。元には戻せません',
+    dataDeleteConfirm: '消す',
+    dataDeleteCancel: 'やめる',
+    dataDeleted: '消しました',
+    dataDeleteFailed: '消せませんでした',
+
     // --- 画面共通（index.html） ---
     top: 'トップ',
     backToTop: 'トップへ戻る',
@@ -134,6 +181,34 @@ const COPY = {
       mallet: 'MALLET',
       fang: 'FANG',
     },
+
+    ranking: 'RANKING',
+    rankingTitle: 'RANKING',
+    you: 'YOU',
+    colRank: 'POS',
+    colName: 'NAME',
+    rankingEmpty: 'NO ENTRIES YET',
+    rankingLoading: 'LOADING…',
+    rankingUnavailable: "CAN'T LOAD RIGHT NOW",
+    rankingRetry: 'RETRY',
+    rankingChecking: 'CHECKING',
+    rankingHeld: "WE'LL SUBMIT THIS LATER",
+    rankingSee: 'RANKING',
+    dataNote:
+      "We keep an anonymous ID for this device, your name, your scores and your shots. We don't store IP addresses.",
+    nameTitle: 'CHOOSE A NAME',
+    nameNote: 'This name shows on the ranking (16 characters max)',
+    nameSave: 'SAVE',
+    nameLater: 'LATER',
+    nameEdit: 'EDIT',
+    nameSet: 'SET',
+    nameUnset: 'NO NAME',
+    dataDelete: 'DELETE MY RECORDS',
+    dataDeleteNote: "Deletes your name and every record you've posted. This can't be undone.",
+    dataDeleteConfirm: 'DELETE',
+    dataDeleteCancel: 'KEEP',
+    dataDeleted: 'DELETED',
+    dataDeleteFailed: "COULDN'T DELETE",
 
     top: 'TOP',
     backToTop: 'Back to top',
@@ -377,6 +452,29 @@ export function bestLabel(strokes: number, toPar: string): string {
 
 export function newBestLabel(best: string): string {
   return en(`NEW BEST!  ${best}`, `NEW BEST!　${best}`);
+}
+
+/**
+ * 順位の表示（`docs/ranking.md` §3-1）。**同打数はゴルフ流にまとめる。**
+ * 38打が12人なら12人とも `T3` で、次は `T15`。日本語でもこの書き方をそのまま使う
+ */
+export function rankLabel(rank: number, tied: boolean): string {
+  return tied ? `T${rank}` : String(rank);
+}
+
+/** 板の登録人数 */
+export function playerCountLabel(count: number): string {
+  return en(`${count} PLAYERS`, `${count}人`);
+}
+
+/** 登録できたときにラウンド終了カードへ出す「T12 / 340人」 */
+export function standingLabel(rank: number, tied: boolean, playerCount: number): string {
+  return `${rankLabel(rank, tied)} / ${playerCountLabel(playerCount)}`;
+}
+
+/** ランキング表の打数。**ギブアップを含む記録は `*`**（スコアカードと同じ印） */
+export function rankingStrokes(strokes: number, gaveUp: boolean): string {
+  return gaveUp ? `${strokes}*` : String(strokes);
 }
 
 export function roundEndTitle(tourName: string): string {

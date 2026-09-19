@@ -65,3 +65,18 @@ jobs:
               echo "- Preview URLs が無効だとURLは出ない（DEPLOY.md）"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+      # ランキングAPIの生存確認。**手元やブラウザで確かめなくて済むよう、ここで見る。**
+      # `database` はD1が繋がっているか、`schema` は表ができているか（`/api/health`）。
+      # 確認そのものが目的なので、落ちてもジョブは失敗させない
+      - name: Check ranking API
+        if: steps.upload.outputs.url != ''
+        run: |
+          url="${{ steps.upload.outputs.url }}"
+          health=$(curl -sS -m 20 "$url/api/health" || echo '{"error":"unreachable"}')
+          echo "health: $health"
+          {
+            echo
+            echo "### ランキングAPI"
+            echo
+            echo "- \`/api/health\`: \`$health\`"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1418,6 +1418,111 @@ export const CONFIG = {
       },
     },
 
+    /**
+     * オンラインランキング（`docs/ranking.md`）。板（ランキングの単位）ごとに
+     * 合計打数を競う。**練習モードは対象外**（spec §6）。
+     */
+    ranking: {
+      /**
+       * 既定の取得先。**まだ `off`。**
+       *
+       * - `off`  … 入口ごと出さない。サーバも実機確認も済んでいない間はこれ
+       * - `mock` … サーバなしで動く偽データ。**画面と動線の確認はこれで通す**
+       * - `api`  … 本物のWorker（段4で出来たら既定をこれにする）
+       *
+       * `?ranking=api|mock|off` で切り替えると、**言語と同じように保存へ移る**ので
+       * 画面を移っても続く（`sourceStorageKey`）。
+       * GitHub Pages（`/putt/`）はAPIを持たないので、`api` でも自動で `off` に落とす
+       */
+      source: 'off' as 'api' | 'mock' | 'off',
+      /** `?ranking=` の保存先。入口で一度読んで、以後は保存を見る */
+      sourceStorageKey: 'putt-ranking-source',
+      /** `?rankingMock=` の保存先。モックで出す場面（失敗・圏外など）を続かせる */
+      mockScenarioStorageKey: 'putt-ranking-mock-scenario',
+      /**
+       * 板IDに入れる規則の版（`docs/ranking.md` §2-1）。
+       * **`CONFIG.physics`・罰打・カップ判定・コース生成の数値を変えたらここを上げる。**
+       * 上げ忘れると、違う物理で出した打数が同じ板に混ざる
+       */
+      rulesVersion: 1,
+      /** 送信の中身の版。送る項目を変えたら上げる */
+      appVersion: '2026-09-ranking-v1',
+      /** 表示名の最大文字数（NFC正規化したあとのコードポイント数） */
+      nameMaxLength: 16,
+      /** ランキング表に出す上位の件数 */
+      topCount: 10,
+      /** 自分の行の上下に何件まで出すか */
+      nearbyRadius: 3,
+      /** API の待ち時間の上限 [ms]。超えたら失敗として扱い、**ゲームは止めない** */
+      requestTimeoutMs: 8000,
+      /** 匿名IDと認証鍵の保存キー。**端末を変えると引き継げない**（同 §6-1） */
+      identityStorageKey: 'putt-player-identity-v1',
+      /** 表示名の保存キー */
+      nameStorageKey: 'putt-player-name',
+      /** 送れなかった記録を積んでおく保存キー。板ごとに最新の1件だけ持つ */
+      pendingStorageKey: 'putt-pending-submission',
+      /** モックの偽データの保存キー */
+      mockStorageKey: 'putt-ranking-mock-v1',
+      /** モックが作る板の人数。同打数が大量に並ぶ見え方を確認するための数 */
+      mockPlayerCount: 340,
+
+      /**
+       * リプレイ検証（段2。`scripts/verify-records.ts`）の数値。
+       * **Workerの中では回さない**（無料枠の10ms CPUに入らない）ので、
+       * ここはGitHub Actionsのバッチだけが読む
+       */
+      verify: {
+        /** 1回のバッチで見る件数の上限。取りこぼしは次の回で拾う */
+        batchLimit: 200,
+        /**
+         * 1打の再生を打ち切る歩数。固定タイムステップ1/240秒なので 240×60 で60秒ぶん。
+         * **止まらない打ち出しで無限に回らない**ための保険で、越えたら判定しない
+         */
+        maxStepsPerShot: 240 * 60,
+      },
+
+      /**
+       * サーバ（`src/server/worker.ts`）側の数値。
+       * **ランキングのAPIは誰でも直接叩ける**ので、上限は必ず要る（`docs/ranking.md` §4-4）
+       */
+      server: {
+        /** レート制限の窓 [s]。この幅で数えて、超えた分を弾く */
+        rateWindowSeconds: 60,
+        /** 表示名の更新: 1人あたり / 同じIPあたり（窓の中の回数） */
+        namePerPlayer: 10,
+        namePerIp: 20,
+        /** 記録の削除。押し間違いで何度も叩くものではないので低め */
+        deletePerPlayer: 4,
+        deletePerIp: 12,
+        /** 記録の登録（段4で使う）。1ラウンド9ホールに1回しか出ない */
+        submitPerPlayer: 12,
+        submitPerIp: 40,
+        /** 受け取る本文の上限 [byte]。打ち出しの列を積んでも9ホールで1KB未満 */
+        maxBodyBytes: 120000,
+        /** レート制限の古い行を片付けるまで [s] */
+        rateKeepSeconds: 86400,
+
+        /**
+         * 登録を受けた直後の状態（`docs/ranking.md` §4-4）。
+         *
+         * **`pending`（検証待ち）。** リプレイ検証は定期バッチが後から判定するので、
+         * 登録の瞬間には決まらない。`pending` でも**板には載る**ので、
+         * 本人にも他人にも順位は見えている（`suspicious` になったものだけ外れる）
+         */
+        initialStatus: 'pending' as 'verified' | 'pending',
+
+        // --- 段1の常識チェック（同 §4-4）。**ありえない値を弾くだけ** ---
+        /** 1ラウンドのホール数の上限。通常ツアー9・週替わり3 */
+        maxHoles: 18,
+        /** 1ホールの打数の上限 */
+        maxHoleStrokes: 99,
+        /** 合計打数の上限 */
+        maxTotalStrokes: 999,
+        /** 1打の初速の上限 [m/s]。実際のパットは速くても6m/s前後 */
+        maxShotSpeed: 20,
+      },
+    },
+
     aim: {
       /**
        * 狙いを左右スワイプで変える感度 [rad/px]。

@@ -1,0 +1,49 @@
+name: Verify ranking records
+
+# ランキングのリプレイ検証（段2。`docs/ranking.md` §4-4-1 の案A）。
+#
+# **Workerの中では回せない。** 無料枠は1リクエスト10ms CPUで、コース生成だけで
+# v2は80ms/ホールかかる。9ホール1ラウンドの検証は約0.7秒なので、
+# CPUの制限が無いここ（GitHub Actionsのランナー）でまとめて回す。
+#
+# 判定が付くまで数時間遅れるが、**背景の整合性チェックなので困らない**。
+# 登録そのものは即時受理され、`pending` のまま板には載っている。
+#
+# **再生と合わなかった記録は `flagged` にするだけで、板からは外さない。**
+# そのときこのワークフローは**わざと失敗する**（バッチの終了コードが1になる）。
+# 定期実行が赤くなると GitHub が持ち主へメールを送るので、それが通知になる。
+# 中身と書き換えの手順は Summary と `DEPLOY.md`。
+on:
+  schedule:
+    # 6時間ごと。記録が増えたら間隔を詰める
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: '判定するだけで書き戻さない'
+        type: boolean
+        default: false
+
+# 同時に2本走らせない。同じ記録を二重に判定しないため
+concurrency:
+  group: verify-ranking
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    # 本番デプロイと同じリポジトリ変数で止められるようにする（DEPLOY.md）
+    if: vars.CLOUDFLARE_DEPLOY == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # **赤くなるのは異常ではなく、人の判断待ち**（`flagged` が出た合図）
+      - name: Verify pending records
+        run: npm run verify:records ${{ inputs.dry && '-- --dry' || '' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
