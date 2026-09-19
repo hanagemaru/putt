@@ -531,9 +531,8 @@ Putt の `wrangler.jsonc` は現在 Static Assets だけで `main` を持たな�
 
 ### 10-5. 次にやること
 
-- **D1を作る（残っているのはこれだけ）。**
-  `npx wrangler d1 create putt-ranking` → 出た `database_id` を `wrangler.jsonc` の
-  コメントを外して書き、`npm run db:migrate`。**Cloudflareの認証が要る作業**
+- ~~**D1を作る。**~~ **2026-09-19 に作成済み**（`putt-ranking`・APAC）。
+  `wrangler.jsonc` の `d1_databases` に繋いである。スキーマの適用は `npm run db:migrate`
 - **既定を `api` にするのは固定コースの確定後**（`CONFIG.game.ranking.source`）。
   板IDはシード列から作るので、確定前に集めた記録は差し替えで別の板に取り残される
 - 段5（リプレイ検証）: `scripts/verify-records.ts` と定期ワークフロー。

@@ -138,9 +138,8 @@ AdSense申請全体・ハブ側の準備は `hanage-hub` の正本に従う。
   - サーバは `/api/health`・`/api/rankings`・`/api/records`・`/api/player`（PUT / DELETE）。
     検証は段1（形・常識・レート制限・二重登録）まで。**嘘のスコアそのものはまだ通る**
   - 打ち出しの列（初速と方向）をホールごとに記録して送っている。段5の再生に使う
-  - **残っているのは D1 を作ること**（`npx wrangler d1 create putt-ranking` →
-    `wrangler.jsonc` のコメントを外して `npm run db:migrate`）。
-    それまでは `/api/records` などが 503 を返すだけで、ゲームの配信には影響しない
+  - **D1は作成済み**（`putt-ranking`・APAC・2026-09-19）。`wrangler.jsonc` に繋いだ。
+    スキーマの適用は `npm run db:migrate`（`DEPLOY.md`）
   - **実機確認の結果（2026-09-17）**: モックで一巡し、**ラウンド終了からの登録まで問題なし**。
     1回目の指摘（板の一覧が遠い・言語トグルとコースの説明が不要・自分の順位が分からない）は
     タブ化と「あなた」の行で直し、2回目で確認できた

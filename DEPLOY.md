@@ -24,6 +24,21 @@ Cloudflareへのデプロイは、リポジトリ変数 `CLOUDFLARE_DEPLOY` が 
 
 PWAのマニフェストとアイコンも同じベースに追従する。詳細は `docs/pwa.md`。
 
+## D1（ランキングの保存先）
+
+| 項目 | 値 |
+| --- | --- |
+| データベース名 | `putt-ranking` |
+| ロケーション | APAC（**後から変えられない**） |
+| バインディング | `DB`（`wrangler.jsonc` の `d1_databases`） |
+| スキーマ | `migrations/0001_ranking.sql` |
+
+適用は `npm run db:migrate`（本番）／ `npm run db:migrate:local`（手元）。
+**スイーパーのD1とは別物**で、記録も消し方も分かれている。
+
+`database_id` は `wrangler.jsonc` に平文で置いてよい。**これだけでは誰も触れず**、
+読み書きには Cloudflare アカウントの認証（Actions の `CLOUDFLARE_API_TOKEN`）が要る。
+
 ## 設定済みのシークレットと変数
 
 `hanagemaru/putt` の Settings → Secrets and variables → Actions に登録済み。
