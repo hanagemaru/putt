@@ -120,8 +120,30 @@ export interface SubmitRecordRequest {
   putterPowerScale: number;
 }
 
-/** 登録の状態。`pending` は段2の検証待ち（板には載る） */
-export type VerificationStatus = 'verified' | 'pending' | 'suspicious';
+/**
+ * 登録の状態（`docs/ranking.md` §4-4）。**板から外れるのは `suspicious` だけ。**
+ *
+ *   verified   … 段2のリプレイ検証が通った
+ *   pending    … 検証待ち。**板には載る**（登録の直後はこれ）
+ *   flagged    … 再生と打数が合わなかった。**板には載せたまま**こちらへ知らせ、人が判断する
+ *   suspicious … 人が黒と決めた。**ここで初めて板から外れる**
+ *
+ * 機械の判定だけで記録を消さないための4段。物理の版ずれや取りこぼしで
+ * **ちゃんと遊んだ人の記録が黙って消える**ほうが、嘘が1件混じるより悪い
+ */
+export type VerificationStatus = 'verified' | 'pending' | 'flagged' | 'suspicious';
+
+/** 板に載せる状態。並びの問い合わせ（`src/server/worker.ts`）はこれだけを見る */
+export const BOARD_VISIBLE_STATUSES: readonly VerificationStatus[] = [
+  'verified',
+  'pending',
+  'flagged',
+];
+
+/** 板に載る状態か */
+export function isOnBoard(status: string): boolean {
+  return (BOARD_VISIBLE_STATUSES as readonly string[]).includes(status);
+}
 
 export interface SubmitRecordResponse {
   accepted: boolean;

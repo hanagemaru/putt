@@ -11,7 +11,8 @@
 //
 // ここでやる検証は段1（形・常識・レート制限・二重登録）だけ。**嘘のスコアはここでは通る。**
 // それを弾く段2のリプレイ検証は、Workerの外（`scripts/verify-records.ts` を回す
-// GitHub Actionsのバッチ）が後から判定して `verified` / `suspicious` を書き戻す。
+// GitHub Actionsのバッチ）が後から判定して `verified` / `flagged` を書き戻す。
+// **`flagged` でも板からは外さない**（人が見て `suspicious` にしたときだけ外れる）。
 //
 // **D1が無くても落ちない。** `wrangler.jsonc` に d1_databases が無ければ `env.DB` も無いので、
 // 器が要る入口だけ 503 を返す（ゲームの配信には影響しない）。本番のD1は 2026-09-19 に作成済み。
@@ -21,6 +22,7 @@
 
 import { CONFIG } from '../config';
 import {
+  BOARD_VISIBLE_STATUSES,
   DEFAULT_PLAYER_NAME,
   isBoardId,
   normalizeDisplayName,
@@ -96,8 +98,12 @@ interface OwnRecordRow {
  *
  * - `RANK()` は打数だけで並べるので、**同打数は同じ番号**になり次が飛ぶ（38打が12人なら次は13位）
  * - `ROW_NUMBER()` は `打数 → 到達時刻 → playerId` で一意。切り出しにはこちらを使う
- * - `suspicious` は板から外す。`pending`（検証待ち）は載せる
+ * - **板から外れるのは `suspicious` だけ**（`pending` も `flagged` も載せる）。
+ *   どれを載せるかは `BOARD_VISIBLE_STATUSES` が正本で、ここはそれを並べるだけ
  */
+/** `'verified', 'pending', 'flagged'`。**定数の並びなので外から値は入らない** */
+const VISIBLE_STATUS_SQL = BOARD_VISIBLE_STATUSES.map((status) => `'${status}'`).join(', ');
+
 const RANKED_CTE = `
   WITH ranked AS (
     SELECT r.player_id AS player_id,
@@ -112,7 +118,7 @@ const RANKED_CTE = `
            COUNT(*) OVER (PARTITION BY r.total_strokes) AS tied
     FROM records r
     JOIN players p ON p.player_id = r.player_id
-    WHERE r.board_id = ? AND r.verification_status IN ('verified', 'pending')
+    WHERE r.board_id = ? AND r.verification_status IN (${VISIBLE_STATUS_SQL})
   )`;
 
 const JSON_HEADERS = {
@@ -311,7 +317,7 @@ async function boardPlayerCount(db: D1Database, boardId: string): Promise<number
   const row = await db
     .prepare(
       `SELECT COUNT(*) AS total FROM records
-       WHERE board_id = ? AND verification_status IN ('verified', 'pending')`,
+       WHERE board_id = ? AND verification_status IN (${VISIBLE_STATUS_SQL})`,
     )
     .bind(boardId)
     .first<{ total: number }>();
@@ -406,7 +412,7 @@ async function handleRanking(request: Request, db: D1Database, url: URL): Promis
  * - **自己ベストのときだけ書き換える。** 同打数は更新扱いにしないので、
  *   一度38打を出した人は何度38打を出しても順位が動かない
  * - 同じ `submissionId` は二度受けない。**返す答えも1回目と同じ**にする
- * - 検証は段1まで。通ったものは `initialStatus`（いまは `verified`）で板に載る
+ * - 検証は段1まで。通ったものは `initialStatus`（いまは `pending`）で板に載る
  */
 async function handleSubmit(request: Request, db: D1Database): Promise<Response> {
   if (Number(request.headers.get('Content-Length') ?? 0) > S.maxBodyBytes) {

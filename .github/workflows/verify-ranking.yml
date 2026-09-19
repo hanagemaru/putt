@@ -8,6 +8,11 @@ name: Verify ranking records
 #
 # 判定が付くまで数時間遅れるが、**背景の整合性チェックなので困らない**。
 # 登録そのものは即時受理され、`pending` のまま板には載っている。
+#
+# **再生と合わなかった記録は `flagged` にするだけで、板からは外さない。**
+# そのときこのワークフローは**わざと失敗する**（バッチの終了コードが1になる）。
+# 定期実行が赤くなると GitHub が持ち主へメールを送るので、それが通知になる。
+# 中身と書き換えの手順は Summary と `DEPLOY.md`。
 on:
   schedule:
     # 6時間ごと。記録が増えたら間隔を詰める
@@ -36,6 +41,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # **赤くなるのは異常ではなく、人の判断待ち**（`flagged` が出た合図）
       - name: Verify pending records
         run: npm run verify:records ${{ inputs.dry && '-- --dry' || '' }}
         env:

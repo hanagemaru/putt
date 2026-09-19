@@ -31,10 +31,60 @@ PWAのマニフェストとアイコンも同じベースに追従する。詳�
 | データベース名 | `putt-ranking` |
 | ロケーション | APAC（**後から変えられない**） |
 | バインディング | `DB`（`wrangler.jsonc` の `d1_databases`） |
-| スキーマ | `migrations/0001_ranking.sql` |
+| スキーマ | `migrations/` の連番SQL（`0001_ranking.sql` ほか） |
 
-適用は `npm run db:migrate`（本番）／ `npm run db:migrate:local`（手元）。
+適用は **Actions の `Apply D1 migrations` を手で実行**（`dry: true` で未適用の一覧だけ見られる）。
+手元は `npm run db:migrate:local`。デプロイには混ぜていない
+（表の作り直しを含む移行を、気づかないうちに流さないため）。
 **スイーパーのD1とは別物**で、記録も消し方も分かれている。
+
+## 記録の検証と `flagged` の扱い
+
+リプレイ検証（`scripts/verify-records.ts`）は6時間ごとに走り、`pending` の記録を
+**ゲーム本体と同じ物理で再生**して打数を突き合わせる。
+
+| 状態 | 板 | 誰が付けるか |
+| --- | --- | --- |
+| `pending` | 載る | 登録した瞬間（Worker） |
+| `verified` | 載る | 再生と一致（バッチ） |
+| `flagged` | **載ったまま** | 再生と不一致（バッチ）。**人の判断待ち** |
+| `suspicious` | **外れる** | 人が黒と決めたときだけ（手で書く） |
+
+**機械の判定だけで記録を板から外さない。** 物理の版ずれや端末差で
+ちゃんと遊んだ人の記録が黙って消えるほうが、嘘が1件混じるより悪い。
+
+`flagged` が出るとバッチが**わざと失敗する**ので、定期実行の `Verify ranking records` が
+赤くなり、GitHubから持ち主へメールが届く。実行結果の Summary に板・プレイヤー・理由が出る。
+
+中身を見る（`<player>` と `<board>` は Summary の表から）。
+
+```sh
+npx wrangler d1 execute putt-ranking --remote --json --command \
+  "SELECT board_id, total_strokes, hole_strokes_json, shots_json FROM records
+   WHERE verification_status = 'flagged'"
+```
+
+判断して書き換える。**どちらかを必ず書く**（放っておくと次のバッチでも赤いまま）。
+
+```sh
+# 問題なし（板にそのまま残す）
+npx wrangler d1 execute putt-ranking --remote --command \
+  "UPDATE records SET verification_status = 'verified', updated_at = CURRENT_TIMESTAMP
+   WHERE player_id = '<player>' AND board_id = '<board>'"
+
+# クロ（ここで初めて板から外れる）
+npx wrangler d1 execute putt-ranking --remote --command \
+  "UPDATE records SET verification_status = 'suspicious', updated_at = CURRENT_TIMESTAMP
+   WHERE player_id = '<player>' AND board_id = '<board>'"
+```
+
+もう一度判定し直したいときは `pending` に戻せば、次のバッチが再生する。
+
+**物理・罰打・カップ判定・コース生成の数値を変えたら
+`CONFIG.game.ranking.rulesVersion` を上げること。** 版は板IDに入るので、
+上げれば古い記録は古い板に残り、新しい板と混ざらない。上げ忘れると、
+古い記録が新しい規則で再生されて打数が合わず `flagged` が並ぶ（消えはしないが、
+人が判断する手間だけが増える）。
 
 `database_id` は `wrangler.jsonc` に平文で置いてよい。**これだけでは誰も触れず**、
 読み書きには Cloudflare アカウントの認証（Actions の `CLOUDFLARE_API_TOKEN`）が要る。
