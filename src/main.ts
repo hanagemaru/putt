@@ -11,6 +11,7 @@
 // **走行中に俯瞰へ切り替えない。** 一人称のまま最後まで見せて、分析は止まってから（§3）。
 import * as THREE from 'three';
 import { CONFIG } from './config';
+import type { ObBoundaryLine } from './green';
 import {
   Green,
   GreenMesh,
@@ -353,6 +354,8 @@ scene.add(props);
 const terrain = new THREE.Group();
 scene.add(terrain);
 let greenMesh: GreenMesh;
+/** OB境界の線。ホールを作り直すたびに差し替わる */
+let obLine: ObBoundaryLine | null = null;
 
 /** URL の ?seed=... 。同じグリーンをもう一度出したいときのため */
 function seedFromUrl(): number | null {
@@ -384,8 +387,11 @@ function buildTerrain(): void {
   terrain.add(createHole(green, visualHeightScale, course.cup));
   // OB境界の線。地面の読みに関わるので、木や地面（props）ではなく地形側に置く。
   // 分類を持たない検証用グリーンには境界が無いので null が返る
-  const obLine = createObBoundaryLine(green, visualHeightScale);
-  if (obLine) terrain.add(obLine);
+  obLine = createObBoundaryLine(green, visualHeightScale);
+  if (obLine) {
+    terrain.add(obLine.object);
+    obLine.setMapMode(showingCourseMap());
+  }
   props.add(createSurround(green, visualHeightScale));
   props.add(createTrees(green, seed, visualHeightScale));
 }
@@ -512,10 +518,17 @@ function layoutMapMarkers(): void {
   cupMarker.layout(camera.fov, height, ratio);
 }
 
+/** コースマップを表示中か。マーカーとOB線の見せ方がここで変わる */
+function showingCourseMap(): boolean {
+  return state === 'ADDRESS' && aimView === 'MAP';
+}
+
 /** マップのマーカーを現在のボール・カップへ合わせ、マップの間だけ表示する */
 function syncMapMarkers(): void {
-  const showing = state === 'ADDRESS' && aimView === 'MAP';
+  const showing = showingCourseMap();
   mapMarkers.visible = showing;
+  // マップは図として読むところなので、線を距離で薄くせず、木にも地形にも隠さない
+  obLine?.setMapMode(showing);
   if (!showing) return;
   const M = G.courseMap;
   const lift = M.markerLift;

@@ -686,6 +686,63 @@ interface Crossing {
 
 const NO_CROSSING: Crossing = { point: null, ok: false };
 
+/** OB境界の線。マップでは figure として、一人称では風景の一部として見せ方を変える */
+export interface ObBoundaryLine {
+  object: THREE.LineSegments;
+  /** マップ表示の間だけ true。距離で薄くせず、地形にも木にも隠さない */
+  setMapMode(active: boolean): void;
+}
+
+/**
+ * OB境界の線の材質。
+ *
+ * `LineBasicMaterial` ではなく素のシェーダにしているのは、**カメラからの距離で薄くする**ため。
+ * 境界は「今いるあたりでどこまで打てるか」を読むためのものなので、遠くまで同じ濃さで
+ * 出ていると画面がうるさいだけになる（実機前のプレビューで「思ったより目立つ」と出た）。
+ *
+ * `uFade` を 0 にするとフェードが止まり、全線が `opacity` で出る。マップ用。
+ */
+function makeObLineMaterial(): THREE.ShaderMaterial {
+  const L = CONFIG.obLine;
+  const color = new THREE.Color(L.color);
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uColor: { value: new THREE.Vector3(color.r, color.g, color.b) },
+      uNear: { value: L.fadeNear },
+      uFar: { value: L.fadeFar },
+      uOpacity: { value: L.opacity },
+      uFarOpacity: { value: L.farOpacity },
+      uFade: { value: 1 },
+    },
+    vertexShader: `
+      varying float vViewDepth;
+      void main() {
+        vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
+        // ビュー空間の Z は手前が負。カメラからの距離として使うので符号を返す
+        vViewDepth = -viewPosition.z;
+        gl_Position = projectionMatrix * viewPosition;
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 uColor;
+      uniform float uNear;
+      uniform float uFar;
+      uniform float uOpacity;
+      uniform float uFarOpacity;
+      uniform float uFade;
+      varying float vViewDepth;
+      void main() {
+        float t = clamp((vViewDepth - uNear) / max(uFar - uNear, 0.0001), 0.0, 1.0);
+        float faded = mix(uOpacity, uFarOpacity, t);
+        gl_FragColor = vec4(uColor, mix(uOpacity, faded, uFade));
+      }
+    `,
+    transparent: true,
+    // 半透明なので深度は書かない。**参照はする**ので、地形と木には従来どおり隠れる
+    depthWrite: false,
+  });
+}
+
 /**
  * OB境界の線。**見た目だけの目印で、物理には一切関わらない。**
  *
@@ -697,16 +754,19 @@ const NO_CROSSING: Crossing = { point: null, ok: false };
  *
  * 池際には引かない（OBの印であって、ハザードの印ではない）。
  */
-export function createObBoundaryLine(green: Green, heightScale = 1): THREE.LineSegments | null {
+export function createObBoundaryLine(green: Green, heightScale = 1): ObBoundaryLine | null {
   const L = CONFIG.obLine;
   const halfWidth = green.width / 2;
   const halfLength = green.length / 2;
-  const nx = Math.floor(green.width / L.sampleCell) + 1;
-  const nz = Math.floor(green.length / L.sampleCell) + 1;
+  // **格子をコース枠の外へ1マスぶん広げる。**
+  // 枠の外は必ずOBなので、こうしておくと芝が枠に届いているホールでも輪が閉じる。
+  // 広げないと、そこだけ線が途切れたまま終わる（実機前のプレビューで4ツアー計132点）
+  const nx = Math.floor(green.width / L.sampleCell) + 3;
+  const nz = Math.floor(green.length / L.sampleCell) + 3;
   if (nx < 2 || nz < 2) return null;
 
-  const gridX = (i: number): number => -halfWidth + i * L.sampleCell;
-  const gridZ = (j: number): number => -halfLength + j * L.sampleCell;
+  const gridX = (i: number): number => -halfWidth + (i - 1) * L.sampleCell;
+  const gridZ = (j: number): number => -halfLength + (j - 1) * L.sampleCell;
 
   // 先に格子を1枚作る。辺の交点は隣り合うマスで共有するので、分類も探索も1回ずつで済む
   const surfaces: SurfaceType[] = new Array(nx * nz);
@@ -818,14 +878,21 @@ export function createObBoundaryLine(green: Green, heightScale = 1): THREE.LineS
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
-  const line = new THREE.LineSegments(
-    geometry,
-    // ライトを受けない素の色。芝の濃淡に引きずられず、遠くでも陰でも同じ濃さで出る。
-    // `THREE.Line` は常に1デバイスピクセル幅なので、**低解像度ターゲット上では1ドット**。
-    // 方向ガイドと同じ太さ・同じ粒になる
-    new THREE.LineBasicMaterial({ color: L.color }),
-  );
-  return line;
+  const material = makeObLineMaterial();
+  const object = new THREE.LineSegments(geometry, material);
+  // 半透明なので、線どうしが重なったときに手前が奥を消してしまわないよう深度は書かない。
+  // 深度の**参照**はするので、地形や木には従来どおり隠れる
+  object.renderOrder = 1;
+
+  return {
+    object,
+    setMapMode(active: boolean): void {
+      // マップは図として読むところなので、距離で薄くせず、木や地形にも隠さず全線を出す。
+      // 一人称では逆に、地形どおりに隠れて遠いほど薄くなる
+      material.uniforms.uFade.value = active ? 0 : 1;
+      material.depthTest = !active;
+    },
+  };
 }
 
 /**
