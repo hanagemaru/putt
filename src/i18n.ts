@@ -64,9 +64,13 @@ const COPY = {
     nameNote: 'ランキングに出る名前です（16文字まで）',
     nameSave: '決定',
     nameLater: 'あとで',
-    nameEdit: '名前を変える',
+    /**
+     * 「あなた」の行に置くボタン。**名前の隣に並ぶので短くする**
+     * （長いと名前のほうが省略されて、誰の行か分からなくなる）
+     */
+    nameEdit: '変える',
     /** まだ決めていない人へ。変えるものが無い状態で「変える」と言わない */
-    nameSet: '名前を決める',
+    nameSet: '決める',
     /** 名前を決めていない人の欄。隣に「名前を決める」が並ぶので短くする */
     nameUnset: '名前なし',
     /** 記録の削除（プライバシー。消し方が無い状態で公開しない） */
@@ -181,8 +185,8 @@ const COPY = {
     nameNote: 'This name shows on the ranking (16 characters max)',
     nameSave: 'SAVE',
     nameLater: 'LATER',
-    nameEdit: 'CHANGE NAME',
-    nameSet: 'SET NAME',
+    nameEdit: 'EDIT',
+    nameSet: 'SET',
     nameUnset: 'NO NAME',
     dataDelete: 'DELETE MY RECORDS',
     dataDeleteNote: "Deletes your name and every record you've posted. This can't be undone.",

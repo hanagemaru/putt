@@ -52,9 +52,8 @@ applyStaticUiText();
 void flushPendingSubmissions();
 
 if (params.get('menu') === 'ranking') {
-  // ランキングは `?tour=` を board の指定として使う。**ゲームは始めない**ので、
-  // 直接プレイの判定より先に見る
-  // `?tour=` はどのタブを開くかの指定。無ければ最初のコース
+  // **ゲームは始めない**ので、直接プレイの判定より先に見る。
+  // `?tour=` はどのタブを開くかの指定で、無ければ最初のコース
   renderRanking(tourById(params.get('tour')));
 } else if (shouldStartGameDirectly(params)) {
   const tour = directTourFromParams(params);
@@ -294,8 +293,9 @@ function buildSubmission(
       strokes: hole.strokes,
       holedOut: hole.holedOut,
     })),
-    // 打ち出しの列は段4（リプレイ検証の下ごしらえ）で積む。器だけ先に通しておく
-    shots: [],
+    // 打ち出しの列（`docs/ranking.md` §4-1）。**後から再生するためだけに送る。**
+    // 途中保存から再開したラウンドでは揃わないホールがあるので、その穴は空で送る
+    shots: result.scores.map((hole) => hole.shots ?? []),
     generator: TOUR_GENERATOR,
     rulesVersion: R.rulesVersion,
     appVersion: R.appVersion,

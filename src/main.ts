@@ -37,7 +37,7 @@ import { CourseMapMarker } from './course-map-marker';
 import { ensurePixelFont } from './pixel-font';
 import * as i18n from './i18n';
 import { language, t } from './i18n';
-import { Round, type HoleScore } from './round';
+import { Round, type HoleScore, type ShotRecord } from './round';
 import { RoundProgressStore } from './round-storage';
 import { SmoothLineOverlay, type BallOccluder } from './smooth-line-overlay';
 import { StrokeView } from './stroke-view';
@@ -526,6 +526,11 @@ let aim = 0;
 /** ボール→カップ方向。狙いの振れ幅はここから測る */
 let aimBase = 0;
 let shots = 0;
+/**
+ * このホールの打ち出しの列（`docs/ranking.md` §4-1）。
+ * **ランキングへ送って後から再生するためだけに持つ。** ゲームの進行には使わない
+ */
+let holeShots: ShotRecord[] = [];
 let penaltyApplied = false;
 let lastResult = '';
 let notice = '';
@@ -856,6 +861,8 @@ function returnToAddress(): void {
 function launch(speedMs: number, launchAngle: number): void {
   // 画面の左＝狙い方向。スワイプが画面下へ流れた分だけ狙いの左へ出る
   const direction = aim - launchAngle;
+  // 打つ前に記録する。打った位置は前の打の結果なので、初速と方向だけで再生できる
+  holeShots.push([speedMs, direction]);
   shotStart.copy(ball);
   penaltyApplied = false;
   cupViewUsed = false;
@@ -1035,6 +1042,7 @@ function restartPracticeHole(): void {
   ball.set(course.tee.x, course.tee.z);
   shotStart.copy(ball);
   shots = 0;
+  holeShots = [];
   lastResult = '';
   lastSwing = '';
   roller.place(ball.x, ball.y);
@@ -1056,7 +1064,7 @@ function practiceEndPending(): boolean {
 function enterHoleOut(): void {
   if (!round) return;
   state = 'HOLE_OUT';
-  round.recordHole(course.par, shots, isHoledOut(roller.status));
+  round.recordHole(course.par, shots, isHoledOut(roller.status), holeShots);
   // スコアが確定した時点で保存する。1打ごとには保存しない（復元はホールの頭からなので、
   // それ以上の頻度に意味がない）。
   // 最終ホールのあとは再開できるホールがない。ここで残すと終わったラウンドを
@@ -1146,6 +1154,8 @@ function loadHole(next: number): void {
   shotStart.copy(ball);
   roller.place(ball.x, ball.y);
   shots = 0;
+  // ホールが変われば打ち出しの列も新しく始める
+  holeShots = [];
   lastResult = '';
   lastSwing = '';
   trailPointCount = 0;

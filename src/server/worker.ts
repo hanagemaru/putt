@@ -3,14 +3,14 @@
 // 参照実装は Multicolor Sweeper の `src/server/worker.ts`。**構造はそのまま踏襲する。**
 // 違うのは競う値（クリア時間 → 合計打数）と、板が増え続けることの2点。
 //
-// **いまあるのは器だけ**（`docs/ranking.md` §7 の「3. 器」）。
+//   GET    /api/health   … 死活と、D1が繋がっているか
+//   GET    /api/rankings … 板1枚（上位＋自分の周辺＋自分の順位）
+//   POST   /api/records  … 登録（段1の検証まで）
+//   PUT    /api/player   … 表示名の登録・変更
+//   DELETE /api/player   … **自分の記録と名前を全部消す**
 //
-//   GET    /api/health  … 死活と、D1が繋がっているか
-//   PUT    /api/player  … 表示名の登録・変更
-//   DELETE /api/player  … **自分の記録と名前を全部消す**
-//
-// 登録（`POST /api/records`）と取得（`GET /api/rankings`）は段4で足す。
-// それまでは 501 を返して、画面側は「あとで登録します」「いま見られません」へ落ちる。
+// 検証は段1（形・常識・レート制限・二重登録）だけ。**嘘のスコアそのものは通る。**
+// それを弾く段2のリプレイ検証は、Workerの外（GitHub Actionsのバッチ）で後から判定する。
 //
 // **D1をまだ作っていない間も落ちない。** `wrangler.jsonc` に d1_databases が無ければ
 // `env.DB` が無いので、器が要る入口だけ 503 を返す（ゲームの配信には影響しない）。
@@ -19,9 +19,20 @@
 // **コース生成も物理も回さない**。リプレイ検証はWorkerの外（GitHub Actionsのバッチ）。
 
 import { CONFIG } from '../config';
-import { normalizeDisplayName, type UpdatePlayerRequest } from '../ranking-shared';
+import {
+  DEFAULT_PLAYER_NAME,
+  isBoardId,
+  normalizeDisplayName,
+  type RankingBoard,
+  type RankingEntry,
+  type SubmitRecordRequest,
+  type SubmitRecordResponse,
+  type UpdatePlayerRequest,
+} from '../ranking-shared';
+import { validateSubmission } from './record-validation';
 
-const S = CONFIG.game.ranking.server;
+const R = CONFIG.game.ranking;
+const S = R.server;
 
 // --- D1 の最小の型。@cloudflare/workers-types は入れない（依存は最小限に） ---
 
@@ -57,6 +68,51 @@ interface PlayerRow {
   credential_hash: string;
   display_name: string | null;
 }
+
+interface RankedRow {
+  player_id: string;
+  display_name: string | null;
+  total_strokes: number;
+  total_par: number;
+  gave_up: number;
+  /** 同打数をまとめたゴルフ流の順位（表示用） */
+  rank: number;
+  /** 一意の並び（内部用）。上位N件と自分の周辺を切り出すのに使う */
+  position: number;
+  /** 同じ打数の人数。2人以上なら `T12` と出す */
+  tied: number;
+}
+
+interface OwnRecordRow {
+  total_strokes: number;
+  total_par: number;
+  gave_up: number;
+  verification_status: string;
+}
+
+/**
+ * 板1枚の並び（`docs/ranking.md` §3-1）。**順位の付け方はここが正本。**
+ *
+ * - `RANK()` は打数だけで並べるので、**同打数は同じ番号**になり次が飛ぶ（38打が12人なら次は13位）
+ * - `ROW_NUMBER()` は `打数 → 到達時刻 → playerId` で一意。切り出しにはこちらを使う
+ * - `suspicious` は板から外す。`pending`（検証待ち）は載せる
+ */
+const RANKED_CTE = `
+  WITH ranked AS (
+    SELECT r.player_id AS player_id,
+           p.display_name AS display_name,
+           r.total_strokes AS total_strokes,
+           r.total_par AS total_par,
+           r.gave_up AS gave_up,
+           RANK() OVER (ORDER BY r.total_strokes ASC) AS rank,
+           ROW_NUMBER() OVER (
+             ORDER BY r.total_strokes ASC, r.achieved_at ASC, r.player_id ASC
+           ) AS position,
+           COUNT(*) OVER (PARTITION BY r.total_strokes) AS tied
+    FROM records r
+    JOIN players p ON p.player_id = r.player_id
+    WHERE r.board_id = ? AND r.verification_status IN ('verified', 'pending')
+  )`;
 
 const JSON_HEADERS = {
   'Content-Type': 'application/json; charset=utf-8',
@@ -225,6 +281,232 @@ async function handleDeletePlayer(request: Request, db: D1Database): Promise<Res
   return json({ ok: true });
 }
 
+function rankingEntry(row: RankedRow, playerId: string | null): RankingEntry {
+  return {
+    rank: row.rank,
+    tied: row.tied > 1,
+    playerId: row.player_id,
+    name: row.display_name ?? DEFAULT_PLAYER_NAME,
+    strokes: row.total_strokes,
+    toPar: row.total_strokes - row.total_par,
+    gaveUp: row.gave_up === 1,
+    isPlayer: row.player_id === playerId,
+  };
+}
+
+/** 板に載っている自分の1行。`suspicious` で外れていれば null */
+async function ownRankedRow(
+  db: D1Database,
+  boardId: string,
+  playerId: string,
+): Promise<RankedRow | null> {
+  return db
+    .prepare(`${RANKED_CTE} SELECT * FROM ranked WHERE player_id = ?`)
+    .bind(boardId, playerId)
+    .first<RankedRow>();
+}
+
+async function boardPlayerCount(db: D1Database, boardId: string): Promise<number> {
+  const row = await db
+    .prepare(
+      `SELECT COUNT(*) AS total FROM records
+       WHERE board_id = ? AND verification_status IN ('verified', 'pending')`,
+    )
+    .bind(boardId)
+    .first<{ total: number }>();
+  return row?.total ?? 0;
+}
+
+/**
+ * 板を1枚返す（同 §6-3）。**上位10件＋自分の周辺±3**だけ。
+ * 全件返すと板が育つほど重くなるし、画面もそこまでは出さない
+ */
+async function handleRanking(request: Request, db: D1Database, url: URL): Promise<Response> {
+  const boardId = url.searchParams.get('board');
+  if (!isBoardId(boardId)) return error('Invalid board');
+
+  // 認証は任意。名乗らなければ上位だけを返す
+  const header = request.headers.get('Authorization');
+  const auth = header ? await readAuth(request) : null;
+  if (header && !auth) return error('Invalid player credential', 401);
+  if (auth) {
+    const player = await findAuthenticatedPlayer(db, auth);
+    if (player instanceof Response) return player;
+  }
+  const playerId = auth?.playerId ?? null;
+
+  const top = await db
+    .prepare(`${RANKED_CTE} SELECT * FROM ranked WHERE position <= ? ORDER BY position`)
+    .bind(boardId, R.topCount)
+    .all<RankedRow>();
+  const entries: RankingEntry[] = (top.results ?? []).map((row) => rankingEntry(row, playerId));
+
+  let yourRank: number | null = null;
+  let yourTied = false;
+  let yourBest: RankingBoard['yourBest'] = null;
+
+  if (auth) {
+    // 自分の記録は板から外れていても読む（`確認中` を本人にだけ見せるため）
+    const own = await db
+      .prepare(
+        `SELECT total_strokes, total_par, gave_up, verification_status
+         FROM records WHERE player_id = ? AND board_id = ?`,
+      )
+      .bind(auth.playerId, boardId)
+      .first<OwnRecordRow>();
+    if (own) {
+      yourBest = {
+        strokes: own.total_strokes,
+        toPar: own.total_strokes - own.total_par,
+        gaveUp: own.gave_up === 1,
+      };
+    }
+
+    const mine = await ownRankedRow(db, boardId, auth.playerId);
+    if (mine) {
+      yourRank = mine.rank;
+      yourTied = mine.tied > 1;
+
+      // 上位に入っていない人の周りだけ、追加で切り出して繋げる
+      if (mine.position > R.topCount) {
+        const from = Math.max(R.topCount + 1, mine.position - R.nearbyRadius);
+        const to = mine.position + R.nearbyRadius;
+        const nearby = await db
+          .prepare(
+            `${RANKED_CTE} SELECT * FROM ranked WHERE position BETWEEN ? AND ? ORDER BY position`,
+          )
+          .bind(boardId, from, to)
+          .all<RankedRow>();
+        const rows = nearby.results ?? [];
+        rows.forEach((row, index) => {
+          const entry = rankingEntry(row, playerId);
+          // 上位から飛んでいるときだけ印を付ける。画面はここへ `…` の行を入れる
+          if (index === 0 && from > R.topCount + 1) entry.gapBefore = true;
+          entries.push(entry);
+        });
+      }
+    }
+  }
+
+  const board: RankingBoard = {
+    boardId,
+    entries,
+    yourRank,
+    yourTied,
+    yourBest,
+    playerCount: await boardPlayerCount(db, boardId),
+  };
+  return json(board);
+}
+
+/**
+ * 記録を登録する（同 §3-4・§4-4）。
+ *
+ * - **自己ベストのときだけ書き換える。** 同打数は更新扱いにしないので、
+ *   一度38打を出した人は何度38打を出しても順位が動かない
+ * - 同じ `submissionId` は二度受けない。**返す答えも1回目と同じ**にする
+ * - 検証は段1まで。通ったものは `initialStatus`（いまは `verified`）で板に載る
+ */
+async function handleSubmit(request: Request, db: D1Database): Promise<Response> {
+  if (Number(request.headers.get('Content-Length') ?? 0) > S.maxBodyBytes) {
+    return error('Request too large', 413);
+  }
+  const auth = await requireAuth(request);
+  if (auth instanceof Response) return auth;
+  if (!(await allowWrite(request, db, auth, 'submit', S.submitPerPlayer, S.submitPerIp))) {
+    return error('Too many submissions', 429);
+  }
+
+  let body: SubmitRecordRequest;
+  try {
+    body = (await request.json()) as SubmitRecordRequest;
+  } catch {
+    return error('Invalid JSON');
+  }
+  const check = validateSubmission(body);
+  if (!check.ok) return error(`Record rejected: ${check.reason}`, 422);
+
+  const displayName = normalizeDisplayName(body.displayName);
+  if (!displayName) return error('Invalid display name');
+  const player = await ensurePlayer(db, auth, displayName);
+  if (player instanceof Response) return player;
+
+  // 二度目の送信。**同じ答えを返す**（電波が切れて送り直したときに二重登録しない）
+  const duplicate = await db
+    .prepare('SELECT response_json FROM submission_log WHERE submission_id = ? AND player_id = ?')
+    .bind(body.submissionId, auth.playerId)
+    .first<{ response_json: string }>();
+  if (duplicate) return json(JSON.parse(duplicate.response_json) as SubmitRecordResponse);
+
+  const previous = await db
+    .prepare('SELECT total_strokes FROM records WHERE player_id = ? AND board_id = ?')
+    .bind(auth.playerId, body.boardId)
+    .first<{ total_strokes: number }>();
+  const newBest = previous === null || body.totalStrokes < previous.total_strokes;
+
+  if (newBest) {
+    await db
+      .prepare(
+        `INSERT INTO records (
+           player_id, board_id, total_strokes, total_par, hole_strokes_json, gave_up,
+           generator, rules_version, app_version, shots_json, verification_status,
+           achieved_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+         ON CONFLICT(player_id, board_id) DO UPDATE SET
+           total_strokes = excluded.total_strokes,
+           total_par = excluded.total_par,
+           hole_strokes_json = excluded.hole_strokes_json,
+           gave_up = excluded.gave_up,
+           generator = excluded.generator,
+           rules_version = excluded.rules_version,
+           app_version = excluded.app_version,
+           shots_json = excluded.shots_json,
+           verification_status = excluded.verification_status,
+           achieved_at = CURRENT_TIMESTAMP,
+           updated_at = CURRENT_TIMESTAMP
+         WHERE excluded.total_strokes < records.total_strokes`,
+      )
+      .bind(
+        auth.playerId,
+        body.boardId,
+        body.totalStrokes,
+        body.totalPar,
+        JSON.stringify(body.holes),
+        body.gaveUp ? 1 : 0,
+        body.generator,
+        body.rulesVersion,
+        body.appVersion,
+        JSON.stringify(body.shots),
+        S.initialStatus,
+      )
+      .run();
+  }
+
+  const mine = await ownRankedRow(db, body.boardId, auth.playerId);
+  const response: SubmitRecordResponse = {
+    accepted: true,
+    newBest,
+    rank: mine?.rank ?? null,
+    tied: (mine?.tied ?? 0) > 1,
+    playerCount: await boardPlayerCount(db, body.boardId),
+    status: S.initialStatus,
+  };
+  await db
+    .prepare(
+      `INSERT INTO submission_log (submission_id, player_id, board_id, status, response_json)
+       VALUES (?, ?, ?, ?, ?)`,
+    )
+    .bind(body.submissionId, auth.playerId, body.boardId, S.initialStatus, JSON.stringify(response))
+    .run();
+
+  // 古いレート制限の行は溜め続けない。登録のついでに片付ける
+  await db
+    .prepare('DELETE FROM rate_limits WHERE window_start < ?')
+    .bind(Math.floor(Date.now() / 1000) - S.rateKeepSeconds)
+    .run();
+  return json(response);
+}
+
 export async function handleRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   // Static Assets が先に当たるので、ここへ来るのは /api/* と、資産の無いパスだけ
@@ -234,16 +516,17 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     return json({ ok: true, database: Boolean(env.DB) });
   }
 
-  // 段4で足す。それまでは黙って落ちるのではなく、理由の分かる形で断る
-  if (url.pathname === '/api/records' || url.pathname === '/api/rankings') {
-    return error('Ranking API is not open yet', 501);
-  }
-
   const db = env.DB;
   // D1をまだ作っていない（`wrangler.jsonc` の d1_databases が無い）。
   // ゲームの配信は動いたまま、ランキングの入口だけが使えない状態にする
   if (!db) return error('Ranking database is not configured', 503);
 
+  if (request.method === 'GET' && url.pathname === '/api/rankings') {
+    return handleRanking(request, db, url);
+  }
+  if (request.method === 'POST' && url.pathname === '/api/records') {
+    return handleSubmit(request, db);
+  }
   if (request.method === 'PUT' && url.pathname === '/api/player') {
     return handleUpdatePlayer(request, db);
   }

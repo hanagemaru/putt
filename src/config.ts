@@ -993,6 +993,25 @@ export const CONFIG = {
         maxBodyBytes: 120000,
         /** レート制限の古い行を片付けるまで [s] */
         rateKeepSeconds: 86400,
+
+        /**
+         * 登録を受けた直後の状態（`docs/ranking.md` §4-4）。
+         *
+         * **段5（リプレイ検証）を入れたら `pending` にする。** いまは段1の検証
+         * （形・常識・レート制限・二重登録）しか無いので、そこを通ったものは
+         * `verified` と呼ぶ。動いていない検証を待っているように見せない
+         */
+        initialStatus: 'verified' as 'verified' | 'pending',
+
+        // --- 段1の常識チェック（同 §4-4）。**ありえない値を弾くだけ** ---
+        /** 1ラウンドのホール数の上限。通常ツアー9・週替わり3 */
+        maxHoles: 18,
+        /** 1ホールの打数の上限 */
+        maxHoleStrokes: 99,
+        /** 合計打数の上限 */
+        maxTotalStrokes: 999,
+        /** 1打の初速の上限 [m/s]。実際のパットは速くても6m/s前後 */
+        maxShotSpeed: 20,
       },
     },
 
