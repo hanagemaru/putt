@@ -733,6 +733,27 @@ function pickOutline(rng: () => number, roundAspect: Range): OutlineChoice {
 }
 
 /**
+ * 砂をここへ置くと**OBに触れないか**。中心だけでなく縁の外まで見る。
+ *
+ * `surfaceAt` は砂を芝の上にしか塗らないので、半径がOBへ届いている砂は
+ * そこで切り落とされ、見た目には「砂がOBへめり込む」状態になる。
+ * 実際のゴルフでバンカーが直接OBへ繋がることはないので、置く前に弾く。
+ *
+ * 輪郭は歪むので、**いちばん外まで届く半径**（`hazardReach`）の円で見る。
+ * 実際の輪郭より外を見ることになるが、安全側に倒している
+ */
+function clearOfOb(draft: CourseDefinition, center: CoursePoint, maxRadius: number): boolean {
+  const reach = maxRadius + B.obClearance;
+  for (let k = 0; k < B.obSamples; k++) {
+    const angle = (k / B.obSamples) * Math.PI * 2;
+    const x = center.x + Math.sin(angle) * reach;
+    const z = center.z + Math.cos(angle) * reach;
+    if (surfaceAt(draft, x, z) === 'ob') return false;
+  }
+  return true;
+}
+
+/**
  * カップの周りに置くガードバンカー。**「奥」に置けるのがこれまでとの違い。**
  *
  * 角度で置くので、カップの手前・横・奥のどこにでも来る。
@@ -790,6 +811,8 @@ function placeGuardBunkers(
         continue;
       }
       if (surfaceAt(draft, center.x, center.z) === 'ob') continue;
+      // **縁までOBに触れていないか。** 中心だけ見ていると砂がOBへめり込む
+      if (!clearOfOb(draft, center, maxRadius)) continue;
       const nearWater = draft.hazards.some(
         (h) =>
           Math.hypot(h.center.x - center.x, h.center.z - center.z) <
@@ -1045,6 +1068,8 @@ function placeBunkers(
       if (Math.hypot(center.x - draft.cup.x, center.z - draft.cup.z) < clearance) continue;
       // 砂は芝の上だけに置く。OBの中の砂は見えないし、池と接すると区別が付かない
       if (surfaceAt(draft, center.x, center.z) === 'ob') continue;
+      // **縁までOBに触れていないか。** 中心だけ見ていると砂がOBへめり込む
+      if (!clearOfOb(draft, center, maxRadius)) continue;
       const nearWater = draft.hazards.some(
         (h) =>
           Math.hypot(h.center.x - center.x, h.center.z - center.z) <

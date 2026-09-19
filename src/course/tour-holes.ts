@@ -286,8 +286,13 @@ const ADVANCED_HOLES: readonly TourHole[] = [
  * （PAR3は12.3m以上／PAR4は25.5m以上／PAR5は34.9m以上。帯の上限は13・27.5・35.5m）。
  */
 const EXPERT_HOLES: readonly TourHole[] = [
-  /* H1 */ { seed: 387, label: '砲台＋カップ周りの砂＋細い道', setup: { ...F.plateau, ...F.guard, ...F.narrow } },
-  //              4 / 27.4m / 2.92m / gentleCurve    / 砲台17cm ＋ 砂3個 ＋ OBまで3.30m
+  // ⚠️ **細い道とカップ周りの砂は両立しない。** ここは元々「砲台＋カップ周りの砂＋細い道」
+  //    だったが、砂がOBへめり込んでいた（実機指摘）。縁までOBを見て弾くようにしたところ、
+  //    砂が1個も置けなくなった。走査すると細い道つきのPAR4 1079本のうちカップ周りに
+  //    砂3個が入るのは6本だけ、25.5m以上では0本。OBが中心線から3.3mしかないので、
+  //    カップを囲む砂に芝の縁を残す余地が無い。**砂を諦めて細い道を残した**
+  /* H1 */ { seed: 499, label: '砲台＋細い道', setup: { ...F.plateau, ...F.narrow } },
+  //              4 / 26.5m / 2.85m / gentleCurve    / 砲台17cm ＋ OBまで3.20m
   /* H2 */ { seed: 1114, label: '細い道', setup: F.narrow },
   //              3 / 12.9m / 3.12m / serpentine     / ★池も砂も無い。PAR3の上限いっぱい
   /* H3 */ { seed: 1645, label: '細い道＋くびれ', setup: { ...F.narrow, ...F.waist } },

@@ -415,7 +415,9 @@ function courseEntry(tour: TourDefinition): HTMLElement {
   actions.className = 'course-actions';
 
   const resume = resumeLabel(tour);
-  const restart = courseAction(t().startOver, !resume, () => {
+  // **続きが無いときは「スタート」。** 「はじめから」は「HOLE nから再開」と
+  // 並んで初めて意味が通る言い方なので、並ばないときは使わない
+  const restart = courseAction(resume ? t().startOver : t().start, !resume, () => {
     // 続きを捨てて回り直す。始める前に保存を消しておく
     if (resume) progressStore(tour).clear();
     navigateTo({ tour: tour.id });

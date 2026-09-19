@@ -26,7 +26,13 @@ const COPY = {
     english: 'EN',
     backToMenu: '← トップ',
     tourTitle: '通常ツアー',
-    startOver: 'HOLE 1から',
+    /**
+     * コース選択の開始ボタン。**続きが無いときはこれだけが出る。**
+     * 「HOLE 1から」は「HOLE nから再開」と並んだときにしか意味が通らない、と実機で出た
+     */
+    start: 'スタート',
+    /** 続きがあるときの開始ボタン。「HOLE nから再開」と並ぶので、対になる言い方にする */
+    startOver: 'はじめから',
     /** パター選択（§4.4）。形の名前は日本のゴルフでの呼び方に合わせる */
     putter: 'パター',
     /** トップのボタン。「パター」だけでは何をする所か分からないので動詞まで書く */
@@ -116,7 +122,8 @@ const COPY = {
     english: 'EN',
     backToMenu: '← TOP',
     tourTitle: 'TOUR',
-    startOver: 'FROM HOLE 1',
+    start: 'START',
+    startOver: 'FROM START',
     putter: 'PUTTER',
     putterChoose: 'CHOOSE PUTTER',
     putterSelect: 'SELECT',
