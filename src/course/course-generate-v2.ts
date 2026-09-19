@@ -26,6 +26,7 @@ import type {
   CourseDefinition,
   CoursePoint,
   EllipseHazard,
+  GreenPlateau,
   HazardOutline,
   HeightFeature,
   SandBunker,
@@ -58,6 +59,98 @@ export interface GenerateOptionsV2 {
   name?: string;
   /** ID。省略するとシードから作る */
   id?: string;
+  /**
+   * 最小曲率半径の下限に掛ける倍率。**1 が既定（芝幅×2・最低4.5m）。**
+   *
+   * 小さくするほど急に曲がれる ＝ カーブではなく「角」に近づく。
+   * v2はv1の直角ドッグレッグを潰すために下限を入れたが、
+   * **潰しすぎて総回頭角の最大が 202°→107°、遠回り率が 1.64→1.26 になった**ので、
+   * コース単位で鋭さを戻せるようにしてある（`CONFIG.course.tourSetups`）。
+   *
+   * 0.5 なら芝幅×1.0。**曲がりが自分自身と重なって消える半径（芝幅×0.5）の2倍**あるので、
+   * 曲がりの内側でも芝は痩せない。実測（400シード）で 中央58°・最大125°・90°以上12%・
+   * fallback 0・半径の下限割れ 0
+   */
+  turnRadiusScale?: number;
+  /**
+   * S字を大きく振る。**遠回りさせるS字を作れるようにする。**
+   *
+   * v2のS字は逆向きの曲がりが相殺して、遠回り率が中央1.01（v1は1.15）しかなかった。
+   * 実験すると効いていたのは総回頭角ではなく**骨格の制御点の数**で、
+   * 4点では大きなS字を Catmull-Rom で表せず、曲率が跳ねて作り直しに落ちていた。
+   *
+   * 制御点を増やして総回頭角の上限を上げると、
+   * 半径×0.5 で 回頭 最大231°・遠回り率 最大1.364（v1の最大1.51に近い）まで出る。
+   * **中央値は1.04にしか上がらない**ので、大きく振れたホールは選定で拾う
+   */
+  wideSCurve?: boolean;
+  /**
+   * 池の岸（ラフ）を無くす割合 [0..1]。**フェアウェイが直接水に接する。**
+   *
+   * 既定では池の周りを必ず `waterFringe` のラフにして「池際から直接打つ状況」を避けていたが、
+   * そのぶん池がフェアウェイから遠くなり、**池がほとんど難易度に効かなくなっていた**。
+   *
+   * 追加の乱数は引かない。**引いた岸の幅が範囲の下位どれだけに入るか**で決めるので、
+   * 0（既定）なら今までと1ビットも変わらない
+   */
+  bareWaterChance?: number;
+  /**
+   * バンカーの大きさ・形・置き場所・個数の幅を広げる。
+   *
+   * 既定は 半径1.1〜2.0m・ほぼ丸・ルートの後半50〜85%・最大2個しかなく、
+   * 実機で「ほとんど同じレイアウトが続く」と言われた
+   */
+  variedBunkers?: boolean;
+  /**
+   * カップの周りに置くガードバンカーの数。**0 なら今までと同じ（置かない）。**
+   *
+   * これまではバンカーも池も高さのハザードも「カップから3m以上離す」指定が入っていて、
+   * **カップの奥にはそもそも座標が無かった**（ルート上の位置0〜1でしか置けないため）。
+   * 結果、寄せは「だいたいの方向へ強めに打つ」が常に最適だった。
+   *
+   * 砂は罰打が無く越えられるので、カップの周りに置いても詰みにはならない。
+   * ただし**必ず花道を空ける**（`guardBunker.clearAngle` ぶんの通常芝を連続で残す）
+   */
+  guardBunkers?: number;
+  /**
+   * 砲台グリーン（カップ周りを一段持ち上げる）を作るか。
+   * 法面はラフになるので、通常芝の臨界勾配（7.8%）に縛られず段が作れる
+   */
+  plateau?: boolean;
+  /**
+   * 芝幅の細さ。**1 が今までどおり。** 小さいほど道が細くなる。
+   *
+   * ラフとセカンドカットの幅には `fringeScale` が別に掛かる。
+   * 実測でOBは中心線から5〜6.5m先にあり、20m先を狙って14°外さないと届かない＝
+   * **罰打ハザードなのにほぼ発動していなかった**。ここを絞るとOBが初めて効く
+   */
+  widthScale?: number;
+  /** ラフ・セカンドカットの幅の倍率。小さいほどOBが手前まで来る */
+  fringeScale?: number;
+  /**
+   * 芝幅をルートに沿って絞る「くびれ」の深さ。0 なら一定幅（今までどおり）。
+   * 0.35 なら、いちばん細いところが 65% の幅になる
+   */
+  waist?: number;
+  /**
+   * **幅のうねりの大きさ。** 0 なら一定幅（今までどおり）。
+   *
+   * くびれ（`waist`）が「1か所だけ絞る関門」なのに対し、こちらは
+   * **ホールの端から端まで広い・狭いを繰り返す**。0.35 なら 0.65〜1.35 倍で振れる。
+   * 両方指定したときは掛け合わせる
+   */
+  widthVariation?: number;
+  /**
+   * **ティー側に必ず残す直線区間**（ルート全長に対する割合）。0 が既定＝制限なし。
+   *
+   * 実機で「S字がティーの近くで曲がると、ティーショットを全然しっかり打てない」と出た。
+   * ティーショットは真っ直ぐしか打てないので、すぐ曲がるホールは
+   * 「少し転がして止める」しかできず、1打目が意味を失う。
+   *
+   * 曲率のローブをこの割合ぶん先へ押し出すので、**ティー側には曲率が1つも入らない**。
+   * そのぶん曲がる区間が短くなるので、**曲がれる総回頭角の上限も (1 - この値) 倍**になる
+   */
+  teeStraightRun?: number;
 }
 
 /** mulberry32。シードから再現可能な擬似乱数（v1・green.ts と同じ実装） */
@@ -163,9 +256,13 @@ function buildSpine(
   totalTurn: number,
   turnSpread: number,
   lobes: readonly Lobe[],
+  straightRun: number,
 ): Spine {
   const n = lobes.length;
-  const span = length / n;
+  // ティー側の直線区間。**ローブの受け持ち区間をここから後ろだけに詰める**ので、
+  // 手前には曲率が1つも入らない。0（既定）なら今までとまったく同じ配分になる
+  const turnStart = length * straightRun;
+  const span = (length - turnStart) / n;
   const window = span * turnSpread;
   const area = 1 - C.plateauRise;
 
@@ -173,7 +270,7 @@ function buildSpine(
   const peaks: number[] = [];
   let netTurn = 0;
   for (let k = 0; k < n; k++) {
-    starts.push(k * span + (span - window) * lobes[k].phase);
+    starts.push(turnStart + k * span + (span - window) * lobes[k].phase);
     const turn = totalTurn * lobes[k].weight;
     peaks.push(window > 0 ? (lobes[k].sign * turn) / (area * window) : 0);
     netTurn += lobes[k].sign * turn;
@@ -394,9 +491,16 @@ function buildRouteV2(
   shape: HoleShapeV2,
   routeLengthRange: Range,
   greenWidth: number,
+  turnRadiusScale: number,
+  wideSCurve: boolean,
+  teeStraightRun: number,
 ): BuiltRoute {
   const lobeCount = C.lobes[shape];
-  const controlCount = C.controlPoints[shape];
+  // **S字を大きく振るときだけ制御点を増やす。** 4点では大きなS字を Catmull-Rom で
+  // 表せず、曲率が跳ねて relax に落ちる（＝回頭角が縮む）。乱数は引かないので、
+  // この分岐を通らないコースは1ビットも変わらない
+  const wide = wideSCurve && shape === 'serpentine';
+  const controlCount = wide ? C.wideSCurve.controlPoints : C.controlPoints[shape];
   const side = rng() < 0.5 ? -1 : 1;
   const turnSpread = pick(rng, C.turnSpread);
 
@@ -413,21 +517,27 @@ function buildRouteV2(
   }
   const maxWeight = lobes.reduce((m, l) => Math.max(m, l.weight), 0);
 
-  const minTurnRadius = Math.max(greenWidth * C.minTurnRadiusWidthFactor, C.minTurnRadiusFloor);
+  // 倍率は max の外へ掛ける。max(a, b) * s = max(a * s, b * s) なので、
+  // 芝幅の側と下限の絶対値の側へ別々に掛ける必要はない
+  const minTurnRadius =
+    Math.max(greenWidth * C.minTurnRadiusWidthFactor, C.minTurnRadiusFloor) * turnRadiusScale;
   const designRadius = minTurnRadius * C.turnRadiusSafety;
   const area = 1 - C.plateauRise;
 
   const length = pick(rng, routeLengthRange);
-  // この全長で、設計半径を保ったまま曲がれる上限
-  const maxTurn = (area * turnSpread * length) / (designRadius * maxWeight * lobeCount);
-  let turn = Math.min((pick(rng, C.totalTurn[shape]) * Math.PI) / 180, maxTurn);
+  // この全長で、設計半径を保ったまま曲がれる上限。
+  // **ティー側の直線区間は曲がれないので、その分だけ上限が下がる**
+  const turnLength = length * (1 - teeStraightRun);
+  const maxTurn = (area * turnSpread * turnLength) / (designRadius * maxWeight * lobeCount);
+  const turnRange = wide ? C.wideSCurve.totalTurn : C.totalTurn[shape];
+  let turn = Math.min((pick(rng, turnRange) * Math.PI) / 180, maxTurn);
   const targetTurn = turn;
 
   // Catmull-Rom で引き直すと骨格よりわずかに曲率が上がることがある。
   // 測って下限を割っていたら総回頭角を縮めて作り直す（乱数は引かない＝決定論のまま）
   let route: CoursePoint[] = [];
   for (let attempt = 0; attempt <= C.relaxAttempts; attempt++) {
-    const spine = buildSpine(length, turn, turnSpread, lobes);
+    const spine = buildSpine(length, turn, turnSpread, lobes, teeStraightRun);
     const control = controlPointsFrom(spine, controlCount);
     const dense = catmullRomPolyline(
       control,
@@ -623,6 +733,223 @@ function pickOutline(rng: () => number, roundAspect: Range): OutlineChoice {
 }
 
 /**
+ * 砂とその縁の膨らみを**コース枠の中に収めるための半径の倍率**。
+ *
+ * OB境界は砂の形に沿って膨らませるが（`surfaceAt`）、**枠の外は膨らませられない**。
+ * 枠の外にはハイトマップが無いからで、枠で切り落とされるとそこだけ砂がOBに接する。
+ *
+ * **置くのをやめる前に、まず縮めて収める。** 返すのは半径に掛ける倍率で、
+ * 1 ならそのまま入る。下限（`minRadius`）を割るときだけ呼ぶ側が諦める
+ */
+function boundsFitScale(
+  draft: CourseDefinition,
+  center: CoursePoint,
+  maxRadius: number,
+): number {
+  const room = Math.min(
+    draft.bounds.width / 2 - Math.abs(center.x),
+    draft.bounds.length / 2 - Math.abs(center.z),
+  );
+  const reach = maxRadius + B.obClearance;
+  if (reach <= room) return 1;
+  // 縁の膨らみぶんを引いた残りに、砂の本体を収める
+  return Math.max(0, (room - B.obClearance) / maxRadius);
+}
+
+/**
+ * カップの周りに置くガードバンカー。**「奥」に置けるのがこれまでとの違い。**
+ *
+ * 角度で置くので、カップの手前・横・奥のどこにでも来る。
+ *   手前 … 弱いと砂。届かせるしかない
+ *   横  … 方向のミスを罰する
+ *   奥  … **オーバーを罰する。今までこのゲームに1つも無かった要素**
+ *
+ * **必ず花道を空ける。** `clearAngle` ぶんの連続した角度にはバンカーを置かないので、
+ * そこからは砂を通らずにカップへ寄せられる。`minClearWidth` のカップ版。
+ */
+function placeGuardBunkers(
+  rng: () => number,
+  count: number,
+  draft: CourseDefinition,
+  existing: readonly SandBunker[],
+  laneBearing: number,
+): SandBunker[] {
+  // **置かないなら乱数を1つも引かずに返す。** 下の振りは for の外で引くので、
+  // ここで返さないと count=0 のコースでも乱数がずれ、既存の9ホールが作り直される
+  if (count <= 0) return [];
+  const GB = V.guardBunker;
+  const bunkers: SandBunker[] = [];
+  // 花道の向き。**砲台があるホールでは砲台の花道と同じ向きが渡ってくる**ので、
+  // 砂が花道を塞がない。振りはそこで引き終わっているので、ここでは引かない
+  const laneCenter = laneBearing;
+  const laneHalf = (GB.clearAngle * Math.PI) / 180 / 2;
+
+  for (let i = 0; i < count; i++) {
+    const radiusMajor = pick(rng, GB.radius);
+    const pickedDepth = pick(rng, B.depth);
+    const { aspect, outline } = pickOutline(rng, GB.aspect);
+    const radiusX = radiusMajor;
+    const radiusZ = radiusMajor * aspect;
+    const maxRadius = hazardReach(radiusX, radiusZ, outline, N.bunkerAmplitude);
+
+    let placed: SandBunker | null = null;
+    for (let attempt = 0; attempt < GB.maxAttempts && !placed; attempt++) {
+      const angle = rng() * Math.PI * 2;
+      // 花道の中には置かない。角度の差を [-π, π] へ畳んでから見る
+      let delta = angle - laneCenter;
+      while (delta > Math.PI) delta -= Math.PI * 2;
+      while (delta < -Math.PI) delta += Math.PI * 2;
+      if (Math.abs(delta) < laneHalf) continue;
+
+      const distance = pick(rng, GB.distance) + maxRadius;
+      const center = {
+        x: draft.cup.x + Math.sin(angle) * distance,
+        z: draft.cup.z + Math.cos(angle) * distance,
+      };
+      // カップの口の周りは必ず通常芝で残す
+      if (Math.hypot(center.x - draft.cup.x, center.z - draft.cup.z) - maxRadius < GB.cupClearance) {
+        continue;
+      }
+      if (Math.hypot(center.x - draft.tee.x, center.z - draft.tee.z) < B.teeCupClearance + maxRadius) {
+        continue;
+      }
+      if (surfaceAt(draft, center.x, center.z) === 'ob') continue;
+      // 枠で切り落とされると、そこだけ砂がOBに接してしまう。**まず縮めて収める**
+      const fit = boundsFitScale(draft, center, maxRadius);
+      if (radiusMajor * fit < B.minRadius) continue;
+      const nearWater = draft.hazards.some(
+        (h) =>
+          Math.hypot(h.center.x - center.x, h.center.z - center.z) <
+          hazardReach(h.radiusX, h.radiusZ, h.outline, N.waterAmplitude) +
+            maxRadius +
+            draft.waterFringe +
+            B.waterClearance,
+      );
+      if (nearWater) continue;
+      // **間隔はガードバンカー専用の値**。カップの周りは狭いので、
+      // ルート沿いの砂と同じ間隔を要求すると3個目が入らない
+      const tooClose = [...existing, ...bunkers].some(
+        (b) =>
+          Math.hypot(b.center.x - center.x, b.center.z - center.z) <
+          hazardReach(b.radiusX, b.radiusZ, b.outline, N.bunkerAmplitude) +
+            maxRadius +
+            GB.minSpacing,
+      );
+      if (tooClose) continue;
+      const depthLimit = (B.maxBasinGradient * Math.min(radiusX, radiusZ)) / N.bunkerBasinProfile;
+      placed = {
+        center,
+        radiusX: radiusX * fit,
+        radiusZ: radiusZ * fit,
+        outline,
+        depth: Math.min(pickedDepth, depthLimit),
+      };
+    }
+    if (placed) bunkers.push(placed);
+  }
+  return bunkers;
+}
+
+/**
+ * カップへの最終アプローチの向き [rad]。**カップから見てティー側**。
+ * ルートの最後の線分から取るので、ドッグレッグでも「本当に寄ってくる向き」になる。
+ * 砲台の花道とガードバンカーの花道は**同じ向きを使う**（別々に決めると砂が花道を塞ぐ）
+ */
+function approachBearing(route: readonly CoursePoint[]): number {
+  const last = route[route.length - 1];
+  const prev = route[Math.max(0, route.length - 2)];
+  return Math.atan2(prev.x - last.x, prev.z - last.z);
+}
+
+/**
+ * 砲台グリーン。カップの周りを一段持ち上げる。
+ *
+ * **花道は通常芝で残す**（`surfaceAt` 側）。パターゴルフなので、
+ * フェアウェイからカップまで通常芝で繋がっていないと寄せられない。
+ * 横と奥だけを短くて急な法面（ラフ）にする。
+ *
+ * 花道の長さは高さから決まる（勾配 = 高さ × 1.5 ÷ 長さ ≦ `laneGrade`）。
+ * **短いホールでは花道が入らないので、入る高さまで段を下げる。**
+ */
+function makePlateau(
+  rng: () => number,
+  draft: CourseDefinition,
+  routeLength: number,
+  laneBearing: number,
+): GreenPlateau {
+  const P2 = V.plateau;
+  const inner = pick(rng, P2.innerRadius);
+  const shoulder = pick(rng, P2.shoulder);
+  const drawnRise = pick(rng, P2.rise);
+  // 花道に使える長さの上限から、入る高さを逆算する
+  const runCap = Math.min(routeLength * P2.maxLaneRunFraction, P2.maxLaneRun);
+  const rise = Math.min(drawnRise, (P2.laneGrade * runCap) / 1.5);
+  return {
+    center: draft.cup,
+    innerRadius: inner,
+    shoulder,
+    laneRun: Math.max(shoulder, (1.5 * rise) / P2.laneGrade),
+    laneBearing,
+    laneHalfAngle: (P2.laneHalfAngle * Math.PI) / 180,
+    laneFadeAngle: (P2.laneFadeAngle * Math.PI) / 180,
+    rise,
+  };
+}
+
+/**
+ * 芝幅のプロファイル（うねり）。sin波を何本か重ねて、広い・狭いを繰り返させる。
+ *
+ * 周期を整数にしてあるので **sin(π・f・t) は両端で必ず 0** になり、
+ * ティーとカップの周りは絞りも広げもしない。
+ * 重ねたあと、いちばん振れたところが `variation` ちょうどになるよう正規化する
+ */
+function makeVariedWidthProfile(rng: () => number, variation: number): number[] {
+  const W = V.corridor.varied;
+  const count = V.corridor.profilePoints;
+  const waves = pickInt(rng, W.waves);
+  const freq: number[] = [];
+  const amp: number[] = [];
+  const sign: number[] = [];
+  // 作る前に引き切る。プロファイルの評価では乱数を引かない
+  for (let k = 0; k < waves; k++) {
+    freq.push(pickInt(rng, W.frequency));
+    amp.push(pick(rng, W.amplitude));
+    sign.push(rng() < 0.5 ? -1 : 1);
+  }
+
+  const raw: number[] = [];
+  let peak = 0;
+  for (let i = 0; i < count; i++) {
+    const t = i / (count - 1);
+    let sum = 0;
+    for (let k = 0; k < waves; k++) sum += sign[k] * amp[k] * Math.sin(Math.PI * freq[k] * t);
+    raw.push(sum);
+    peak = Math.max(peak, Math.abs(sum));
+  }
+  return raw.map((v) => Math.max(W.minScale, 1 + (peak > 0 ? (v / peak) * variation : 0)));
+}
+
+/**
+ * 芝幅のプロファイル（くびれ）。中央付近をいちばん細くした山形。
+ * **ラフとセカンドカットには掛けない**ので、くびれは「狭い」であって「OBが迫る」ではない
+ */
+function makeWidthProfile(rng: () => number, waist: number): number[] {
+  const W = V.corridor;
+  const points = W.profilePoints;
+  // くびれの中心をルートのどこに置くか。真ん中固定だと9ホールとも同じ形になる
+  const center = pick(rng, W.waistCenter);
+  const spread = pick(rng, W.waistSpread);
+  const profile: number[] = [];
+  for (let i = 0; i < points; i++) {
+    const t = i / (points - 1);
+    const u = (t - center) / spread;
+    // ガウシアンで凹ませる。両端は 1 に戻るので、ティーとカップの周りは絞らない
+    profile.push(1 - waist * Math.exp(-u * u));
+  }
+  return profile;
+}
+
+/**
  * 高さのハザード（マウンド・リッジ・窪地）を置く。
  *
  * **勾配が摩擦を上回る場所ではボールが止まらない**（スティンプ10ftで約7.8%）ので、
@@ -703,14 +1030,24 @@ function placeHeightFeatures(
  * 最初に作った深いラフの島は横ずれの下限が0で、294個中87%が中心線を塞いでいた。
  * 逃げ道が無ければ選択にならず、ただの障害物になる。
  */
-function placeBunkers(rng: () => number, count: number, draft: CourseDefinition): SandBunker[] {
+function placeBunkers(
+  rng: () => number,
+  count: number,
+  draft: CourseDefinition,
+  varied: boolean,
+): SandBunker[] {
   const bunkers: SandBunker[] = [];
   const halfWidth = draft.greenWidth / 2;
+  // 幅を広げるときの差し替え。**乱数の引き方も引く回数も変えない**ので、
+  // 既定（varied=false）のコースは1ビットも変わらない
+  const radiusRange = varied ? B.varied.radius : B.radius;
+  const aspectRange = varied ? B.varied.aspect : B.aspect;
+  const routeRange = varied ? B.varied.routeRange : B.routeRange;
 
   for (let i = 0; i < count; i++) {
-    const radiusMajor = pick(rng, B.radius);
+    const radiusMajor = pick(rng, radiusRange);
     const pickedDepth = pick(rng, B.depth);
-    const { aspect, outline } = pickOutline(rng, B.aspect);
+    const { aspect, outline } = pickOutline(rng, aspectRange);
     const radiusX = radiusMajor;
     const radiusZ = radiusMajor * aspect;
     // 歪みを含めた実効半径。ひょうたん型は素の半径より外へ膨らむので、その分も見る
@@ -729,7 +1066,7 @@ function placeBunkers(rng: () => number, count: number, draft: CourseDefinition)
 
     let placed: SandBunker | null = null;
     for (let attempt = 0; attempt < B.maxAttempts && !placed; attempt++) {
-      const at = sampleRoute(draft.route, pick(rng, B.routeRange));
+      const at = sampleRoute(draft.route, pick(rng, routeRange));
       const side = rng() < B.insideBias ? 1 : -1;
       const offset = pick(rng, [minOffset, maxOffset]) * side;
       const center = {
@@ -741,6 +1078,9 @@ function placeBunkers(rng: () => number, count: number, draft: CourseDefinition)
       if (Math.hypot(center.x - draft.cup.x, center.z - draft.cup.z) < clearance) continue;
       // 砂は芝の上だけに置く。OBの中の砂は見えないし、池と接すると区別が付かない
       if (surfaceAt(draft, center.x, center.z) === 'ob') continue;
+      // 枠で切り落とされると、そこだけ砂がOBに接してしまう。**まず縮めて収める**
+      const fit = boundsFitScale(draft, center, maxRadius);
+      if (radiusMajor * fit < B.minRadius) continue;
       const nearWater = draft.hazards.some(
         (h) =>
           Math.hypot(h.center.x - center.x, h.center.z - center.z) <
@@ -762,7 +1102,13 @@ function placeBunkers(rng: () => number, count: number, draft: CourseDefinition)
       // 縁の傾き（深さ × 形の指数 ÷ 短いほうの半径）が上限を超える分だけ削る
       const depthLimit =
         (B.maxBasinGradient * Math.min(radiusX, radiusZ)) / N.bunkerBasinProfile;
-      placed = { center, radiusX, radiusZ, outline, depth: Math.min(pickedDepth, depthLimit) };
+      placed = {
+        center,
+        radiusX: radiusX * fit,
+        radiusZ: radiusZ * fit,
+        outline,
+        depth: Math.min(pickedDepth, depthLimit),
+      };
     }
     if (placed) bunkers.push(placed);
   }
@@ -804,11 +1150,40 @@ function draftCourseV2(seed: number, options: GenerateOptionsV2): DraftV2 {
   const shape = options.shape ?? pickWeighted(rng, V.shapeWeights);
   const d = V.difficulty[difficulty];
 
-  const greenWidth = pick(rng, d.greenWidth);
-  const roughFringe = pick(rng, d.roughFringe);
-  const deepRoughFringe = pick(rng, d.deepRoughFringe);
-  const waterFringe = pick(rng, V.waterFringe);
-  const { route, plan } = buildRouteV2(rng, shape, d.routeLength, greenWidth);
+  // 細い道（corridor）。**芝と、その外のラフ・セカンドカットに別々の倍率を掛ける。**
+  // フリンジを絞るとOBが手前まで来る＝「外したら罰打」が初めて成立する
+  const widthScale = options.widthScale ?? 1;
+  const fringeScale = options.fringeScale ?? 1;
+  const greenWidth = pick(rng, d.greenWidth) * widthScale;
+  const roughFringe = pick(rng, d.roughFringe) * fringeScale;
+  const deepRoughFringe = pick(rng, d.deepRoughFringe) * fringeScale;
+  // 幅のプロファイル。**使わないつまみでは乱数を1つも引かない**ので、
+  // オフのコースは今までと1ビットも変わらない
+  const waist = options.waist ?? 0;
+  const variation = options.widthVariation ?? 0;
+  const waistProfile = waist > 0 ? makeWidthProfile(rng, waist) : undefined;
+  const variedProfile = variation > 0 ? makeVariedWidthProfile(rng, variation) : undefined;
+  const widthProfile =
+    waistProfile && variedProfile
+      ? waistProfile.map((v, i) => v * variedProfile[i])
+      : (waistProfile ?? variedProfile);
+  // 岸（池の周りのラフ）。**引いた幅が範囲の下位 bareWaterChance に入ったら岸なしにする。**
+  // 追加の乱数を引かないので、既定（0）なら今までと同じ値になる
+  const drawnFringe = pick(rng, V.waterFringe);
+  const [fringeMin, fringeMax] = V.waterFringe;
+  const fringeRank = fringeMax > fringeMin ? (drawnFringe - fringeMin) / (fringeMax - fringeMin) : 0;
+  const waterFringe = fringeRank < (options.bareWaterChance ?? 0) ? 0 : drawnFringe;
+  // **乱数はこの倍率に依らず同じ順で引かれる**（半径は引き終えた値から計算し、
+  // 作り直しの relax も乱数を引かない）ので、倍率1のコースは1mmも変わらない
+  const { route, plan } = buildRouteV2(
+    rng,
+    shape,
+    d.routeLength,
+    greenWidth,
+    options.turnRadiusScale ?? 1,
+    options.wideSCurve ?? false,
+    options.teeStraightRun ?? 0,
+  );
 
   // コース枠。ルートの外接矩形を、揺らぎなしの芝の幅を基準に広げる
   let minX = Infinity;
@@ -821,8 +1196,13 @@ function draftCourseV2(seed: number, options: GenerateOptionsV2): DraftV2 {
     minZ = Math.min(minZ, p.z);
     maxZ = Math.max(maxZ, p.z);
   }
+  // 幅を広げるプロファイル（`widthVariation`）を使うと芝が枠から溢れるので、
+  // いちばん広がるところで枠を取る。**1 を下回る側では広げない**ので、
+  // くびれだけのホールや一定幅のホールは今までとまったく同じ枠になる
+  const profilePeak = widthProfile ? Math.max(1, ...widthProfile) : 1;
   const expand =
-    maxPlayableHalfWidth(greenWidth, roughFringe, deepRoughFringe) * pick(rng, V.boundsExpand);
+    maxPlayableHalfWidth(greenWidth * profilePeak, roughFringe, deepRoughFringe) *
+    pick(rng, V.boundsExpand);
   const round = (v: number) => Math.ceil(v / V.boundsStep) * V.boundsStep;
   const bounds = {
     width: round(maxX - minX + expand * 2),
@@ -832,7 +1212,7 @@ function draftCourseV2(seed: number, options: GenerateOptionsV2): DraftV2 {
   const terrain = options.terrain ?? pickWeighted(rng, T.weights);
   const hazardCount = pickInt(rng, d.hazardCount);
   const heightFeatureCount = pickInt(rng, d.heightFeatureCount);
-  const bunkerCount = pickInt(rng, d.bunkerCount);
+  const bunkerCount = pickInt(rng, options.variedBunkers ? d.variedBunkerCount : d.bunkerCount);
 
   const base: CourseDefinition = {
     id: options.id ?? `gen2-${(seed >>> 0).toString(36)}`,
@@ -848,6 +1228,7 @@ function draftCourseV2(seed: number, options: GenerateOptionsV2): DraftV2 {
     roughFringe,
     deepRoughFringe,
     waterFringe,
+    widthProfile,
     hazards: [],
   };
 
@@ -857,12 +1238,30 @@ function draftCourseV2(seed: number, options: GenerateOptionsV2): DraftV2 {
   // **高さのハザードを最後にするのは、バンカーのすり鉢と重ねないため。**
   // すり鉢も高さのハザードなので、先に入れておけば間隔の判定がそのまま効く
   const withWater: CourseDefinition = { ...base, hazards: placeHazards(rng, hazardCount, base) };
-  const bunkers = placeBunkers(rng, bunkerCount, withWater);
-  const withBunkers: CourseDefinition = { ...withWater, bunkers };
+  const routeBunkers = placeBunkers(rng, bunkerCount, withWater, options.variedBunkers ?? false);
+  // 花道の向き。**砲台とガードバンカーで共有する**ので、両方より先に決める。
+  // どちらも使わないホールでは乱数を引かない（既存コースの出力を変えないため）
+  const wantsLane = (options.plateau ?? false) || (options.guardBunkers ?? 0) > 0;
+  const laneBearing = wantsLane
+    ? approachBearing(route) + pick(rng, V.plateau.laneSwing)
+    : 0;
+  const plateau = options.plateau
+    ? makePlateau(rng, withWater, polylineLength(route), laneBearing)
+    : undefined;
+  // ガードバンカーはルート沿いの砂を置いた後。間隔の判定がそのまま効く
+  const guards = placeGuardBunkers(
+    rng,
+    options.guardBunkers ?? 0,
+    withWater,
+    routeBunkers,
+    laneBearing,
+  );
+  const withBunkers: CourseDefinition = { ...withWater, bunkers: [...routeBunkers, ...guards] };
   const course: CourseDefinition = {
     ...withBunkers,
     // すり鉢はバンカー自身が `depth` として持つので、高さのハザードには混ぜない
     heightFeatures: placeHeightFeatures(rng, heightFeatureCount, withBunkers),
+    plateau,
   };
   return { course, difficulty, plan };
 }

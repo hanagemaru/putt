@@ -91,6 +91,22 @@ function frictionMultiplier(surface: SurfaceType): number {
   return 1;
 }
 
+/**
+ * 地面種別ごとの摩擦 [m/s^2]。
+ *
+ * **速さ（スティンプ）が効くのは通常芝だけ。** ラフ・セカンドカット・砂は
+ * `referenceStimpFeet` を基準に固定する。
+ * グリーンを短く刈っても、ラフの丈も砂の重さも変わらないため。
+ *
+ * 以前は全部を `frictionFromStimp(stimpFeet)` に掛けていたので、
+ * **速いグリーンではラフも砂もつられて軽くなっていた**（12ft で 17% 軽い）。
+ * `stimpFeet` が基準値（10ft）のときは以前と同じ値になる
+ */
+export function frictionOnSurface(stimpFeet: number, surface: SurfaceType): number {
+  const base = surface === 'green' ? stimpFeet : P.referenceStimpFeet;
+  return frictionFromStimp(base) * frictionMultiplier(surface);
+}
+
 export class Roller {
   x = 0;
   z = 0;
@@ -185,7 +201,7 @@ export class Roller {
 
   private step(dt: number): void {
     const surface = this.green.surfaceAt(this.x, this.z);
-    const mu = this.friction * frictionMultiplier(surface);
+    const mu = frictionOnSurface(this.stimpFeet, surface);
     this.green.sampleGradient(this.x, this.z, this.grad);
 
     // 勾配による加速度。転がる球なので 5/7

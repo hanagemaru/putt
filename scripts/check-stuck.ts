@@ -34,9 +34,23 @@
 import { CONFIG } from '../src/config.ts';
 import { approachDirection, generateCourse } from '../src/course/course-generate.ts';
 import { generateCourseV2 } from '../src/course/course-generate-v2.ts';
-import { bunkerBasinAt, surfaceAt } from '../src/course/course-map.ts';
+import {
+  bunkerBasinAt,
+  plateauHeightAt,
+  plateauLaneIsTurf,
+  surfaceAt,
+} from '../src/course/course-map.ts';
 import { Green, defaultGreenParams } from '../src/green.ts';
-import { Roller, criticalGradient, frictionFromStimp } from '../src/physics.ts';
+import { Roller, frictionOnSurface } from '../src/physics.ts';
+import {
+  DEFAULT_SETUP,
+  TOUR_SETS,
+  generateOptionsFor,
+  generatorOfSeed,
+  setupOfSeed,
+  type CourseSetup,
+  type TourDefinition,
+} from '../src/course/tour-holes.ts';
 import type { CourseDefinition, SurfaceType } from '../src/course/course-types.ts';
 
 const P = CONFIG.physics;
@@ -125,6 +139,22 @@ const ENDGAME_SPEED_FACTORS = [1, 0.85, 1.15, 0.7, 1.3, 1.6] as const;
 const ENDGAME_ANGLE_STEP_DEG = 0.5;
 const ENDGAME_ANGLE_MAX_DEG = 30;
 
+/**
+ * カップ周りの「止まれない面」を測る半径 [m]。
+ *
+ * **この検査を足したのは、実機で1ホール15打になったから。**
+ * カップ周り2mの64.5%が勾配7.8%超（＝摩擦より重力が勝つ面）で、
+ * 寄せても止まらず何度も転がり落ちるホールがあった。
+ *
+ * 下の「詰み」「カップへ行けない」の検査は**止まれるマスからしか打たない**ので、
+ * カップの周りが止まれない面だらけでも、数少ない止まれるマスからは入って合格する。
+ * 止まれる面の割合そのものを見ないと拾えない
+ */
+const CUP_AREA_RADIUS = 2.0;
+
+/** カップ周りで許す「止まれない面」の割合。ここを超えたら報告で警告する */
+const CUP_AREA_MAX_UNSTOPPABLE = 0.02;
+
 /** 力の余裕を見るために、勾配が急な順に選ぶセカンドカットの地点の数 */
 const UPHILL_SAMPLES = 5;
 
@@ -142,6 +172,18 @@ interface Args {
   verbose: boolean;
   /** どの生成器で作ったコースを調べるか。既定は v1（既存ツアーと同じ） */
   gen: 'v1' | 'v2';
+  /**
+   * コースの仕立て（`src/course/tour-holes.ts`）。`--stimp=` `--gain=` `--radius=` で作る。
+   * **速さとうねりは「止まれるか」を直接動かす**ので、ツアーへ入れる前にここで通す
+   */
+  setup: CourseSetup;
+  /**
+   * `--tour=` で指定したツアー。**仕立てはホールごとに違うことがある**ので、
+   * コース単位の値ではなくツアーそのものを持ち、シードから引く
+   */
+  tour: TourDefinition | null;
+  /** 調べるシードを列挙で指定する。`--tour=` と `--seeds=` の結果がここへ入る */
+  seedList: number[] | null;
 }
 
 function parseArgs(argv: readonly string[]): Args {
@@ -153,6 +195,9 @@ function parseArgs(argv: readonly string[]): Args {
     vmax: SPEED_MAX,
     verbose: false,
     gen: 'v1',
+    setup: { ...DEFAULT_SETUP, stimpFeet: P.stimpFeet },
+    tour: null,
+    seedList: null,
   };
   for (const raw of argv) {
     const [key, value] = raw.replace(/^--/, '').split('=');
@@ -167,18 +212,63 @@ function parseArgs(argv: readonly string[]): Args {
     else if (key === 'gen' && value) {
       if (value !== 'v1' && value !== 'v2') throw new Error(`--gen は v1 か v2: ${value}`);
       args.gen = value;
+    } else if (key === 'stimp' && value) args.setup.stimpFeet = Number(value);
+    else if (key === 'gain' && value) args.setup.undulationGain = Number(value);
+    else if (key === 'radius' && value) args.setup.turnRadiusScale = Number(value);
+    else if (key === 'tour' && value) {
+      // ツアー1セットをそのまま通す。シード列・生成器・仕立てを定義から拾うので、
+      // 手で写し間違える余地がない
+      const tour = TOUR_SETS.find((t) => t.id === value);
+      if (!tour) throw new Error(`--tour が見つかりません: ${value}`);
+      args.seedList = [...tour.seeds];
+      args.gen = tour.generator ?? 'v1';
+      args.tour = tour;
     }
   }
   return args;
 }
 
-/** 調べる対象のコースを作る。生成器の違いはここ1箇所だけに閉じる */
+/**
+ * そのシードの仕立て。**`--tour=` のときはホールごとの上書きまで効く**
+ * （LAB のようにホール単位で仕掛けを変えるコースがあるため）
+ */
+function setupFor(seed: number): CourseSetup {
+  return ARGS.tour ? setupOfSeed(ARGS.tour, seed) : ARGS.setup;
+}
+
+/**
+ * 調べる対象のコースを作る。生成器の違いはここ1箇所だけに閉じる。
+ * **`--tour=` のときはホールごとの生成器まで効く**（BEGINNER は v1 と v2 を混ぜている）
+ */
 function generateFor(seed: number, gen: Args['gen']): CourseDefinition {
-  return gen === 'v2' ? generateCourseV2(seed) : generateCourse(seed);
+  const actual = ARGS.tour ? generatorOfSeed(ARGS.tour, seed) : gen;
+  return actual === 'v2'
+    ? generateCourseV2(seed, generateOptionsFor(setupFor(seed)))
+    : generateCourse(seed);
 }
 
 const ARGS = parseArgs(process.argv.slice(2));
 const SPEEDS = speedLadder(ARGS.vmin, ARGS.vmax);
+
+/**
+ * 調べるときのグリーンの速さ [ft]。**摩擦はシードを持たない場所からも引く**ので、
+ * コース単位の1つの値に固定する。ホール単位で速さを変える仕立ては今のところ無いが、
+ * 入ったらここで気付けるように確かめる
+ */
+const STIMP_FEET = (() => {
+  const tour = ARGS.tour;
+  if (!tour) return ARGS.setup.stimpFeet;
+  const speeds = new Set(tour.seeds.map((seed) => setupOfSeed(tour, seed).stimpFeet));
+  if (speeds.size > 1) {
+    throw new Error(`ホールごとに速さが違うツアーには未対応: ${[...speeds].join(', ')}`);
+  }
+  return [...speeds][0];
+})();
+
+/** 実際に調べるシード。`--tour=` か `--seeds=` で決まる */
+const SEEDS: number[] =
+  ARGS.seedList ??
+  Array.from({ length: ARGS.seedTo - ARGS.seedFrom + 1 }, (_, i) => ARGS.seedFrom + i);
 
 // --- 下ごしらえ -----------------------------------------------------------
 
@@ -190,7 +280,7 @@ function buildGreen(course: CourseDefinition): Green {
       seed: course.seed,
       width: course.bounds.width,
       length: course.bounds.length,
-      undulationAmplitude: UNDULATION_AMPLITUDE,
+      undulationAmplitude: UNDULATION_AMPLITUDE * setupFor(course.seed).undulationGain,
       terrain: {
         type: course.terrain,
         cup: course.cup,
@@ -199,6 +289,7 @@ function buildGreen(course: CourseDefinition): Green {
       // 高さのハザード（生成器v2）。v1のコースは持たないので undefined のまま渡る
       heightFeatures: course.heightFeatures,
       bunkerBasin: (x: number, z: number) => bunkerBasinAt(course, x, z),
+      plateau: (x: number, z: number) => plateauHeightAt(course, x, z),
     },
     (x, z) => surfaceAt(course, x, z),
   );
@@ -217,11 +308,33 @@ function isPlayable(surface: SurfaceType): boolean {
 
 /** 地面種別ごとの摩擦 [m/s^2]。physics.ts の frictionMultiplier と同じ */
 function frictionOn(surface: SurfaceType): number {
-  const base = frictionFromStimp(P.stimpFeet);
-  if (surface === 'rough') return base * P.roughFrictionMultiplier;
-  if (surface === 'deepRough') return base * P.deepRoughFrictionMultiplier;
-  if (surface === 'bunker') return base * P.bunkerFrictionMultiplier;
-  return base;
+  // ゲーム本体と同じ関数を使う。**速さが効くのは通常芝だけ**で、
+  // ラフ・セカンドカット・砂は基準スティンプに固定されている
+  return frictionOnSurface(STIMP_FEET, surface);
+}
+
+/** カップから CUP_AREA_RADIUS 以内の、止まれない面の割合と最大勾配 */
+function cupAreaStats(course: CourseDefinition, green: Green): { ratio: number; maxGradient: number } {
+  const grad = { x: 0, z: 0 };
+  const step = 0.1;
+  let cells = 0;
+  let unstoppable = 0;
+  let maxGradient = 0;
+  for (let dz = -CUP_AREA_RADIUS; dz <= CUP_AREA_RADIUS; dz += step) {
+    for (let dx = -CUP_AREA_RADIUS; dx <= CUP_AREA_RADIUS; dx += step) {
+      if (Math.hypot(dx, dz) > CUP_AREA_RADIUS) continue;
+      const x = course.cup.x + dx;
+      const z = course.cup.z + dz;
+      const surface = surfaceAt(course, x, z);
+      if (!isPlayable(surface)) continue;
+      green.sampleGradient(x, z, grad);
+      const gradient = Math.hypot(grad.x, grad.z);
+      cells++;
+      maxGradient = Math.max(maxGradient, gradient);
+      if (P.slopeFactor * P.gravity * gradient > frictionOn(surface)) unstoppable++;
+    }
+  }
+  return { ratio: cells === 0 ? 0 : unstoppable / cells, maxGradient };
 }
 
 interface ShotResult {
@@ -390,6 +503,13 @@ interface SeedReport {
   /** カップから ENDGAME_RADIUS 以内で調べたマスの数と、そこから入れられなかったマス */
   endgameCells: number;
   noHoleOut: StuckCell[];
+  /** カップ周りの止まれない面の割合と最大勾配 */
+  cupArea: { ratio: number; maxGradient: number };
+  /**
+   * 砲台の花道が坂の上まで通常芝で繋がっているか。**砲台のないホールは常に true**。
+   * パターゴルフなので、繋がっていなければ寄せる手が無い
+   */
+  plateauLaneTurf: boolean;
   /** 別の連結成分で止まったショットの数（＝細い池やOBを跨いだ回数） */
   crossedComponent: number;
   /** 上限時間まで止まらなかったショットの数 */
@@ -422,6 +542,7 @@ function investigate(seed: number, args: Args): SeedReport {
   // 位相は細かい格子で見る。粗い格子だと斜めの細い芝が島に見える
   const topo = buildGrid(course, green, TOPO_CELL);
   const roller = new Roller(green, course.cup);
+  roller.stimpFeet = setupFor(seed).stimpFeet;
 
   const teeComponent = topo.component[topo.indexAt(course.tee.x, course.tee.z)];
   const cupComponent = topo.component[topo.indexAt(course.cup.x, course.cup.z)];
@@ -739,6 +860,8 @@ function investigate(seed: number, args: Args): SeedReport {
     undecided,
     endgameCells,
     noHoleOut,
+    cupArea: cupAreaStats(course, green),
+    plateauLaneTurf: plateauLaneIsTurf(course),
     crossedComponent,
     timedOut,
     escapeSpeedHistogram,
@@ -757,7 +880,18 @@ function percent(value: number): string {
 
 console.log('=== 打ち切り廃止の可否を判断するための調査 ===');
 console.log(
-  `シード: ${ARGS.seedFrom}〜${ARGS.seedTo}（生成器 ${ARGS.gen === 'v2' ? 'generateCourseV2' : 'generateCourse'}(seed)）`,
+  ARGS.seedList
+    ? `シード: ${SEEDS.join(', ')}（生成器 ${ARGS.gen === 'v2' ? 'generateCourseV2' : 'generateCourse'}(seed)）`
+    : `シード: ${ARGS.seedFrom}〜${ARGS.seedTo}（生成器 ${ARGS.gen === 'v2' ? 'generateCourseV2' : 'generateCourse'}(seed)）`,
+);
+console.log(
+  ARGS.tour
+    ? `コースの仕立て: ツアー ${ARGS.tour.id}（**ホールごとの上書きあり**）` +
+      ` / グリーンの速さ ${STIMP_FEET}ft`
+    : `コースの仕立て: グリーンの速さ ${ARGS.setup.stimpFeet}ft` +
+      ` / うねりの倍率 ${ARGS.setup.undulationGain}` +
+      `（振幅 ${(UNDULATION_AMPLITUDE * ARGS.setup.undulationGain).toFixed(3)}m）` +
+      ` / 生成器オプション ${JSON.stringify(generateOptionsFor(ARGS.setup))}`,
 );
 console.log(`位相を見る格子: ${TOPO_CELL}m / 打つマスの格子: ${ARGS.cell}m / 方向: ${DIRECTIONS} / 初速: ${SPEEDS.map((v) => v.toFixed(2)).join(', ')} m/s`);
 console.log(`想定した最弱の一打: ${ARGS.vmin} m/s ・ 最強の一打: ${ARGS.vmax} m/s`);
@@ -768,7 +902,9 @@ console.log(
   `摩擦: 通常芝 ${frictionOn('green').toFixed(3)} / ラフ ${frictionOn('rough').toFixed(3)} / セカンドカット ${frictionOn('deepRough').toFixed(3)} / 砂 ${frictionOn('bunker').toFixed(3)} m/s^2`,
 );
 console.log(
-  `止まれる勾配の上限: 通常芝 ${percent(criticalGradient(P.stimpFeet))} / ラフ ${percent(criticalGradient(P.stimpFeet) * P.roughFrictionMultiplier)} / セカンドカット ${percent(criticalGradient(P.stimpFeet) * P.deepRoughFrictionMultiplier)} / 砂 ${percent(criticalGradient(P.stimpFeet) * P.bunkerFrictionMultiplier)}`,
+  `止まれる勾配の上限: ${(['green', 'rough', 'deepRough', 'bunker'] as const)
+    .map((s) => `${SURFACE_LABEL[s]} ${percent(frictionOn(s) / (P.slopeFactor * P.gravity))}`)
+    .join(' / ')}`,
 );
 console.log('');
 
@@ -800,19 +936,24 @@ const escapeSpeedTotal = new Array<number>(SPEEDS.length).fill(0);
 let noProgressWithinReach = 0;
 const uphillDisplacements: number[] = [];
 const problems: string[] = [];
+const cupAreaBad: { seed: number; ratio: number; maxGradient: number }[] = [];
+/** 砲台の花道が芝で繋がっていないホール */
+const laneBroken: number[] = [];
+let worstCupArea = 0;
 
 // 決定論の確認。同じシードを2回調べて、結果が1文字も違わないことを見る
 {
-  const a = JSON.stringify(investigate(ARGS.seedFrom, ARGS));
-  const b = JSON.stringify(investigate(ARGS.seedFrom, ARGS));
-  console.log(`決定論（シード ${ARGS.seedFrom} を2回）: ${a === b ? 'OK' : 'NG'}`);
+  const a = JSON.stringify(investigate(SEEDS[0], ARGS));
+  const b = JSON.stringify(investigate(SEEDS[0], ARGS));
+  console.log(`決定論（シード ${SEEDS[0]} を2回）: ${a === b ? 'OK' : 'NG'}`);
   if (a !== b) process.exitCode = 1;
 }
 
-for (let seed = ARGS.seedFrom; seed <= ARGS.seedTo; seed++) {
+for (let index = 0; index < SEEDS.length; index++) {
+  const seed = SEEDS[index];
   const report = investigate(seed, ARGS);
-  if ((seed - ARGS.seedFrom) % 25 === 24) {
-    console.log(`-- 進捗: ${seed - ARGS.seedFrom + 1} / ${ARGS.seedTo - ARGS.seedFrom + 1} シード`);
+  if (index % 5 === 4 || index === SEEDS.length - 1) {
+    console.log(`-- 進捗: ${index + 1} / ${SEEDS.length} シード`);
   }
   totalStoppable += report.stoppableCells;
   totalStuck += report.stuck.length;
@@ -821,6 +962,11 @@ for (let seed = ARGS.seedFrom; seed <= ARGS.seedTo; seed++) {
   totalUndecided += report.undecided.length;
   totalEndgame += report.endgameCells;
   totalNoHoleOut += report.noHoleOut.length;
+  if (report.cupArea.ratio > CUP_AREA_MAX_UNSTOPPABLE) {
+    cupAreaBad.push({ seed, ratio: report.cupArea.ratio, maxGradient: report.cupArea.maxGradient });
+  }
+  worstCupArea = Math.max(worstCupArea, report.cupArea.ratio);
+  if (!report.plateauLaneTurf) laneBroken.push(seed);
   totalCrossed += report.crossedComponent;
   totalIslandArea += report.islandArea;
   totalTimedOut += report.timedOut;
@@ -904,7 +1050,7 @@ for (let seed = ARGS.seedFrom; seed <= ARGS.seedTo; seed++) {
   }
 }
 
-const seeds = ARGS.seedTo - ARGS.seedFrom + 1;
+const seeds = SEEDS.length;
 console.log('');
 console.log('=== まとめ ===');
 console.log(`調べたシード: ${seeds} / 打ったショット: ${totalShots}`);
@@ -919,6 +1065,15 @@ console.log(`詰み（どう打っても池かOB）のマス: ${totalStuck}`);
 console.log(`前進できなかったマス: ${totalNoProgress}（うちカップへ行けない ${totalNoReach} / 未確定 ${totalUndecided}）`);
 console.log(
   `カップから ${ENDGAME_RADIUS}m 以内で調べたマス: ${totalEndgame} / そこから入れられなかったマス: ${totalNoHoleOut}`,
+);
+console.log(
+  `カップ周り${CUP_AREA_RADIUS}mの止まれない面: 最大 ${percent(worstCupArea)}` +
+    `（しきい値 ${percent(CUP_AREA_MAX_UNSTOPPABLE)} 超は ${cupAreaBad.length}ホール` +
+    `${cupAreaBad.length ? ': ' + cupAreaBad.map((c) => `シード${c.seed} ${percent(c.ratio)}/最大勾配${percent(c.maxGradient)}`).join(', ') : ''}）`,
+);
+console.log(
+  `砲台の花道が芝で繋がっていないホール: ${laneBroken.length}` +
+    `${laneBroken.length ? `（シード ${laneBroken.join(', ')}）` : ''}`,
 );
 console.log(
   `脱出に要った最小の初速の分布: ${SPEEDS.map((v, k) => `${v.toFixed(2)}m/s ${escapeSpeedTotal[k]}`).join(' / ')}`,

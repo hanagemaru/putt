@@ -3,6 +3,7 @@ import type {
   CourseDefinition,
   CoursePoint,
   EllipseHazard,
+  GreenPlateau,
   HazardOutline,
   SandBunker,
   SurfaceType,
@@ -16,6 +17,7 @@ import {
 } from './course-noise';
 
 const N = CONFIG.course.edgeNoise;
+const B = CONFIG.course.generatorV2.bunker;
 
 const BAND_FBM: FbmParams = {
   octaves: N.bandOctaves,
@@ -57,6 +59,124 @@ export function distanceToRoute(course: CourseDefinition, x: number, z: number):
     distance = Math.min(distance, pointSegmentDistance(point, course.route[i - 1], course.route[i]));
   }
   return distance;
+}
+
+/**
+ * ルートに沿った累積長。幅プロファイルを引くのに要る。
+ * コース定義から決まる純粋な派生値なので、キャッシュの有無で結果は変わらない
+ */
+const routeArcCache = new WeakMap<CourseDefinition, { cum: number[]; total: number }>();
+
+function routeArcs(course: CourseDefinition): { cum: number[]; total: number } {
+  const cached = routeArcCache.get(course);
+  if (cached) return cached;
+  const cum = [0];
+  for (let i = 1; i < course.route.length; i++) {
+    cum.push(
+      cum[i - 1] +
+        Math.hypot(
+          course.route[i].x - course.route[i - 1].x,
+          course.route[i].z - course.route[i - 1].z,
+        ),
+    );
+  }
+  const arcs = { cum, total: cum[cum.length - 1] };
+  routeArcCache.set(course, arcs);
+  return arcs;
+}
+
+/**
+ * ルートまでの最短距離と、その最寄り点のルート上の位置（0＝ティー側 / 1＝カップ側）。
+ * 幅がルートに沿って変わる（`widthProfile`）ので、距離だけでは帯を決められない
+ */
+function nearestOnRoute(course: CourseDefinition, x: number, z: number): { distance: number; t: number } {
+  const { cum, total } = routeArcs(course);
+  let best = Infinity;
+  let bestT = 0;
+  for (let i = 1; i < course.route.length; i++) {
+    const a = course.route[i - 1];
+    const b = course.route[i];
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const lengthSq = dx * dx + dz * dz;
+    const u =
+      lengthSq === 0 ? 0 : Math.min(Math.max(((x - a.x) * dx + (z - a.z) * dz) / lengthSq, 0), 1);
+    const distance = Math.hypot(x - (a.x + dx * u), z - (a.z + dz * u));
+    if (distance < best) {
+      best = distance;
+      bestT = total > 0 ? (cum[i - 1] + Math.sqrt(lengthSq) * u) / total : 0;
+    }
+  }
+  return { distance: best, t: bestT };
+}
+
+/**
+ * ルート位置 t での芝幅の倍率。`widthProfile` は等間隔の点なので線形に繋ぐ。
+ * 省略なら 1（今までと同じ一定幅）
+ */
+export function widthScaleAt(course: CourseDefinition, t: number): number {
+  const profile = course.widthProfile;
+  if (!profile || profile.length === 0) return 1;
+  if (profile.length === 1) return profile[0];
+  const clamped = Math.min(Math.max(t, 0), 1) * (profile.length - 1);
+  const i = Math.min(profile.length - 2, Math.floor(clamped));
+  const u = clamped - i;
+  return profile[i] + (profile[i + 1] - profile[i]) * u;
+}
+
+/**
+ * 砲台の坂の長さ [m]。**向きで変わる。**
+ *
+ *   花道の中（`laneHalfAngle` まで）… `laneRun`。長くて緩い坂
+ *   花道の外（`laneFadeAngle` から）… `shoulder`。短くて急な坂（法面）
+ *
+ * 間は smoothstep で繋ぐので、高さは向きに対しても滑らかに変わる。
+ * **花道の中は坂の長さが一定**なので、そこには円周方向の傾きがまったく出ない
+ * （＝花道を横に流されない）
+ */
+function plateauRampAt(plateau: GreenPlateau, x: number, z: number): number {
+  const bearing = Math.atan2(x - plateau.center.x, z - plateau.center.z);
+  let delta = bearing - plateau.laneBearing;
+  while (delta > Math.PI) delta -= Math.PI * 2;
+  while (delta < -Math.PI) delta += Math.PI * 2;
+  const a = Math.abs(delta);
+  if (a <= plateau.laneHalfAngle) return plateau.laneRun;
+  if (a >= plateau.laneFadeAngle) return plateau.shoulder;
+  const u = (a - plateau.laneHalfAngle) / (plateau.laneFadeAngle - plateau.laneHalfAngle);
+  const w = 1 - u * u * (3 - 2 * u);
+  return plateau.shoulder + (plateau.laneRun - plateau.shoulder) * w;
+}
+
+/**
+ * 砲台グリーンの高さ [m]。上面は平ら、坂だけ滑らかに下る。
+ * `green.ts` がハイトマップへ足すために呼ぶ
+ */
+export function plateauHeightAt(course: CourseDefinition, x: number, z: number): number {
+  const plateau = course.plateau;
+  if (!plateau) return 0;
+  const d = Math.hypot(x - plateau.center.x, z - plateau.center.z);
+  if (d <= plateau.innerRadius) return plateau.rise;
+  const ramp = plateauRampAt(plateau, x, z);
+  if (d >= plateau.innerRadius + ramp) return 0;
+  // smoothstep。縁で傾きが 0 になるので、外の地形と段差なく繋がる
+  const u = (d - plateau.innerRadius) / ramp;
+  return plateau.rise * (1 - u * u * (3 - 2 * u));
+}
+
+/**
+ * その座標が砲台の法面（＝ラフにする帯）の中か。
+ * **花道の中は通常芝のまま返す。** パターゴルフなので、
+ * フェアウェイからカップまで通常芝で繋がっていないと寄せられない
+ */
+function isPlateauShoulder(course: CourseDefinition, x: number, z: number): boolean {
+  const plateau = course.plateau;
+  if (!plateau) return false;
+  const d = Math.hypot(x - plateau.center.x, z - plateau.center.z);
+  if (d <= plateau.innerRadius) return false;
+  const ramp = plateauRampAt(plateau, x, z);
+  if (d >= plateau.innerRadius + ramp) return false;
+  // 坂の長さが花道と同じ ＝ 花道の中。勾配は `laneGrade` に収まっているので通常芝で残す
+  return ramp < plateau.laneRun;
 }
 
 /**
@@ -157,6 +277,7 @@ function isInsideSand(
   outline: AngularHarmonics[],
   x: number,
   z: number,
+  margin = 0,
 ): boolean {
   const baseX = (x - bunker.center.x) / bunker.radiusX;
   const baseZ = (z - bunker.center.z) / bunker.radiusZ;
@@ -164,7 +285,11 @@ function isInsideSand(
   const theta = Math.atan2(baseZ, baseX);
   const amplitude = bunker.outline?.amplitude ?? N.bunkerAmplitude;
   const limit = 1 + amplitude * evalAngularHarmonics(outline, theta);
-  return Math.hypot(baseX, baseZ) <= limit;
+  if (margin <= 0) return Math.hypot(baseX, baseZ) <= limit;
+  // 縁を外へ広げる。池の岸（`isInsideHazard` の fringe）と同じやり方
+  const dx = (x - bunker.center.x) / (bunker.radiusX + margin);
+  const dz = (z - bunker.center.z) / (bunker.radiusZ + margin);
+  return Math.hypot(dx, dz) <= limit;
 }
 
 /**
@@ -190,12 +315,12 @@ function sandNormalizedRadius(
 /**
  * バンカーの内側か。**v1のコースはバンカーを持たないので、そのまま false を返す。**
  */
-function isInsideBunker(course: CourseDefinition, x: number, z: number): boolean {
+function isInsideBunker(course: CourseDefinition, x: number, z: number, margin = 0): boolean {
   const bunkers = course.bunkers;
   if (!bunkers || bunkers.length === 0) return false;
   const shapes = bunkerShapes(course);
   for (let i = 0; i < bunkers.length; i++) {
-    if (isInsideSand(bunkers[i], shapes[i], x, z)) return true;
+    if (isInsideSand(bunkers[i], shapes[i], x, z, margin)) return true;
   }
   return false;
 }
@@ -255,18 +380,20 @@ function isProtected(course: CourseDefinition, x: number, z: number): boolean {
  */
 function bandSurfaceAt(course: CourseDefinition, x: number, z: number): SurfaceType {
   const salt = N.streamSalt;
-  const distance = distanceToRoute(course, x, z);
+  // 幅がルートに沿って変わるコース（`widthProfile`）では、最寄り点の位置も要る。
+  // プロファイルが無ければ倍率は 1 で、今までとまったく同じ計算になる
+  const { distance, t } = nearestOnRoute(course, x, z);
+  const halfGreen = (course.greenWidth / 2) * widthScaleAt(course, t);
   // 揺らぎの幅は [-1, 1] に収まるので、どう転んでも結果が変わらない距離ではノイズを引かない。
   // 早期に返しても同じ答えになる（枝刈りであって、場所ごとの結果は変わらない）
-  if (distance <= (course.greenWidth / 2) * (1 - N.greenAmplitude)) return 'green';
+  if (distance <= halfGreen * (1 - N.greenAmplitude)) return 'green';
   const maxPlayable =
-    (course.greenWidth / 2) * (1 + N.greenAmplitude) +
+    halfGreen * (1 + N.greenAmplitude) +
     course.roughFringe * (1 + N.roughAmplitude) +
     course.deepRoughFringe * (1 + N.deepRoughAmplitude);
   if (distance > maxPlayable) return 'ob';
 
-  const greenEdge =
-    (course.greenWidth / 2) * bandScale(course.seed, salt.green, N.greenAmplitude, x, z);
+  const greenEdge = halfGreen * bandScale(course.seed, salt.green, N.greenAmplitude, x, z);
   const roughEdge =
     greenEdge + course.roughFringe * bandScale(course.seed, salt.rough, N.roughAmplitude, x, z);
   const deepRoughEdge =
@@ -292,10 +419,81 @@ export function surfaceAt(course: CourseDefinition, x: number, z: number): Surfa
   if (isInsideWater(course, x, z, course.waterFringe)) return 'rough';
 
   const band = bandSurfaceAt(course, x, z);
-  // バンカー（生成器v2）。**芝の上だけを砂にする。**
-  // OBを砂へ変えることはないので、OB面積比も芝の連結もバンカーの有無で変わらない
-  // （砂は罰打なしで打てるので、連結の判定では芝と同じ扱い）。
-  // v1のコースはバンカーを持たないので、ここは必ず素通りする
-  if (band !== 'ob' && isInsideBunker(course, x, z)) return 'bunker';
+  // バンカー（生成器v2）。**帯に関わらず砂として塗る。**
+  //
+  // 以前は芝の上だけを砂にしていたので、半径がOBへ届いた砂はそこで切り落とされ、
+  // 見た目には「砂がOBへめり込む」状態になっていた（実機で EXPERT H1 の指摘）。
+  // 置くのをやめると砂の少ないホールが増えるので、**境界のほうを砂の形へ合わせる**。
+  // OB側へはみ出した分は、すぐ下で打てる地面に変える。
+  //
+  // **砲台の法面より先に見る。** 逆にすると、法面の輪がガードバンカーを横切って
+  // ラフに塗り替えてしまう（実機で「砂がラフで不自然に横切られている」と出た）。
+  // 砂は砂で、坂の上にあっても砂であることは変わらない
+  if (isInsideBunker(course, x, z)) return 'bunker';
+  // **OB境界を砂の形に沿って膨らませる。** 砂の縁の外 `obClearance` ぶんは必ず打てる地面。
+  // 実際のゴルフでバンカーが直接OBへ繋がることはない
+  if (band === 'ob' && isInsideBunker(course, x, z, B.obClearance)) return 'deepRough';
+  // 砲台グリーンの法面は**ラフにする**。通常芝は勾配7.8%で止まらなくなるが、
+  // ラフは27.4%まで止まれるので、ここをラフにして初めて「高い段」が成立する。
+  // 芝の外（セカンドカット・OB）は塗り替えない
+  if ((band === 'green' || band === 'rough') && isPlateauShoulder(course, x, z)) return 'rough';
   return band;
+}
+
+/**
+ * **ティーから真っ直ぐ転がせる距離 [m]。** シード選定と一覧のための物差しで、ゲームは呼ばない。
+ *
+ * ティーショットは真っ直ぐしか打てないので、ティーの近くで曲がるホールは
+ * 「少し転がしてすぐ止める」しかできない。実機で
+ * 「S字がティーの近くで曲がるとティーショットを全然しっかり打てない」と出た。
+ *
+ * ルート初期方向を中心に狙いを扇状に振り、**通常芝を外れずに進める最長の距離**を返す。
+ * 砂・ラフは「外れた」とみなす（狙って入れる場所ではない）
+ */
+export function teeStraightDistance(course: CourseDefinition): number {
+  const R = CONFIG.course.teeRun;
+  const base = Math.atan2(course.route[1].x - course.route[0].x, course.route[1].z - course.route[0].z);
+  const fan = (R.fanDeg * Math.PI) / 180;
+  const fanStep = (R.fanStepDeg * Math.PI) / 180;
+  let best = 0;
+  for (let a = -fan; a <= fan + 1e-9; a += fanStep) {
+    const dx = Math.sin(base + a);
+    const dz = Math.cos(base + a);
+    let d = R.step;
+    while (d <= R.maxDistance) {
+      if (surfaceAt(course, course.tee.x + dx * d, course.tee.z + dz * d) !== 'green') break;
+      d += R.step;
+    }
+    best = Math.max(best, d - R.step);
+  }
+  // ホール長を超えて測っても意味がないので、呼ぶ側が割合にするときは全長で切る
+  return best;
+}
+
+/**
+ * **砲台の花道が、坂の上まで通常芝で繋がっているか。**
+ *
+ * パターゴルフなので、フェアウェイからカップまで通常芝で繋がっていないと寄せられない。
+ * 砲台はカップ中心の円で、花道は放射状に真っ直ぐ伸びるので、
+ * **フェアウェイが曲がっているホールでは花道の先がラフへ外れることがある**
+ * （実測で120本中23本）。生成器で直すよりシード選定で弾くほうが単純なので、
+ * `check:stuck` とシード選定の条件にしてある。
+ *
+ * 測るのは花道の**中心線**（坂が持ち上げている範囲だけ）。
+ * 扇の端まで芝であることは求めない。狭いフェアウェイでは原理的に入らないし、
+ * 寄せるのに要るのは「1本通っていること」だから
+ */
+export function plateauLaneIsTurf(course: CourseDefinition): boolean {
+  const plateau = course.plateau;
+  if (!plateau) return true;
+  const step = CONFIG.course.teeRun.step;
+  const dx = Math.sin(plateau.laneBearing);
+  const dz = Math.cos(plateau.laneBearing);
+  const outer = plateau.innerRadius + plateau.laneRun;
+  for (let d = plateau.innerRadius; d <= outer + 1e-9; d += step) {
+    if (surfaceAt(course, plateau.center.x + dx * d, plateau.center.z + dz * d) !== 'green') {
+      return false;
+    }
+  }
+  return true;
 }
