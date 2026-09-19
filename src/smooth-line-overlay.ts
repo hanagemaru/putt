@@ -3,7 +3,7 @@ import * as THREE from 'three';
 /** OB境界の濃さを丸める段数。1本ずつ stroke しないための粒度 */
 const OB_ALPHA_LEVELS = 8;
 
-/** OB境界を高解像度Canvasへ描くときの見た目。`?obline=smooth` の比較用 */
+/** OB境界を高解像度Canvasへ描くときの見た目 */
 export interface ObBoundaryOverlay {
   /** 線分の端点。3つで1点、2点で1本 */
   points: Float32Array;
@@ -97,11 +97,11 @@ export class SmoothLineOverlay {
   }
 
   /**
-   * OB境界（`?obline=smooth` の比較用）。
+   * OB境界。
    *
    * 3Dのドット化とは別にこの高解像度Canvasへ描くので**なめらかに出る**代わりに、
    * このCanvasは深度を持てないので**地形にも木にも隠れない**。
-   * 距離で薄くするのは3D版と同じ式を CPU 側でやる。
+   * 距離で薄くすることで、遠くの線が主張しすぎないようにしている。
    */
   private drawObBoundary(camera: THREE.PerspectiveCamera, ob: ObBoundaryOverlay): void {
     const segments = ob.points.length / 6;

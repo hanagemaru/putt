@@ -2,7 +2,7 @@
 // 正式表示ではハイトマップが表示と物理の両方の唯一の情報源。
 // 比較用の「形状2×」だけは、物理と色を変えず3D形状の高さだけを一時的に誇張する。
 import * as THREE from 'three';
-import { CONFIG, type ObLineStyle } from './config';
+import { CONFIG } from './config';
 import type {
   CoursePoint,
   HeightFeature,
@@ -688,188 +688,12 @@ const NO_CROSSING: Crossing = { point: null, ok: false };
 
 /** OB境界の線。マップでは図として、一人称では風景の一部として見せ方を変える */
 export interface ObBoundaryLine {
-  /**
-   * 3Dシーンへ入れるオブジェクト。`smooth` だけは 2D Canvas に描くので null。
-   * その場合は `points` を高解像度オーバーレイへ渡す
-   */
-  readonly object: THREE.Object3D | null;
-  /** 線分の端点。3つで1点、2点で1本。`smooth` のオーバーレイが使う */
+  /** 線分の端点。3つで1点、2点で1本。高解像度オーバーレイがこれを描く */
   readonly points: Float32Array;
-  /** マップ表示中か。`smooth` のオーバーレイが濃さを合わせるために読む */
+  /** マップ表示中か。オーバーレイが濃さを合わせるために読む */
   readonly mapMode: boolean;
-  /** マップ表示の間だけ true。距離で薄くせず、地形にも木にも隠さない */
+  /** マップ表示の間だけ true。図として読むところなので距離で薄くしない */
   setMapMode(active: boolean): void;
-}
-
-/** 描き先の高さ [px]。低解像度ターゲットへ描いている間はそちらの大きさを使う */
-function renderTargetSize(renderer: THREE.WebGLRenderer, out: THREE.Vector2): THREE.Vector2 {
-  const target = renderer.getRenderTarget();
-  if (target) return out.set(target.width, target.height);
-  return renderer.getDrawingBufferSize(out);
-}
-
-/** 3つの出し方で共通の uniform。距離で薄くする計算をひとまとめにする */
-function obLineUniforms(): Record<string, { value: unknown }> {
-  const L = CONFIG.obLine;
-  const color = new THREE.Color(L.color);
-  return {
-    uColor: { value: new THREE.Vector3(color.r, color.g, color.b) },
-    uNear: { value: L.fadeNear },
-    uFar: { value: L.fadeFar },
-    uOpacity: { value: L.opacity },
-    uFarOpacity: { value: L.farOpacity },
-    uFade: { value: 1 },
-  };
-}
-
-/**
- * 距離で薄くする共通の断片シェーダ。
- *
- * 境界は「今いるあたりでどこまで打てるか」を読むためのものなので、
- * 遠くまで同じ濃さで出ていると画面がうるさいだけになる
- * （実機前のプレビューで「思ったより目立つ」と出た）。
- * `uFade` を 0 にするとフェードが止まり、全線が `uOpacity` で出る。マップ用。
- */
-const OB_LINE_FRAGMENT = `
-  uniform vec3 uColor;
-  uniform float uNear;
-  uniform float uFar;
-  uniform float uOpacity;
-  uniform float uFarOpacity;
-  uniform float uFade;
-  varying float vViewDepth;
-  void main() {
-    float t = clamp((vViewDepth - uNear) / max(uFar - uNear, 0.0001), 0.0, 1.0);
-    float faded = mix(uOpacity, uFarOpacity, t);
-    gl_FragColor = vec4(uColor, mix(uOpacity, faded, uFade));
-  }
-`;
-
-/**
- * `dot`: 素の `THREE.Line`。WebGL の線は線幅を指定できず**必ず1デバイスピクセル**なので、
- * 低解像度ターゲット上では常に1ドットになる。距離で太さが変わらないのが利点で、
- * 太くできないのがその裏返し。
- */
-function buildDotLine(points: Float32Array): THREE.LineSegments {
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(points, 3));
-  return new THREE.LineSegments(
-    geometry,
-    new THREE.ShaderMaterial({
-      uniforms: obLineUniforms(),
-      vertexShader: `
-        varying float vViewDepth;
-        void main() {
-          vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
-          // ビュー空間の Z は手前が負。カメラからの距離として使うので符号を返す
-          vViewDepth = -viewPosition.z;
-          gl_Position = projectionMatrix * viewPosition;
-        }
-      `,
-      fragmentShader: OB_LINE_FRAGMENT,
-      transparent: true,
-      // 半透明なので深度は書かない。**参照はする**ので、地形と木には隠れる
-      depthWrite: false,
-    }),
-  );
-}
-
-/**
- * `ribbon`: 線分1本を四角形にして、**画面上の幅が一定になるよう頂点シェーダで押し広げる**。
- * 太さを選べて、描き先が低解像度ターゲットなのでピクセル感も残る。
- *
- * 継ぎ目は、四角形を線の向きへも半幅ぶん伸ばして埋める。
- * 近平面をまたぐ線分は投影が壊れるので、その四角形ごと落とす。
- */
-function buildRibbonLine(points: Float32Array): THREE.Mesh {
-  const segments = points.length / 6;
-  const position = new Float32Array(segments * 4 * 3);
-  const other = new Float32Array(segments * 4 * 3);
-  const side = new Float32Array(segments * 4);
-  const index = new Uint32Array(segments * 6);
-
-  for (let s = 0; s < segments; s++) {
-    const a = s * 6;
-    const b = s * 6 + 3;
-    for (let corner = 0; corner < 4; corner++) {
-      // 0,1 は端点A、2,3 は端点B。それぞれ法線の＋側と－側
-      const self = corner < 2 ? a : b;
-      const mate = corner < 2 ? b : a;
-      const v = (s * 4 + corner) * 3;
-      position[v] = points[self];
-      position[v + 1] = points[self + 1];
-      position[v + 2] = points[self + 2];
-      other[v] = points[mate];
-      other[v + 1] = points[mate + 1];
-      other[v + 2] = points[mate + 2];
-      side[s * 4 + corner] = corner % 2 === 0 ? 1 : -1;
-    }
-    const base = s * 4;
-    const i = s * 6;
-    index[i] = base;
-    index[i + 1] = base + 1;
-    index[i + 2] = base + 2;
-    index[i + 3] = base + 2;
-    index[i + 4] = base + 1;
-    index[i + 5] = base + 3;
-  }
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(position, 3));
-  geometry.setAttribute('aOther', new THREE.BufferAttribute(other, 3));
-  geometry.setAttribute('aSide', new THREE.BufferAttribute(side, 1));
-  geometry.setIndex(new THREE.BufferAttribute(index, 1));
-
-  const uniforms = obLineUniforms();
-  uniforms.uResolution = { value: new THREE.Vector2(1, 1) };
-  uniforms.uHalfWidth = { value: CONFIG.obLine.ribbonWidthDots / 2 };
-
-  const material = new THREE.ShaderMaterial({
-    uniforms,
-    vertexShader: `
-      attribute vec3 aOther;
-      attribute float aSide;
-      uniform vec2 uResolution;
-      uniform float uHalfWidth;
-      varying float vViewDepth;
-      void main() {
-        vec4 viewSelf = modelViewMatrix * vec4(position, 1.0);
-        vec4 viewMate = modelViewMatrix * vec4(aOther, 1.0);
-        vViewDepth = -viewSelf.z;
-        vec4 clipSelf = projectionMatrix * viewSelf;
-        vec4 clipMate = projectionMatrix * viewMate;
-        // 近平面の手前へ回り込んだ線分は投影が壊れるので、四角形ごとクリップの外へ捨てる
-        if (clipSelf.w <= 0.0 || clipMate.w <= 0.0) {
-          gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-          return;
-        }
-        // half は GLSL の予約語なので名前に使わない
-        vec2 halfSize = uResolution * 0.5;
-        vec2 screenSelf = clipSelf.xy / clipSelf.w * halfSize;
-        vec2 screenMate = clipMate.xy / clipMate.w * halfSize;
-        vec2 delta = screenMate - screenSelf;
-        float span = length(delta);
-        vec2 dir = span > 0.0001 ? delta / span : vec2(1.0, 0.0);
-        vec2 normal = vec2(-dir.y, dir.x);
-        // 相手の反対側へも半幅ぶん伸ばして、線分どうしの継ぎ目を埋める
-        vec2 offset = normal * aSide * uHalfWidth - dir * uHalfWidth;
-        clipSelf.xy += offset / halfSize * clipSelf.w;
-        gl_Position = clipSelf;
-      }
-    `,
-    fragmentShader: OB_LINE_FRAGMENT,
-    transparent: true,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-  });
-
-  const mesh = new THREE.Mesh(geometry, material);
-  const size = new THREE.Vector2();
-  mesh.onBeforeRender = (renderer) => {
-    renderTargetSize(renderer, size);
-    (material.uniforms.uResolution.value as THREE.Vector2).set(size.x, size.y);
-  };
-  return mesh;
 }
 
 /**
@@ -883,11 +707,7 @@ function buildRibbonLine(points: Float32Array): THREE.Mesh {
  *
  * 池際には引かない（OBの印であって、ハザードの印ではない）。
  */
-export function createObBoundaryLine(
-  green: Green,
-  heightScale = 1,
-  style: ObLineStyle = CONFIG.obLine.style,
-): ObBoundaryLine | null {
+export function createObBoundaryLine(green: Green, heightScale = 1): ObBoundaryLine | null {
   const L = CONFIG.obLine;
   const halfWidth = green.width / 2;
   const halfLength = green.length / 2;
@@ -1009,26 +829,16 @@ export function createObBoundaryLine(
 
   if (points.length === 0) return null;
 
-  const vertices = new Float32Array(points);
-  // `smooth` は 2D Canvas に描くので3Dオブジェクトを持たない
-  const object = style === 'dot' ? buildDotLine(vertices) : style === 'ribbon' ? buildRibbonLine(vertices) : null;
-  if (object) object.renderOrder = 1;
-  const material = object ? ((object as THREE.Mesh).material as THREE.ShaderMaterial) : null;
-
   let mapMode = false;
   return {
-    object,
-    points: vertices,
+    points: new Float32Array(points),
     get mapMode(): boolean {
       return mapMode;
     },
     setMapMode(active: boolean): void {
-      // マップは図として読むところなので、距離で薄くせず、木や地形にも隠さず全線を出す。
-      // 一人称では逆に、地形どおりに隠れて遠いほど薄くなる
+      // マップは図として読むところなので、距離で薄くしない。
+      // 一人称では逆に、遠いほど薄くなる
       mapMode = active;
-      if (!material) return;
-      material.uniforms.uFade.value = active ? 0 : 1;
-      material.depthTest = !active;
     },
   };
 }
