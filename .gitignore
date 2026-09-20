@@ -3,6 +3,12 @@ dist
 *.local
 .DS_Store
 
+# local environment / secrets
+.env
+.env.*
+.dev.vars
+.dev.vars.*
+
 # wrangler
 .wrangler/
 
