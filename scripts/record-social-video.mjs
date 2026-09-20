@@ -1,7 +1,7 @@
 import { chromium } from 'playwright';
 import fs from 'node:fs/promises';
 
-const base = process.env.PUTT_URL ?? 'http://127.0.0.1:4173';
+const base = process.env.PUTT_URL ?? 'http://127.0.0.1:4173/putt';
 const plan = JSON.parse(await fs.readFile(process.env.PUTT_PLAN ?? 'social-plan.json', 'utf8'));
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({
