@@ -35,7 +35,7 @@ jobs:
       - name: Encode MP4 for X
         run: |
           raw=$(find social-video-raw -type f -name '*.webm' | head -1)
-          ffmpeg -y -i "$raw" -vf "fps=30,format=yuv420p" -c:v libx264 -preset medium -crf 20 -movflags +faststart putt-social.mp4
+          ffmpeg -y -ss 0.8 -i "$raw" -vf "fps=30,format=yuv420p" -c:v libx264 -preset medium -crf 20 -movflags +faststart putt-social.mp4
           ffprobe -v error -show_entries format=duration,size -show_entries stream=width,height,codec_name -of default=nw=1 putt-social.mp4
       - uses: actions/upload-artifact@v4
         with:
