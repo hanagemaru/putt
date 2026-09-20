@@ -87,5 +87,7 @@ await page.waitForTimeout(3200);
 
 const finalState = await page.evaluate(() => window.__puttSocial.state());
 if (finalState !== 'PRACTICE_END') throw new Error(`Expected cup-in, got ${finalState}`);
+// Hold the score card long enough to read in the final social clip.
+await page.waitForTimeout(1800);
 await context.close();
 await browser.close();
