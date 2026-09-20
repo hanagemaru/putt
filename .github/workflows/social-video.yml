@@ -1,0 +1,42 @@
+name: Social Video
+
+on:
+  workflow_dispatch:
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Find a deterministic cup-in
+        run: npm run social:solve > social-plan.json
+      - name: Build
+        run: npm run build
+      - name: Install recording browser
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Start preview
+        run: |
+          npm run preview -- --port 4173 > /tmp/putt-preview.log 2>&1 &
+          npx wait-on http://127.0.0.1:4173
+      - name: Record real gameplay
+        run: node scripts/record-social-video.mjs
+      - name: Encode MP4 for X
+        run: |
+          raw=$(find social-video-raw -type f -name '*.webm' | head -1)
+          ffmpeg -y -i "$raw" -vf "fps=30,format=yuv420p" -c:v libx264 -preset medium -crf 20 -movflags +faststart putt-social.mp4
+          ffprobe -v error -show_entries format=duration,size -show_entries stream=width,height,codec_name -of default=nw=1 putt-social.mp4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: putt-social-video
+          path: |
+            putt-social.mp4
+            social-plan.json
+          retention-days: 14
