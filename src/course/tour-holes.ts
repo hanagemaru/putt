@@ -40,6 +40,7 @@
 // 細くしたいときは `narrow` を足す（EXPERT H6 は 芝3.00m）。難易度はPAR4とPAR5が担う。
 
 import { CONFIG } from '../config';
+import type { ThemeId } from '../theme';
 import type { Language } from '../i18n';
 
 /** 表示名は言語別に持つ。**ID とシードは言語に依らない正本** */
@@ -123,6 +124,14 @@ export interface TourDefinition {
   holes?: readonly TourHole[];
   /** どの生成器で作るか。**省略時は 'v1'**（過去のセットを作り直さないため） */
   generator?: 'v1' | 'v2';
+  /**
+   * 見た目のテーマ（`CONFIG.themes` / `docs/PLAYTEST_BACKLOG.md` §12）。
+   * 空・光の強さ・地面の色・木だけを差し替える。**省略時は既定の見た目。**
+   *
+   * ホールの形・物理・シード・自己ベスト・ランキングには関わらないので、
+   * ここを変えてもスコアの意味は変わらない
+   */
+  theme?: ThemeId;
   /** コースの仕立て。**省略時は config の既定** */
   setup?: CourseSetup;
 }
@@ -335,6 +344,7 @@ export const TOUR_SETS = [
       ja: '池が無い。広くて曲がる道と、狭くて真っ直ぐな道が混ざる',
       en: 'No water. Wide bending holes mixed with narrow straight ones.',
     },
+    theme: 'beginner',
     // 生成器は**ホールごと**に指定する（v1 の風の丘と v2 のビギナーを混ぜているため）
     generator: 'v2',
     setup: SETUP.beginner,
@@ -348,6 +358,7 @@ export const TOUR_SETS = [
       ja: '広い。仕掛けは1ホールに1つずつ来る',
       en: 'Wide. One idea at a time.',
     },
+    theme: 'standard',
     generator: 'v2',
     setup: SETUP.composed,
     seeds: STANDARD_HOLES.map((hole) => hole.seed),
@@ -360,6 +371,7 @@ export const TOUR_SETS = [
       ja: '狭くなる。角と、岸のない池が出てくる',
       en: 'Tighter. Doglegs, and water on the edge.',
     },
+    theme: 'advanced',
     generator: 'v2',
     setup: SETUP.composed,
     seeds: ADVANCED_HOLES.map((hole) => hole.seed),
@@ -372,6 +384,7 @@ export const TOUR_SETS = [
       ja: '最も狭い。ほぼ全ホールが組み合わせで来る',
       en: 'Narrowest. Almost every hole combines two ideas.',
     },
+    theme: 'expert',
     generator: 'v2',
     setup: SETUP.composed,
     seeds: EXPERT_HOLES.map((hole) => hole.seed),
