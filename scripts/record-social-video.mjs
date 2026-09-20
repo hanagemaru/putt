@@ -10,6 +10,7 @@ const context = await browser.newContext({
   recordVideo: { dir: 'social-video-raw', size: { width: 390, height: 640 } },
 });
 const page = await context.newPage();
+try {
 await page.goto(`${base}/?mode=practice&tour=beginner&seed=${plan.seed}&social=1&lang=ja`, { waitUntil: 'networkidle' });
 await page.waitForFunction(() => !!window.__puttSocial);
 await page.waitForTimeout(900);
@@ -117,4 +118,6 @@ if (finalState !== 'PRACTICE_END') throw new Error(`Expected cup-in, got ${final
 // Hold the score card long enough to read in the final social clip.
 await page.waitForTimeout(1800);
 await context.close();
-await browser.close();
+} finally {
+  await browser.close();
+}

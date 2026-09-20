@@ -20,16 +20,20 @@ jobs:
         run: npm run --silent social:solve > social-plan.json
       - name: Build
         run: npm run build
+        env:
+          VITE_SOCIAL_RECORDING: "true"
       - name: Install recording browser
         run: |
-          npm install --no-save playwright@1.55.0
+          npm install --no-save --package-lock=false playwright@1.55.0
           npx playwright install --with-deps chromium
       - name: Start preview
         run: |
-          npm run preview -- --port 4173 > /tmp/putt-preview.log 2>&1 &
+          npm run preview -- --host 127.0.0.1 --port 4173 > /tmp/putt-preview.log 2>&1 &
           npx --yes wait-on http://127.0.0.1:4173/putt/
       - name: Record real gameplay
         run: node scripts/record-social-video.mjs
+      - name: Prepare post text
+        run: node scripts/generate-social-post.mjs
       - name: Install ffmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Encode MP4 for X
@@ -43,4 +47,5 @@ jobs:
           path: |
             putt-social.mp4
             social-plan.json
+            social-post.txt
           retention-days: 14

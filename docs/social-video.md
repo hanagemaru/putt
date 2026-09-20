@@ -8,12 +8,12 @@ X などへ載せる縦型プレイ動画を、実ゲーム UI と本番の入�
 - ショット探索: `scripts/solve-social-shot.ts`
 - 録画操作: `scripts/record-social-video.mjs`
 - 録画専用入口: `?social=1` のときだけ `window.__puttSocial` を公開する
-- 通常プレイでは録画用 API を公開しない
+- 通常ビルド・通常ツアーでは録画用 API を公開しない（ビルド変数と練習モードの両方が必要）
 
 ## 成功した方式
 
 1. `npm run --silent social:solve > social-plan.json` で決定論的にカップインする seed / speed / direction を探す
-2. 通常の Vite build を行う
+2. `VITE_SOCIAL_RECORDING=true npm run build` で録画専用ビルドを行う
 3. `npm run preview -- --port 4173` で配信する
 4. Vite の base path が `/putt/` なので、ローカル録画 URL は `http://127.0.0.1:4173/putt/` を使う
 5. Playwright Chromium を 390x640 で起動し、実際の UI を録画する
@@ -41,5 +41,6 @@ GitHub Actions の **Social Video** workflow を実行する。branch 上の pus
 
 - `putt-social.mp4`
 - `social-plan.json`
+- `social-post.txt`（自動プレイである旨と投稿識別用URLを含む下書き）
 
 solver と入力経路の照合が通らない場合は workflow を失敗させ、見た目だけ成功した動画を成果物にしない。

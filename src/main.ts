@@ -98,7 +98,7 @@ function courseWithSeed(value: number): CourseDefinition {
   if (usePrototypeCourse) return { ...PROTOTYPE_COURSE, seed };
   // SNS録画では固定ツアーの1ホールを練習モードで切り出す。
   // ?social=1 が無い通常プレイのコース選択には影響しない。
-  if (urlParams.get('social') === '1' && urlParams.get('tour') !== null) {
+  if (socialRecording && urlParams.get('tour') !== null) {
     return tourHoleCourse(selectedTour, seed);
   }
   if (useGeneratorV2) return generateCourseV2(seed, generateOptionsFor(setupForSeed(seed)));
@@ -160,6 +160,9 @@ function modeFromUrl(): GameMode {
 }
 
 const mode = modeFromUrl();
+// Recording builds only; never expose automated shots in ranked tours.
+const socialRecording = import.meta.env.VITE_SOCIAL_RECORDING === 'true'
+  && urlParams.get('social') === '1' && mode === 'practice';
 
 /**
  * コースの仕立て（うねり・速さ・曲がりの鋭さ・S字・岸なしの池・バンカーの幅・砲台…）。
@@ -175,7 +178,7 @@ const mode = modeFromUrl();
 function setupForSeed(value: number): CourseSetup {
   const seed = value >>> 0;
   if (mode === 'tour') return setupOfSeed(selectedTour, seed);
-  if (urlParams.get('social') === '1' && urlParams.get('tour') !== null) {
+  if (socialRecording && urlParams.get('tour') !== null) {
     return setupOfSeed(selectedTour, seed);
   }
   return generatorTour ? setupOfSeed(generatorTour, seed) : DEFAULT_SETUP;
@@ -958,7 +961,7 @@ declare global {
 }
 
 function installSocialDriver(): void {
-  if (urlParams.get('social') !== '1') return;
+  if (!socialRecording) return;
   window.__puttSocial = {
     state: () => state,
     position: () => ({
@@ -979,7 +982,7 @@ function installSocialDriver(): void {
       return true;
     },
     lastShot: () => {
-      const shot = holeShots.at(-1);
+      const shot = holeShots[holeShots.length - 1];
       return shot ? { speed: shot[0], direction: shot[1] } : null;
     },
     next: () => {
