@@ -5,9 +5,11 @@ const base = process.env.PUTT_URL ?? 'http://127.0.0.1:4173/putt';
 const plan = JSON.parse(await fs.readFile(process.env.PUTT_PLAN ?? 'social-plan.json', 'utf8'));
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({
+  // Render the same 390x640 CSS viewport at 2x density. This preserves the mobile composition
+  // while giving the encoder 780x1280 source pixels instead of upscaling a 390px recording.
   viewport: { width: 390, height: 640 },
-  deviceScaleFactor: 1,
-  recordVideo: { dir: 'social-video-raw', size: { width: 390, height: 640 } },
+  deviceScaleFactor: 2,
+  recordVideo: { dir: 'social-video-raw', size: { width: 780, height: 1280 } },
 });
 const page = await context.newPage();
 try {
