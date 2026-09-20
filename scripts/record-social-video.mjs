@@ -12,7 +12,7 @@ const context = await browser.newContext({
   deviceScaleFactor: 2,
 });
 const page = await context.newPage();
-const cdp = await context.newCDPSession(page);
+const captureCdp = await context.newCDPSession(page);
 const frameDir = 'social-video-frames';
 const capturedFrames = [];
 const frameWrites = [];
@@ -20,12 +20,12 @@ let frameIndex = 0;
 
 await fs.mkdir(frameDir, { recursive: true });
 
-cdp.on('Page.screencastFrame', ({ data, metadata, sessionId }) => {
+captureCdp.on('Page.screencastFrame', ({ data, metadata, sessionId }) => {
   const file = `frame-${String(frameIndex++).padStart(6, '0')}.jpg`;
   const timestamp = metadata?.timestamp ?? Date.now() / 1000;
   capturedFrames.push({ file, timestamp });
   frameWrites.push(fs.writeFile(`${frameDir}/${file}`, Buffer.from(data, 'base64')));
-  void cdp.send('Page.screencastFrameAck', { sessionId }).catch(() => {});
+  void captureCdp.send('Page.screencastFrameAck', { sessionId }).catch(() => {});
 });
 try {
 await page.goto(`${base}/?mode=practice&tour=beginner&seed=${plan.seed}&social=1&lang=ja`, { waitUntil: 'networkidle' });
@@ -33,7 +33,7 @@ await page.waitForFunction(() => !!window.__puttSocial);
 
 // Capture the composited browser page itself rather than Playwright's 25fps-ish video path.
 // With deviceScaleFactor=2 this keeps the 390x640 logical layout while producing 780x1280 frames.
-await cdp.send('Page.startScreencast', {
+await captureCdp.send('Page.startScreencast', {
   format: 'jpeg',
   quality: 92,
   maxWidth: 780,
@@ -82,15 +82,19 @@ await page.waitForFunction(() => {
 }, null, { timeout: 3000 });
 await page.waitForTimeout(450);
 
+// Use a separate CDP session for input. Keeping it away from screencast frame/ack traffic
+// makes the timestamp-sensitive impact samples deterministic on GitHub Actions.
+const inputCdp = await context.newCDPSession(page);
+
 // Use CDP timestamps so SwipeMeasure sees the solver's exact launch speed while the wall-clock
 // pauses keep the backswing/downswing visible in the recorded clip.
 const x0 = 195;
 const y = 320;
 let ts = Date.now() / 1000;
-await cdp.send('Input.dispatchMouseEvent', {
+await inputCdp.send('Input.dispatchMouseEvent', {
   type: 'mouseMoved', x: x0, y, button: 'none', buttons: 0, timestamp: ts,
 });
-await cdp.send('Input.dispatchMouseEvent', {
+await inputCdp.send('Input.dispatchMouseEvent', {
   type: 'mousePressed', x: x0, y, button: 'left', buttons: 1, clickCount: 1, timestamp: ts,
 });
 
@@ -106,7 +110,7 @@ async function moveStroke(from, to, durationMs, wobble = 0) {
     const baseY = from[1] + (to[1] - from[1]) * eased;
     const yy = baseY + Math.sin(t * Math.PI * 2) * wobble;
     ts += durationMs / steps / 1000;
-    await cdp.send('Input.dispatchMouseEvent', {
+    await inputCdp.send('Input.dispatchMouseEvent', {
       type: 'mouseMoved', x, y: yy, button: 'left', buttons: 1, timestamp: ts,
     });
     await page.waitForTimeout(durationMs / steps);
@@ -117,22 +121,22 @@ await moveStroke([195, 320], [345, 319], 440, 2.0);
 
 // Accelerate back through the ball with a small deterministic hand wobble. The final impact
 // window below remains solver-accurate, so this visual smoothing does not change the shot.
-await moveStroke([345, 319], [217, 320], 210, 1.7);
+await moveStroke([345, 319], [249, 320], 185, 1.7);
 
 // Solver-accurate impact window. Four pixels per sample gives enough samples inside the 40 ms fit.
 const speedK = 0.00266;
 const pxPerSample = 4;
 const dt = pxPerSample / (plan.speed / speedK);
-for (let x = 213; x >= 155; x -= pxPerSample) {
+for (let x = 245; x >= 155; x -= pxPerSample) {
   ts += dt;
-  await cdp.send('Input.dispatchMouseEvent', {
+  await inputCdp.send('Input.dispatchMouseEvent', {
     type: 'mouseMoved', x, y, button: 'left', buttons: 1, timestamp: ts,
   });
-  await page.waitForTimeout(10);
+  await page.waitForTimeout(Math.max(1, dt * 1000));
   if ((await page.evaluate(() => window.__puttSocial.state())) !== 'STROKE') break;
 }
 ts += dt;
-await cdp.send('Input.dispatchMouseEvent', {
+await inputCdp.send('Input.dispatchMouseEvent', {
   type: 'mouseReleased', x: 151, y, button: 'left', buttons: 0, clickCount: 1, timestamp: ts,
 });
 
@@ -153,7 +157,7 @@ if (finalState !== 'PRACTICE_END') throw new Error(`Expected cup-in, got ${final
 // Hold the score card long enough to read in the final social clip.
 await page.waitForTimeout(1800);
 
-await cdp.send('Page.stopScreencast');
+await captureCdp.send('Page.stopScreencast');
 await page.waitForTimeout(120);
 await Promise.all(frameWrites);
 if (capturedFrames.length < 30) {
