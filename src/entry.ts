@@ -517,6 +517,7 @@ function playerCard(rerender: () => void): PlayerCard {
     pending: () => set('…', '…'),
     failed: () => set('--', '--'),
     show: (board) => {
+      renderName();
       // 板に載っていないのに自己ベストがある＝段2の検証待ち
       const checking = board.yourRank === null && board.yourBest !== null;
       set(
@@ -550,20 +551,14 @@ function readoutPair(label: string): { element: HTMLElement; value: HTMLElement 
 }
 
 /**
- * 何を預かるかの一行（`docs/ranking.md` §5-3）。
- * **消し方のすぐ上に置く。** 預ける話と消す話を同じ場所で読めるようにするため。
- * 詳しい条文はハブのプライバシーポリシー（`hanage.app/privacy/`）に置く
+ * データの扱いはハブのプライバシーポリシーへ案内する。
  */
 function dataNotice(): HTMLElement {
   const copy = t();
   const box = document.createElement('div');
   box.className = 'ranking-privacy';
 
-  const note = document.createElement('p');
-  note.className = 'name-note';
-  note.textContent = copy.dataNote;
-
-  box.append(note, externalMenuLink(copy.privacy, hubUrl(PRIVACY_PATH)));
+  box.append(externalMenuLink(copy.privacy, hubUrl(PRIVACY_PATH)));
   return box;
 }
 

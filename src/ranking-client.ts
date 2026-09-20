@@ -269,11 +269,19 @@ export async function fetchRanking(
   boardId: string,
   identity: PlayerIdentity,
 ): Promise<RankingBoard> {
-  if (rankingSource() === 'mock') return mockFetchRanking(boardId, identity, mockScenario());
-  return request<RankingBoard>(
+  const board = rankingSource() === 'mock'
+    ? await mockFetchRanking(boardId, identity, mockScenario())
+    : await request<RankingBoard>(
     `/api/rankings?board=${encodeURIComponent(boardId)}`,
     { method: 'GET', headers: authHeaders(identity) },
   );
+  // 旧版で初回登録の名前が端末に保存されなかった人も、自分の行から復元する。
+  // 保存済みの名前は、サーバへの変更が未反映でも上書きしない。
+  if (!loadPlayerName()) {
+    const name = normalizeDisplayName(board.entries.find((entry) => entry.playerId === identity.playerId)?.name);
+    if (name) savePlayerName(name);
+  }
+  return board;
 }
 
 /** 登録の結果。**失敗しても投げない**（ゲームを止めないため） */
@@ -289,6 +297,8 @@ export async function submitRecord(
   body: SubmitRecordRequest,
   identity: PlayerIdentity,
 ): Promise<SubmitOutcome> {
+  // 初回入力も名前変更と同じ保存先へ。送信が保留になっても名前は保持する。
+  savePlayerName(body.displayName);
   try {
     return { ok: true, response: await sendRecord(body, identity) };
   } catch {
