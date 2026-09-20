@@ -176,7 +176,7 @@ for (let i = 0; i < capturedFrames.length; i++) {
 }
 // concat demuxer needs the last frame repeated for its duration to be honored.
 concat.push(`file '${capturedFrames.at(-1).file}'`);
-await fs.writeFile(`${frameDir}/frames.ffconcat`, `${concat.join('\\n')}\\n`);
+await fs.writeFile(`${frameDir}/frames.ffconcat`, `${concat.join('\n')}\n`);
 
 const elapsed = capturedFrames.at(-1).timestamp - capturedFrames[0].timestamp;
 await fs.writeFile(
