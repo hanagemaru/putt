@@ -708,6 +708,11 @@ export interface ObBoundaryLine {
   readonly points: Float32Array;
   /** マップ表示中か。オーバーレイが濃さを合わせるために読む */
   readonly mapMode: boolean;
+  /**
+   * 線が乗っている地面のおおよその高さ [m]（全点の平均）。
+   * 距離による薄まりを画面の縦位置へ置き換えるのに使う（`SmoothLineOverlay`）
+   */
+  readonly groundY: number;
   /** マップ表示の間だけ true。図として読むところなので距離で薄くしない */
   setMapMode(active: boolean): void;
 }
@@ -845,9 +850,14 @@ export function createObBoundaryLine(green: Green, heightScale = 1): ObBoundaryL
 
   if (points.length === 0) return null;
 
+  let sumY = 0;
+  for (let i = 1; i < points.length; i += 3) sumY += points[i];
+  const groundY = sumY / (points.length / 3);
+
   let mapMode = false;
   return {
     points: new Float32Array(points),
+    groundY,
     get mapMode(): boolean {
       return mapMode;
     },
@@ -940,6 +950,13 @@ interface TreePart {
   geometry: THREE.BufferGeometry;
   color: THREE.Color;
 }
+
+/**
+ * 正二十面体の「面までの距離」が半径の何倍か（内接半径 ÷ 外接半径）。
+ * **調整値ではなく形の定義。** 見た目の当たりは頂点ではなく面で決まるので、
+ * 塊どうしが触れているかを測るときはこれを掛ける
+ */
+const CLUMP_SOLID = 0.7947;
 
 /** 幹。**必ず鉛直**に立てる（傾き表現の基準）。上へ細らせる */
 function trunkPart(
@@ -1065,24 +1082,37 @@ function buildClumpedTree(
   const crownWidth = jitter(rng, J.crownWidth);
   const crownHeight = jitter(rng, J.crownHeight);
   const clumps = jitterCount(rng, shape.clumps);
+  // 1個目（幹の真上の本体）の寸法。2個目以降はここから離れないようにする
+  let coreRadius = 0;
+  let coreY = 0;
   for (let i = 0; i < clumps; i++) {
     const radius = height * shape.clumpRadius * crownWidth * jitter(rng, J.partWidth);
     // **縦のずらしは潰しと同じだけ縮める。** 潰した塊を潰していない幅でずらすと、
     // 塊どうしが縦に離れて隙間ができる（低木は潰しが 0.6 なので特に開く）
     const lift = (i === 0 ? J.clumpBase : jitter(rng, J.clumpLift)) * shape.flatten * crownHeight;
+    const y = trunkHeight + radius * lift;
     if (i === 0) {
       // 1個目は幹の真上。**幹の上端へ沈めて置く。**
       // 正二十面体は面が半径の 0.79 倍のところにあるので、半径ぶん上げると幹との間が空く
-      parts.push(clumpPart(x, baseY + trunkHeight + radius * lift, z, radius, shape.flatten, leaf));
+      coreRadius = radius;
+      coreY = y;
+      parts.push(clumpPart(x, baseY + y, z, radius, shape.flatten, leaf));
       continue;
     }
     const yaw = rng() * Math.PI * 2;
     // 面積が均される向きへずらす（そのまま乱数を半径にすると中心へ寄る）
-    const spread = radius * shape.clumpSpread * Math.sqrt(rng());
+    let spread = radius * shape.clumpSpread * Math.sqrt(rng());
+    // **本体から離れないところで頭打ちにする。**
+    // 潰した回転楕円体どうしが重なる条件から、いまの高さの差で許される横のずらしを出す。
+    // 広がりを強くした設定（低木の 1.05）でも、塊が宙に浮かない
+    const reach = (coreRadius + radius) * CLUMP_SOLID;
+    const rise = Math.abs(y - coreY) / shape.flatten;
+    const room = reach * Math.sqrt(Math.max(0, 1 - (rise / reach) ** 2)) * CONFIG.trees.clumpTouch;
+    spread = Math.min(spread, room);
     parts.push(
       clumpPart(
         x + Math.cos(yaw) * spread,
-        baseY + trunkHeight + radius * lift,
+        baseY + y,
         z + Math.sin(yaw) * spread,
         radius,
         shape.flatten,

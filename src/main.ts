@@ -706,12 +706,25 @@ function guideBallOccluder(): BallOccluder | null {
   };
 }
 
+/**
+ * OB境界を出す状態。**打った後のカメラでは出さない**（分析の邪魔になる）。
+ *
+ * 例外は `FOLLOW`。**打った直後の最初のプレイヤー視点**で、
+ * ここだけは残して「いま境界を越えたか」を見られるようにする。
+ * カップ確認（`CUP`）と停止後の俯瞰（`RESULT` 以降）では消す。
+ * 次の一打の `ADDRESS` へ戻れば、また出る
+ */
+function obBoundaryShouldShow(): boolean {
+  return state === 'ADDRESS' || state === 'STROKE' || state === 'FOLLOW';
+}
+
 /** OB境界を高解像度Canvasへ渡す */
 function obBoundaryOverlay(): ObBoundaryOverlay | null {
-  if (!obLine) return null;
+  if (!obLine || !obBoundaryShouldShow()) return null;
   const L = CONFIG.obLine;
   return {
     points: obLine.points,
+    groundY: obLine.groundY,
     color: L.color,
     widthPx: L.widthPx,
     opacity: L.opacity,

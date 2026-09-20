@@ -1155,12 +1155,18 @@ export const CONFIG = {
      */
     kinds: { broadleaf: 1, conifer: 1, shrub: 0 },
     /**
+     * 2個目以降の塊を、本体（1個目）とどれだけ確実に重ねるか。
+     * 1.0 でちょうど接するので、**それより小さくして必ず食い込ませる**。
+     * 広がり（`clumpSpread`）を強くしても塊が宙に浮かないための歯止め
+     */
+    clumpTouch: 0.95,
+    /**
      * 樹種がまとまって生える範囲の目安 [m]。
      * **樹種は1本ずつ引かず、この大きさのなめらかなノイズで決める。**
      * 1本ずつ引くと広葉樹と針葉樹が交互に並び、実機で「混ざり方がわざとらしい」と出た。
      * 小さくすると1本ずつ入れ替わり、大きくするとコースの端から端まで同じ樹種になる
      */
-    standSize: 14,
+    standSize: 9,
     /**
      * **1本ごとの揺らぎ。** 同じ樹種でも一本一本違って見えるようにするためのもので、
      * 倍率か範囲。1.0 から離れるほど、並んだときのばらけ方が強くなる。
@@ -1217,7 +1223,7 @@ export const CONFIG = {
      */
     broadleaf: {
       /** 幹の高さ（木の高さに対する比） */
-      trunkRatio: 0.4,
+      trunkRatio: 0.38,
       /** 幹の根元の半径（木の高さに対する比） */
       trunkRadius: 0.055,
       /** 幹の先の細り方（根元の半径に対する比） */
@@ -1247,21 +1253,21 @@ export const CONFIG = {
      * 半径を落としながら3〜4段重ね、段ごとに半径と向きを揺らす
      */
     conifer: {
-      trunkRatio: 0.3,
+      trunkRatio: 0.25,
       trunkRadius: 0.04,
       trunkTaper: 0.5,
       /** 段数の範囲 */
-      tiers: { min: 3, max: 4 },
+      tiers: { min: 2, max: 4 },
       /** 一番下の段の半径（木の高さに対する比） */
       baseRadius: 0.22,
       /** 上の段へ行くときの半径の落ち方 */
-      radiusFalloff: 0.7,
+      radiusFalloff: 0.58,
       /**
        * 段を食い込ませる深さ（段の高さに対する比）。大きいほど密に見える。
        * 段ひとつの高さは**木の高さから幹を引いた残りを段数で割って決める**
        * （段数が違っても木の高さが `heightMin`〜`heightMax` に収まるように）
        */
-      tierOverlap: 0.45,
+      tierOverlap: 0.36,
       /** 円錐の側面の分割数。少ないほど粗いドット絵に合う */
       radialSegments: 7,
     },
@@ -1271,12 +1277,12 @@ export const CONFIG = {
      */
     shrub: {
       trunkRatio: 0.3,
-      trunkRadius: 0.07,
+      trunkRadius: 0.06,
       trunkTaper: 0.75,
       clumps: { min: 2, max: 4 },
-      clumpRadius: 0.24,
-      clumpSpread: 0.95,
-      flatten: 0.6,
+      clumpRadius: 0.19,
+      clumpSpread: 1.05,
+      flatten: 0.58,
       branches: { min: 0, max: 1 },
       branchLength: 0.12,
       branchRadius: 0.45,
@@ -1341,7 +1347,13 @@ export const CONFIG = {
      */
     standard: {
       sky: 0x87b7e0,
-      light: { directionalIntensity: 1.75, ambientIntensity: 0.55, ambientColor: 0xffffff },
+      /**
+       * ⚠️ 環境光 1.32 は**実機で決めた値**。明るくなるぶん、高さの濃淡の上側が白へ張り付く。
+       * 画面に出る明暗の幅は 84 → 65 に狭まり、飽和する段が 3/5 → 4/5 に増える
+       * （0.55 のときは 147 → 189 → 221 → 227 → 231、1.32 では 175 → 222 → 230 → 235 → 240）。
+       * 傾斜が読みにくいと感じたら、ここを下げるか芝を一段暗くする
+       */
+      light: { directionalIntensity: 1.75, ambientIntensity: 1.32, ambientColor: 0xffffff },
       surfaces: {
         green: 0x74cf5c,
         rough: 0x4f9844,
@@ -1353,9 +1365,9 @@ export const CONFIG = {
       surround: 0x2f5d2a,
       trees: {
         count: 20,
-        // 実機で「木が全体に大きすぎる」と出たので下げた（3.5〜6.5 → 2.8〜4.8）
-        heightMin: 2.8,
-        heightMax: 4.8,
+        // 実機で決めた（最初 3.5〜6.5 → 2.8〜4.8 → 2.1〜3.6）
+        heightMin: 2.1,
+        heightMax: 3.6,
         trunkColor: 0x5b4632,
         leafColor: 0x2f6b32,
         kinds: { broadleaf: 1, conifer: 1, shrub: 0 },
@@ -1379,10 +1391,9 @@ export const CONFIG = {
       surround: 0x27512f,
       trees: {
         count: 18,
-        // 実機で「木が全体に大きすぎる」と出たので下げた（5.0〜8.5 → 3.6〜6.0）。
-        // それでも4コースで一番高い
-        heightMin: 3.6,
-        heightMax: 6,
+        // 実機で決めた（最初 5.0〜8.5 → 3.6〜6.0 → 2.6〜5.0）。それでも4コースで一番高い
+        heightMin: 2.6,
+        heightMax: 5,
         trunkColor: 0x4a3a2c,
         leafColor: 0x24593a,
         kinds: { broadleaf: 0, conifer: 1, shrub: 0 },
@@ -1398,10 +1409,10 @@ export const CONFIG = {
     expert: {
       /**
        * 実機で「色が赤すぎる」「傾斜のグラデーションが見えづらい」と出たので落とした。
-       * 空 `0xd9a97f`（橙）→ `0xdcc7a4`（かすんだ砂色）、環境光も 0.62/`0xffe0bd` から弱めた
+       * 空は 橙 `0xd9a97f` → 砂色 `0xdcc7a4` → **`0xa3dbc9`（実機で決めた薄い青緑）**
        */
-      sky: 0xdcc7a4,
-      light: { directionalIntensity: 1.65, ambientIntensity: 0.55, ambientColor: 0xffeedd },
+      sky: 0xa3dbc9,
+      light: { directionalIntensity: 1.65, ambientIntensity: 0.51, ambientColor: 0xfffef0 },
       surfaces: {
         /**
          * **芝は明るすぎると濃淡が白へ潰れる。**
@@ -1421,8 +1432,8 @@ export const CONFIG = {
       surround: 0x54602c,
       trees: {
         count: 10,
-        heightMin: 2.5,
-        heightMax: 4,
+        heightMin: 2,
+        heightMax: 4.6,
         trunkColor: 0x6a5a42,
         leafColor: 0x5d7a3e,
         kinds: { broadleaf: 0, conifer: 0, shrub: 1 },
@@ -1455,15 +1466,17 @@ export const CONFIG = {
     color: 0xffffff,
     /**
      * 手前の線の不透明度。**下げるほど主張が弱くなる。**
-     * 1.0（素の白）→ 0.55 → 0.35 → 0.18 と、プレビューで見るたびに落ちてきている
+     * 1.0（素の白）→ 0.55 → 0.35 → 0.18 と落としてきたが、
+     * **実機で「薄い」と出たので 1.5 倍へ戻した**
      */
-    opacity: 0.18,
+    opacity: 0.27,
     /**
      * 遠くの線の不透明度。ここまで薄くなる。
      * 境界は「今いるあたりでどこまで打てるか」を読むためのものなので、
-     * 遠いところまで同じ濃さで出ていると画面がうるさいだけになる
+     * 遠いところまで同じ濃さで出ていると画面がうるさいだけになる。
+     * 手前と同じ 1.5 倍（0.05 → 0.075）
      */
-    farOpacity: 0.05,
+    farOpacity: 0.075,
     /** この距離 [m] までは `opacity` のまま */
     fadeNear: 4,
     /** この距離 [m] で `farOpacity` まで落ちきる */
