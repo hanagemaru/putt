@@ -931,6 +931,50 @@ function returnToAddress(): void {
 }
 
 /** インパクト（§4.6）。計測結果を初速と方向に直して打ち出す */
+/**
+ * SNS録画専用の最小ドライバ。
+ * ?social=1 のときだけ公開し、本番プレイでは window に何も足さない。
+ */
+declare global {
+  interface Window {
+    __puttSocial?: {
+      state: () => State;
+      position: () => { ball: { x: number; z: number }; cup: { x: number; z: number } };
+      launch: (speedMs: number, direction: number) => boolean;
+      next: () => boolean;
+      map: () => boolean;
+    };
+  }
+}
+
+function installSocialDriver(): void {
+  if (urlParams.get('social') !== '1') return;
+  window.__puttSocial = {
+    state: () => state,
+    position: () => ({
+      ball: { x: ball.x, z: ball.y },
+      cup: { x: cup.x, z: cup.y },
+    }),
+    launch: (speedMs, direction) => {
+      if (state !== 'ADDRESS') return false;
+      aim = direction;
+      updateAimGuide();
+      launch(speedMs, 0);
+      return true;
+    },
+    next: () => {
+      if (state !== 'RESULT' || holeFinished()) return false;
+      nextPutt();
+      return true;
+    },
+    map: () => {
+      if (state !== 'ADDRESS') return false;
+      toggleMap();
+      return true;
+    },
+  };
+}
+
 function launch(speedMs: number, launchAngle: number): void {
   // 画面の左＝狙い方向。スワイプが画面下へ流れた分だけ狙いの左へ出る
   const direction = aim - launchAngle;
@@ -2264,3 +2308,4 @@ ball.set(roller.x, roller.z);
 updateBallMesh();
 enterAddress(true);
 showHoleIntro();
+installSocialDriver();
