@@ -30,6 +30,8 @@ jobs:
           npx wait-on http://127.0.0.1:4173
       - name: Record real gameplay
         run: node scripts/record-social-video.mjs
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Encode MP4 for X
         run: |
           raw=$(find social-video-raw -type f -name '*.webm' | head -1)
