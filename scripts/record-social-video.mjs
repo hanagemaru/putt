@@ -59,7 +59,7 @@ for (let i = 1; i <= 6; i++) {
 // Four pixels per sample gives enough samples inside the 40 ms fit window.
 const speedK = 0.00266;
 const pxPerSample = 4;
-const dt = pxPerSample / (plan.speed / speedK) / 1000;
+const dt = pxPerSample / (plan.speed / speedK);
 for (let x = x0 + 56; x >= x0 - 12; x -= pxPerSample) {
   ts += dt;
   await cdp.send('Input.dispatchMouseEvent', {
