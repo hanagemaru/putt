@@ -1424,17 +1424,17 @@ export const CONFIG = {
      */
     ranking: {
       /**
-       * 既定の取得先。**まだ `off`。**
+       * 既定の取得先。**`api`（公開済み）。**
        *
-       * - `off`  … 入口ごと出さない。サーバも実機確認も済んでいない間はこれ
+       * - `api`  … 本物のWorker（`src/server/worker.ts` + D1）。**いまはこれ**
        * - `mock` … サーバなしで動く偽データ。**画面と動線の確認はこれで通す**
-       * - `api`  … 本物のWorker（段4で出来たら既定をこれにする）
+       * - `off`  … 入口ごと出さない。止めたくなったらここへ戻す（**記録は消えない**）
        *
        * `?ranking=api|mock|off` で切り替えると、**言語と同じように保存へ移る**ので
        * 画面を移っても続く（`sourceStorageKey`）。
        * GitHub Pages（`/putt/`）はAPIを持たないので、`api` でも自動で `off` に落とす
        */
-      source: 'off' as 'api' | 'mock' | 'off',
+      source: 'api' as 'api' | 'mock' | 'off',
       /** `?ranking=` の保存先。入口で一度読んで、以後は保存を見る */
       sourceStorageKey: 'putt-ranking-source',
       /** `?rankingMock=` の保存先。モックで出す場面（失敗・圏外など）を続かせる */
