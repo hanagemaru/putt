@@ -17,7 +17,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Find a deterministic cup-in
-        run: npm run social:solve > social-plan.json
+        run: npm run --silent social:solve > social-plan.json
       - name: Build
         run: npm run build
       - name: Install recording browser
