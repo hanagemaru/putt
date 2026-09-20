@@ -27,7 +27,7 @@ jobs:
       - name: Start preview
         run: |
           npm run preview -- --port 4173 > /tmp/putt-preview.log 2>&1 &
-          npx wait-on http://127.0.0.1:4173
+          npx --yes wait-on http://127.0.0.1:4173/putt/
       - name: Record real gameplay
         run: node scripts/record-social-video.mjs
       - name: Install ffmpeg
