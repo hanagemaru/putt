@@ -46,6 +46,7 @@ import {
   tourById,
   type CourseSetup,
 } from './course/tour-holes';
+import { themeById } from './theme';
 import { CourseMapMarker } from './course-map-marker';
 import { ensurePixelFont } from './pixel-font';
 import * as i18n from './i18n';
@@ -157,6 +158,18 @@ function modeFromUrl(): GameMode {
 const mode = modeFromUrl();
 
 /**
+ * 見た目のテーマ（`docs/PLAYTEST_BACKLOG.md` §12）。**空・光の強さ・地面の色・木だけ**を
+ * コースごとに差し替える。ホールの形・物理・自己ベスト・ランキングには関わらない。
+ *
+ * 通常ツアーはセットが持つテーマ、練習モードは既定。
+ * `?theme=<ID>` を付けるとどのコースへも当てられる（**見比べ用**）。
+ * `?gen=v2&setup=<ツアーID>` で1ホールだけ出すときは、そのツアーのテーマで出す
+ */
+const activeTheme = themeById(
+  urlParams.get('theme') ?? (mode === 'tour' ? selectedTour.theme : generatorTour?.theme) ?? null,
+);
+
+/**
  * コースの仕立て（うねり・速さ・曲がりの鋭さ・S字・岸なしの池・バンカーの幅・砲台…）。
  *
  * **ホールごとに違うことがある。** LAB はホール単位で仕掛けを入れ替えるので、
@@ -236,7 +249,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, CONFIG.renderer.maxPixe
 app.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(CONFIG.renderer.background);
+scene.background = new THREE.Color(activeTheme.sky);
 
 /**
  * レトロなドット感（試作）。低い解像度のレンダーターゲットに描いて、
@@ -375,15 +388,15 @@ function disposeGroup(group: THREE.Group): void {
 function buildTerrain(): void {
   disposeGroup(terrain);
   disposeGroup(props);
-  greenMesh = new GreenMesh(green, shade, visualHeightScale);
+  greenMesh = new GreenMesh(green, shade, visualHeightScale, activeTheme.surfaces);
   terrain.add(greenMesh.mesh);
   terrain.add(createHole(green, visualHeightScale, course.cup));
   // OB境界の線。3Dではなく高解像度Canvasへ重ねるので、シーンには入れない。
   // 分類を持たない検証用グリーンには境界が無いので null が返る
   obLine = createObBoundaryLine(green, visualHeightScale);
   obLine?.setMapMode(showingCourseMap());
-  props.add(createSurround(green, visualHeightScale));
-  props.add(createTrees(green, seed, visualHeightScale));
+  props.add(createSurround(green, visualHeightScale, activeTheme.surround));
+  props.add(createTrees(green, seed, visualHeightScale, activeTheme.trees));
 }
 
 /**
@@ -412,14 +425,19 @@ function setReadingFlagFade(active: boolean): void {
   });
 }
 
-const dir = new THREE.DirectionalLight(0xffffff, CONFIG.light.directionalIntensity);
+// 平行光は**向きも色もテーマで変えない**。低い光や色付きの光は斜面の陰影を変えるので、
+// 「明るい＝高い」の読みと競合する。テーマが触るのは強さだけ（`CONFIG.themes`）
+const dir = new THREE.DirectionalLight(0xffffff, activeTheme.light.directionalIntensity);
 dir.position.set(
   CONFIG.light.directionalDirection.x,
   CONFIG.light.directionalDirection.y,
   CONFIG.light.directionalDirection.z,
 );
 scene.add(dir);
-scene.add(new THREE.AmbientLight(0xffffff, CONFIG.light.ambientIntensity));
+// 環境光は全頂点へ同じ倍率で掛かる（明暗の比が変わらない）ので、色を付けてよい
+scene.add(
+  new THREE.AmbientLight(activeTheme.light.ambientColor, activeTheme.light.ambientIntensity),
+);
 
 const ballMesh = new THREE.Mesh(
   new THREE.SphereGeometry(CONFIG.ball.radius, 20, 14),

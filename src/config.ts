@@ -1114,8 +1114,19 @@ export const CONFIG = {
     drop: 0.35,
   },
 
-  /** 木。傾きの基準になるので必ず鉛直に立てる */
+  /**
+   * 木。**傾きの基準になるので必ず鉛直に立てる**（幹は傾けない。揺らぎは太さ・枝・葉で出す）。
+   *
+   * 樹種は3つ（広葉樹・針葉樹・低木）で、**どれをどの比率で混ぜるかはテーマが持つ**
+   * （`CONFIG.themes`）。ここに置くのは「1種類をどう組むか」と、
+   * **1本ごとの揺らぎの幅**だけ。寸法は木の高さに対する比で持つので、
+   * 高さを振っても釣り合いが崩れない。
+   *
+   * 木は当たり判定を持たない（`docs/course-generator-v2.md` §2-3）。
+   * 位置と形の乱数は `createTrees` が自分で作るので、**生成器の乱数とは無関係**
+   */
   trees: {
+    /** 既定の本数。テーマで上書きする */
     count: 14,
     /**
      * コース枠内のOBエリアへ置くときの条件。
@@ -1138,6 +1149,254 @@ export const CONFIG = {
     heightMax: 6.5,
     trunkColor: 0x5b4632,
     leafColor: 0x2f6b32,
+    /**
+     * 既定の樹種の混ざり方（重み）。0 の樹種は出ない。テーマで上書きする。
+     * 重みの合計で割った比で1本ずつ引くので、絶対値ではなく比だけが効く
+     */
+    kinds: { broadleaf: 1, conifer: 1, shrub: 0 },
+    /**
+     * **1本ごとの揺らぎ。** 同じ樹種でも一本一本違って見えるようにするためのもので、
+     * 倍率か範囲。1.0 から離れるほど、並んだときのばらけ方が強くなる。
+     *
+     * 色の揺らぎは**ドット化の量子化より大きく振る**
+     * （`pixel.colorLevels` 48 ＝ 1チャンネル約5.3/255）。
+     * ±14% なら 0x2f6b32 の緑で ±15/255 になり、段に潰れずに残る
+     */
+    jitter: {
+      /** 葉の色の明るさ倍率。**1本につき1回引く**（部位ごとに振ると縞に見える） */
+      leafShade: { min: 0.86, max: 1.14 },
+      /** 幹の色の明るさ倍率 */
+      trunkShade: { min: 0.9, max: 1.1 },
+      /** 幹の太さ倍率 */
+      trunkWidth: { min: 0.85, max: 1.2 },
+      /** 葉全体の広がり倍率 */
+      crownWidth: { min: 0.85, max: 1.15 },
+      /** 葉全体の高さ倍率 */
+      crownHeight: { min: 0.9, max: 1.15 },
+      /** 塊・段ひとつぶんの半径倍率（同じ木の中でも1つずつ変える） */
+      partWidth: { min: 0.8, max: 1.15 },
+      /** 枝の長さ倍率 */
+      branchLength: { min: 0.8, max: 1.2 },
+      /** 枝の仰角の振れ [度]（±） */
+      branchPitchDeg: 10,
+      /** 枝を幹のどこへ付けるか（幹の高さに対する比） */
+      branchAttach: { min: 0.55, max: 0.9 },
+      /** 2個目以降の塊の高さ（幹の上端から、塊の半径に対する比） */
+      clumpLift: { min: 0.35, max: 1.5 },
+    },
+    /**
+     * 側面の分割数。**少ないほど粗いドット絵に合う。**
+     * 低解像度（`pixel.scale`）で描くので、増やしても粒に埋もれて効かない
+     */
+    segments: {
+      trunk: 6,
+      branch: 5,
+      /** 葉の塊の細かさ。0 で正二十面体（面20） */
+      clumpDetail: 0,
+    },
+    /**
+     * 広葉樹。**丸い塊をいくつかずらして重ねる。**
+     * 球ひとつだと「棒の先に玉」になるので、3〜5個を横と上下へずらして輪郭を崩す。
+     * 塊は正二十面体（面20）なので、低解像度でも粒が揃って輪郭が立つ
+     */
+    broadleaf: {
+      /** 幹の高さ（木の高さに対する比） */
+      trunkRatio: 0.4,
+      /** 幹の根元の半径（木の高さに対する比） */
+      trunkRadius: 0.055,
+      /** 幹の先の細り方（根元の半径に対する比） */
+      trunkTaper: 0.62,
+      /** 葉の塊の数の範囲 */
+      clumps: { min: 3, max: 5 },
+      /**
+       * 塊ひとつの半径（木の高さに対する比）。
+       * **小さいと「棒の先に玉」に戻る。** 0.20 で試したら低い木が飴玉になった
+       */
+      clumpRadius: 0.26,
+      /** 塊を幹からずらす量（塊の半径に対する比） */
+      clumpSpread: 0.95,
+      /** 塊の縦の潰し（1 で球） */
+      flatten: 0.82,
+      /** 枝の本数の範囲。`max: 0` で枝なし */
+      branches: { min: 2, max: 3 },
+      /** 枝の長さ（木の高さに対する比） */
+      branchLength: 0.16,
+      /** 枝の太さ（幹の根元の半径に対する比） */
+      branchRadius: 0.4,
+      /** 枝の仰角 [度]。水平から上へ。±10度は1本ごとに揺らぐ */
+      branchPitchDeg: 38,
+    },
+    /**
+     * 針葉樹。**円錐を段に積む。** 円錐1個は「三角」にしか見えないので、
+     * 半径を落としながら3〜4段重ね、段ごとに半径と向きを揺らす
+     */
+    conifer: {
+      trunkRatio: 0.3,
+      trunkRadius: 0.04,
+      trunkTaper: 0.5,
+      /** 段数の範囲 */
+      tiers: { min: 3, max: 4 },
+      /** 一番下の段の半径（木の高さに対する比） */
+      baseRadius: 0.22,
+      /** 上の段へ行くときの半径の落ち方 */
+      radiusFalloff: 0.7,
+      /**
+       * 段を食い込ませる深さ（段の高さに対する比）。大きいほど密に見える。
+       * 段ひとつの高さは**木の高さから幹を引いた残りを段数で割って決める**
+       * （段数が違っても木の高さが `heightMin`〜`heightMax` に収まるように）
+       */
+      tierOverlap: 0.45,
+      /** 円錐の側面の分割数。少ないほど粗いドット絵に合う */
+      radialSegments: 7,
+    },
+    /**
+     * 低木。**背が低く横に広い。** 海沿いや乾いた土地で木が高くならない場所に使う。
+     * 組み方は広葉樹と同じで、比だけが違う
+     */
+    shrub: {
+      trunkRatio: 0.3,
+      trunkRadius: 0.07,
+      trunkTaper: 0.75,
+      clumps: { min: 2, max: 4 },
+      clumpRadius: 0.24,
+      clumpSpread: 0.95,
+      flatten: 0.6,
+      branches: { min: 0, max: 1 },
+      branchLength: 0.12,
+      branchRadius: 0.45,
+      branchPitchDeg: 25,
+    },
+  },
+
+  /**
+   * **コースごとの雰囲気**（`docs/PLAYTEST_BACKLOG.md` §12）。**見た目だけ。**
+   * 物理・生成器・シード・自己ベスト・ランキングには一切関わらない。
+   *
+   * 4コースは長さ・幅・ハザードの量が違うのに**まったく同じ絵の中**にあり、
+   * 試遊で「雰囲気の違いは感じ取れない」と出た。空・光・地面の色・木だけをコース別に持たせる。
+   *
+   * ここには**4コースぶんの上書きだけ**を置く。省略時（練習・週替わりチャレンジ・検証ページ）は
+   * `renderer.background` / `light` / `green.surfaceColors` / `surround` / `trees` の値を
+   * そのまま使う（既定を二重に持たない）。
+   *
+   * ## 守っていること（崩す値は入れない）
+   *
+   * 1. **芝3種の明るさ（＝高さの読み）を保つ。** 相対輝度で 芝179 / ラフ130 /
+   *    セカンドカット98 を基準に、**色相と彩度だけ**振る（差は ±8 以内）。雰囲気より読みが上
+   * 2. **光の向きは4テーマとも変えない。** 低い光は影が伸びて雰囲気は出るが、
+   *    斜面の陰影が強まって「明るい＝高い」と 競合してしまう。強さだけ ±0.15 の幅で振る
+   * 3. **光の色は環境光だけ、薄く付ける。** 全頂点へ同じ倍率で掛かるので明暗の比は変わらない。
+   *    平行光は白のまま（当たり方が向きで変わるので、色を付けると読みに効いてしまう）
+   * 4. **砂は芝ともOBとも見間違えない明るさ**を保つ（`green.surfaceColors` の決まり）
+   * 5. **ドット化の量子化（`pixel.colorLevels` 48 ＝ 1チャンネル約5.3/255）より大きく振る。**
+   *    チャンネルあたり10以上ずらさないと「同じ色」に潰れる
+   *
+   * テーマのIDはツアーのIDと同じにしてある（`?theme=expert` で見比べられる）
+   */
+  themes: {
+    /**
+     * BEGINNER: **朝の広い草原。** 明るい空と低めの広葉樹だけ。
+     * **池が1つも無いコース**なので、水辺の絵にしない
+     */
+    beginner: {
+      sky: 0xa8d2ee,
+      light: { directionalIntensity: 1.75, ambientIntensity: 0.6, ambientColor: 0xffffff },
+      surfaces: {
+        green: 0x8ed05a,
+        rough: 0x679b43,
+        deepRough: 0x4c7530,
+        bunker: 0xe0cd96,
+        water: 0x3d83bd,
+        ob: 0x2c4a22,
+      },
+      surround: 0x3f6a2c,
+      trees: {
+        count: 14,
+        heightMin: 3,
+        heightMax: 5,
+        trunkColor: 0x6b5238,
+        leafColor: 0x4f8f3c,
+        kinds: { broadleaf: 1, conifer: 0, shrub: 0 },
+      },
+    },
+    /**
+     * STANDARD: **昼の林間。** 色は現行のまま（＝いまの絵を1つのテーマとして固定する）。
+     * 違うのは木で、**4コースで一番多く・広葉樹と針葉樹が混ざる**
+     */
+    standard: {
+      sky: 0x87b7e0,
+      light: { directionalIntensity: 1.75, ambientIntensity: 0.55, ambientColor: 0xffffff },
+      surfaces: {
+        green: 0x74cf5c,
+        rough: 0x4f9844,
+        deepRough: 0x3a7332,
+        bunker: 0xd8c48a,
+        water: 0x3d83bd,
+        ob: 0x27431f,
+      },
+      surround: 0x2f5d2a,
+      trees: {
+        count: 20,
+        heightMin: 3.5,
+        heightMax: 6.5,
+        trunkColor: 0x5b4632,
+        leafColor: 0x2f6b32,
+        kinds: { broadleaf: 1, conifer: 1, shrub: 0 },
+      },
+    },
+    /**
+     * ADVANCED: **高原の午後。** 青寄りの空と涼しい青緑の芝、**背の高い針葉樹だけ**。
+     * 角と岸なしの池が出てくるコースなので、圧迫感のある林にする
+     */
+    advanced: {
+      sky: 0x6fa3d6,
+      light: { directionalIntensity: 1.8, ambientIntensity: 0.5, ambientColor: 0xdfe9ff },
+      surfaces: {
+        green: 0x5bcb7e,
+        rough: 0x3f9560,
+        deepRough: 0x2d7048,
+        bunker: 0xcfc08f,
+        water: 0x2f6f9e,
+        ob: 0x1f3d2a,
+      },
+      surround: 0x27512f,
+      trees: {
+        count: 18,
+        heightMin: 5,
+        heightMax: 8.5,
+        trunkColor: 0x4a3a2c,
+        leafColor: 0x24593a,
+        kinds: { broadleaf: 0, conifer: 1, shrub: 0 },
+      },
+    },
+    /**
+     * EXPERT: **夕方のリンクス。** 橙の空・乾いた黄緑の芝・白い砂・暗い水。
+     * 木は**低木だけ10本**にして吹き抜けて見せる。
+     *
+     * **0本にはしない。** 木は枠内のOBへ置いてあり「どこからOBか」の手掛かりを兼ねている。
+     * 4コースで最も狭いコースなので、ここを削りきると読みが落ちる
+     */
+    expert: {
+      sky: 0xd9a97f,
+      light: { directionalIntensity: 1.65, ambientIntensity: 0.62, ambientColor: 0xffe0bd },
+      surfaces: {
+        green: 0xa8c95a,
+        rough: 0x7a9642,
+        deepRough: 0x5c7134,
+        bunker: 0xeee0b4,
+        water: 0x35708f,
+        ob: 0x3b4a24,
+      },
+      surround: 0x54602c,
+      trees: {
+        count: 10,
+        heightMin: 2.5,
+        heightMax: 4,
+        trunkColor: 0x6a5a42,
+        leafColor: 0x5d7a3e,
+        kinds: { broadleaf: 0, conifer: 0, shrub: 1 },
+      },
+    },
   },
 
   /**

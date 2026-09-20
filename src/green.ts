@@ -2,7 +2,9 @@
 // 正式表示ではハイトマップが表示と物理の両方の唯一の情報源。
 // 比較用の「形状2×」だけは、物理と色を変えず3D形状の高さだけを一時的に誇張する。
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { CONFIG } from './config';
+import { DEFAULT_THEME, type TreeKind, type TreeTheme } from './theme';
 import type {
   CoursePoint,
   HeightFeature,
@@ -454,14 +456,11 @@ function isFlatSurface(surface: SurfaceType): boolean {
 export class GreenMesh {
   readonly mesh: THREE.Mesh;
   private readonly geometry: THREE.PlaneGeometry;
-  private readonly bases: Record<SurfaceType, THREE.Color> = {
-    green: new THREE.Color(C.surfaceColors.green),
-    rough: new THREE.Color(C.surfaceColors.rough),
-    deepRough: new THREE.Color(C.surfaceColors.deepRough),
-    bunker: new THREE.Color(C.surfaceColors.bunker),
-    water: new THREE.Color(C.surfaceColors.water),
-    ob: new THREE.Color(C.surfaceColors.ob),
-  };
+  /**
+   * サーフェス別の基準色。**コースのテーマで差し替わる**（`CONFIG.themes`）。
+   * 省略時は `green.surfaceColors` のまま
+   */
+  private readonly bases: Record<SurfaceType, THREE.Color>;
   private readonly grad = { x: 0, z: 0 };
   private heightScale = 1;
 
@@ -469,7 +468,16 @@ export class GreenMesh {
     private green: Green,
     shade: ShadeParams,
     heightScale = 1,
+    palette: Readonly<Record<SurfaceType, number>> = C.surfaceColors,
   ) {
+    this.bases = {
+      green: new THREE.Color(palette.green),
+      rough: new THREE.Color(palette.rough),
+      deepRough: new THREE.Color(palette.deepRough),
+      bunker: new THREE.Color(palette.bunker),
+      water: new THREE.Color(palette.water),
+      ob: new THREE.Color(palette.ob),
+    };
     this.heightScale = heightScale;
     const segmentsX = Math.ceil(green.width / C.renderCellSize);
     const segmentsZ = Math.ceil(green.length / C.renderCellSize);
@@ -631,13 +639,20 @@ export function createHole(
   return group;
 }
 
-/** グリーンの外に敷く地面。グリーンが宙に浮いて見えないようにするだけ */
-export function createSurround(green: Green, heightScale = 1): THREE.Mesh {
+/**
+ * グリーンの外に敷く地面。グリーンが宙に浮いて見えないようにするだけ。
+ * 色は**コースのテーマで差し替わる**（`CONFIG.themes`）
+ */
+export function createSurround(
+  green: Green,
+  heightScale = 1,
+  color: number = CONFIG.surround.color,
+): THREE.Mesh {
   const s = CONFIG.surround;
   const span = Math.max(green.width, green.length, s.size / 3);
   const mesh = new THREE.Mesh(
     new THREE.PlaneGeometry(span * 3, span * 3),
-    new THREE.MeshLambertMaterial({ color: s.color }),
+    new THREE.MeshLambertMaterial({ color }),
   );
   mesh.rotation.x = -Math.PI / 2;
   mesh.position.y = green.minHeight * heightScale - s.drop;
@@ -877,25 +892,283 @@ function pickTreeSpotsInBounds(green: Green, rng: () => number, count: number): 
   return spots;
 }
 
+/** 揺らぎの範囲から一様に引く */
+function jitter(rng: () => number, range: { min: number; max: number }): number {
+  return lerp(range.min, range.max, rng());
+}
+
+/** 個数の範囲から整数を引く（min・max とも含む） */
+function jitterCount(rng: () => number, range: { min: number; max: number }): number {
+  if (range.max <= range.min) return range.min;
+  return Math.min(range.max, range.min + Math.floor(rng() * (range.max - range.min + 1)));
+}
+
 /**
- * 木を数本。これも傾きの基準になるので必ず鉛直に立てる。
+ * 樹種を重みで引く。重み0の樹種は出ない。
+ * 全部0のときだけ広葉樹へ落とす（テーマの書き間違いで木が消えないように）
+ */
+function pickTreeKind(rng: () => number, kinds: Readonly<Record<TreeKind, number>>): TreeKind {
+  const available = (Object.keys(kinds) as TreeKind[]).filter((kind) => kinds[kind] > 0);
+  if (available.length === 0) return 'broadleaf';
+  let r = rng() * available.reduce((sum, kind) => sum + kinds[kind], 0);
+  for (const kind of available) {
+    r -= kinds[kind];
+    if (r <= 0) return kind;
+  }
+  return available[available.length - 1];
+}
+
+/**
+ * 木の部品。色は**頂点カラーへ焼く**ので、1本ごとに色が違っても描画は1回で済む。
+ * 明るさの倍率はリニア側で掛ける（グリーンの濃淡と同じ扱い）
+ */
+interface TreePart {
+  geometry: THREE.BufferGeometry;
+  color: THREE.Color;
+}
+
+/** 幹。**必ず鉛直**に立てる（傾き表現の基準）。上へ細らせる */
+function trunkPart(
+  x: number,
+  z: number,
+  baseY: number,
+  radius: number,
+  height: number,
+  taper: number,
+  color: THREE.Color,
+): TreePart {
+  const geometry = new THREE.CylinderGeometry(
+    radius * taper,
+    radius,
+    height,
+    CONFIG.trees.segments.trunk,
+  );
+  geometry.translate(x, baseY + height / 2, z);
+  return { geometry, color };
+}
+
+/**
+ * 葉の塊。**正二十面体を縦に潰したもの。**
+ * 球ひとつでは「棒の先に玉」になるので、呼ぶ側でいくつかずらして重ねる
+ */
+function clumpPart(
+  x: number,
+  y: number,
+  z: number,
+  radius: number,
+  flatten: number,
+  color: THREE.Color,
+): TreePart {
+  const geometry = new THREE.IcosahedronGeometry(radius, CONFIG.trees.segments.clumpDetail);
+  geometry.scale(1, flatten, 1);
+  geometry.translate(x, y, z);
+  return { geometry, color };
+}
+
+/**
+ * 枝。幹の途中から斜め上へ1本。**幹は傾けないぶん、輪郭の崩しはここで作る。**
+ * 円柱を根元が原点に来るように置いてから倒し、向きを回してから幹へ運ぶ
+ */
+function branchPart(
+  x: number,
+  z: number,
+  attachY: number,
+  radius: number,
+  length: number,
+  pitch: number,
+  yaw: number,
+  color: THREE.Color,
+): TreePart {
+  const geometry = new THREE.CylinderGeometry(
+    radius * 0.7,
+    radius,
+    length,
+    CONFIG.trees.segments.branch,
+  );
+  geometry.translate(0, length / 2, 0);
+  geometry.rotateZ(-(Math.PI / 2 - pitch));
+  geometry.rotateY(yaw);
+  geometry.translate(x, attachY, z);
+  return { geometry, color };
+}
+
+/**
+ * 塊で葉を作る樹種の寸法（広葉樹・低木で共通）。
+ * 数値は `CONFIG.trees.broadleaf` / `CONFIG.trees.shrub`
+ */
+interface ClumpedTreeShape {
+  trunkRatio: number;
+  trunkRadius: number;
+  trunkTaper: number;
+  clumps: { min: number; max: number };
+  clumpRadius: number;
+  clumpSpread: number;
+  flatten: number;
+  branches: { min: number; max: number };
+  branchLength: number;
+  branchRadius: number;
+  branchPitchDeg: number;
+}
+
+/**
+ * 広葉樹と低木。**丸い塊をいくつかずらして重ね、枝で輪郭を崩す。**
+ * 組み方は同じで、寸法の比だけが違う（低木は背が低く横に広い）
+ */
+function buildClumpedTree(
+  parts: TreePart[],
+  shape: ClumpedTreeShape,
+  x: number,
+  z: number,
+  baseY: number,
+  height: number,
+  trunk: THREE.Color,
+  leaf: THREE.Color,
+  rng: () => number,
+): void {
+  const J = CONFIG.trees.jitter;
+  const trunkRadius = height * shape.trunkRadius * jitter(rng, J.trunkWidth);
+  const trunkHeight = height * shape.trunkRatio;
+  parts.push(trunkPart(x, z, baseY, trunkRadius, trunkHeight, shape.trunkTaper, trunk));
+
+  const branches = jitterCount(rng, shape.branches);
+  for (let i = 0; i < branches; i++) {
+    const yaw = rng() * Math.PI * 2;
+    const pitchDeg = shape.branchPitchDeg + (rng() * 2 - 1) * J.branchPitchDeg;
+    parts.push(
+      branchPart(
+        x,
+        z,
+        baseY + trunkHeight * jitter(rng, J.branchAttach),
+        trunkRadius * shape.branchRadius,
+        height * shape.branchLength * jitter(rng, J.branchLength),
+        (pitchDeg * Math.PI) / 180,
+        yaw,
+        trunk,
+      ),
+    );
+  }
+
+  const crownWidth = jitter(rng, J.crownWidth);
+  const crownHeight = jitter(rng, J.crownHeight);
+  const clumps = jitterCount(rng, shape.clumps);
+  for (let i = 0; i < clumps; i++) {
+    const radius = height * shape.clumpRadius * crownWidth * jitter(rng, J.partWidth);
+    if (i === 0) {
+      // 1個目は幹の真上。ここが幹と葉を繋ぐ本体になる
+      parts.push(
+        clumpPart(x, baseY + trunkHeight + radius * 0.7 * crownHeight, z, radius, shape.flatten, leaf),
+      );
+      continue;
+    }
+    const yaw = rng() * Math.PI * 2;
+    // 面積が均される向きへずらす（そのまま乱数を半径にすると中心へ寄る）
+    const spread = radius * shape.clumpSpread * Math.sqrt(rng());
+    parts.push(
+      clumpPart(
+        x + Math.cos(yaw) * spread,
+        baseY + trunkHeight + radius * jitter(rng, J.clumpLift) * crownHeight,
+        z + Math.sin(yaw) * spread,
+        radius,
+        shape.flatten,
+        leaf,
+      ),
+    );
+  }
+}
+
+/**
+ * 針葉樹。**円錐を段に積む。** 円錐1個では「三角」にしか見えないので、
+ * 半径を落としながら重ね、段ごとに半径と向きを揺らす
+ */
+function buildConiferTree(
+  parts: TreePart[],
+  x: number,
+  z: number,
+  baseY: number,
+  height: number,
+  trunk: THREE.Color,
+  leaf: THREE.Color,
+  rng: () => number,
+): void {
+  const shape = CONFIG.trees.conifer;
+  const J = CONFIG.trees.jitter;
+  const trunkRadius = height * shape.trunkRadius * jitter(rng, J.trunkWidth);
+  const trunkHeight = height * shape.trunkRatio;
+  parts.push(trunkPart(x, z, baseY, trunkRadius, trunkHeight, shape.trunkTaper, trunk));
+
+  const crownWidth = jitter(rng, J.crownWidth);
+  const crownHeight = jitter(rng, J.crownHeight);
+  const tiers = jitterCount(rng, shape.tiers);
+  // 段数が違っても**木の高さは `height` に収める。**
+  // そのまま積むと4段の木が3段より2割高くなり、テーマの heightMin/Max が意味を持たなくなる
+  const stackRatio = (tiers - 1) * (1 - shape.tierOverlap) + 1;
+  const tierHeight = ((height - trunkHeight) / stackRatio) * crownHeight;
+  let y = baseY + trunkHeight;
+  for (let i = 0; i < tiers; i++) {
+    const radius =
+      height * shape.baseRadius * shape.radiusFalloff ** i * crownWidth * jitter(rng, J.partWidth);
+    const geometry = new THREE.ConeGeometry(radius, tierHeight, shape.radialSegments);
+    // 段ごとに回す。稜線が揃っていると押し出した1枚の板に見える
+    geometry.rotateY(rng() * Math.PI * 2);
+    geometry.translate(x, y + tierHeight / 2, z);
+    parts.push({ geometry, color: leaf });
+    y += tierHeight * (1 - shape.tierOverlap);
+  }
+}
+
+/**
+ * 部品を1つのジオメトリへまとめる。**色は頂点カラーへ焼く。**
+ * 1本ごとに色を振っても描画は1回で済み、作り直しのときに捨てるものも1つで済む
+ */
+function mergeTreeParts(parts: TreePart[]): THREE.BufferGeometry | null {
+  if (parts.length === 0) return null;
+  const geometries = parts.map(({ geometry, color }) => {
+    // まとめるには添字の有無が揃っていること。正二十面体だけ最初から添字なし
+    const flat = geometry.index ? geometry.toNonIndexed() : geometry;
+    if (flat !== geometry) geometry.dispose();
+    const count = flat.attributes.position.count;
+    const colors = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      colors[i * 3] = color.r;
+      colors[i * 3 + 1] = color.g;
+      colors[i * 3 + 2] = color.b;
+    }
+    flat.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    return flat;
+  });
+  const merged = mergeGeometries(geometries);
+  for (const geometry of geometries) geometry.dispose();
+  return merged;
+}
+
+/**
+ * 木を数本。**これも傾きの基準になるので必ず鉛直に立てる。**
  * OBエリアが取れるコースでは枠内のOBへ置き、OBの位置そのものを見て分かるようにする。
  * OBが狭い（検証ページのように分類がない）場合だけ、従来どおり枠の外へ並べる。
+ *
+ * 樹種・本数・高さ・色は**テーマが持つ**（`CONFIG.themes`）。
+ * 形の比と揺らぎの幅は `CONFIG.trees`。**当たり判定は持たない**ので物理には関わらず、
+ * 乱数もここで作る `rng` だけなので生成器とも無関係
  */
-export function createTrees(green: Green, seed: number, heightScale = 1): THREE.Group {
+export function createTrees(
+  green: Green,
+  seed: number,
+  heightScale = 1,
+  theme: TreeTheme = DEFAULT_THEME.trees,
+): THREE.Group {
   const t = CONFIG.trees;
+  const J = t.jitter;
   const rng = makeRng(seed);
   const group = new THREE.Group();
   const outsideBaseY = green.minHeight * heightScale - CONFIG.surround.drop;
   const radiusMin = Math.max(t.radiusMin, Math.max(green.width, green.length) / 2 + 1);
   const radiusMax = radiusMin + (t.radiusMax - t.radiusMin);
-  const trunkMat = new THREE.MeshLambertMaterial({ color: t.trunkColor });
-  const leafMat = new THREE.MeshLambertMaterial({ color: t.leafColor });
-  const spots = pickTreeSpotsInBounds(green, rng, t.count);
+  const spots = pickTreeSpotsInBounds(green, rng, theme.count);
+  const parts: TreePart[] = [];
 
-  for (let i = 0; i < t.count; i++) {
+  for (let i = 0; i < theme.count; i++) {
     const spot = spots[i];
-    const height = lerp(t.heightMin, t.heightMax, rng());
+    const height = lerp(theme.heightMin, theme.heightMax, rng());
     let x: number;
     let z: number;
     let baseY: number;
@@ -905,28 +1178,28 @@ export function createTrees(green: Green, seed: number, heightScale = 1): THREE.
       // 枠内では地面に立たせる。池の見た目の段下げは芝の高さと別なのでここでは使わない
       baseY = green.sampleHeight(x, z) * heightScale;
     } else {
-      const angle = ((i + rng() * 0.6) / t.count) * Math.PI * 2;
+      const angle = ((i + rng() * 0.6) / theme.count) * Math.PI * 2;
       const radius = lerp(radiusMin, radiusMax, rng());
       x = Math.cos(angle) * radius;
       z = Math.sin(angle) * radius;
       baseY = outsideBaseY;
     }
 
-    const trunkHeight = height * 0.35;
-    const trunk = new THREE.Mesh(
-      new THREE.CylinderGeometry(height * 0.05, height * 0.07, trunkHeight, 6),
-      trunkMat,
-    );
-    trunk.position.set(x, baseY + trunkHeight / 2, z);
-    group.add(trunk);
+    // 色は1本につき1回だけ引く。部位ごとに振ると1本の木が縞に見える
+    const trunkColor = new THREE.Color(theme.trunkColor).multiplyScalar(jitter(rng, J.trunkShade));
+    const leafColor = new THREE.Color(theme.leafColor).multiplyScalar(jitter(rng, J.leafShade));
+    const kind = pickTreeKind(rng, theme.kinds);
+    if (kind === 'conifer') {
+      buildConiferTree(parts, x, z, baseY, height, trunkColor, leafColor, rng);
+    } else {
+      const shape = kind === 'shrub' ? t.shrub : t.broadleaf;
+      buildClumpedTree(parts, shape, x, z, baseY, height, trunkColor, leafColor, rng);
+    }
+  }
 
-    const leafHeight = height * 0.75;
-    const leaves = new THREE.Mesh(
-      new THREE.ConeGeometry(height * 0.28, leafHeight, 7),
-      leafMat,
-    );
-    leaves.position.set(x, baseY + trunkHeight + leafHeight / 2, z);
-    group.add(leaves);
+  const geometry = mergeTreeParts(parts);
+  if (geometry) {
+    group.add(new THREE.Mesh(geometry, new THREE.MeshLambertMaterial({ vertexColors: true })));
   }
   return group;
 }
