@@ -20,11 +20,20 @@ await page.waitForTimeout(1500);
 await page.evaluate(() => window.__puttSocial.map());
 await page.waitForTimeout(900);
 
-// Let the solver choose the line, but execute the shot through the actual STROKE canvas.
-// This keeps the recorded interaction on the same swipe-measure path a player uses.
-const aimed = await page.evaluate((direction) => window.__puttSocial.aim(direction), plan.direction);
-if (!aimed) throw new Error('Social driver refused aim');
-await page.waitForTimeout(350);
+// Let the solver choose the final line, but approach it like a person reading the green.
+// The small overshoot/correction is deterministic: clips remain reproducible while the cursor
+// no longer snaps mechanically to the mathematically solved angle.
+const aimSteps = [
+  plan.direction - 0.055,
+  plan.direction + 0.022,
+  plan.direction - 0.010,
+  plan.direction,
+];
+for (let i = 0; i < aimSteps.length; i++) {
+  const aimed = await page.evaluate((direction) => window.__puttSocial.aim(direction), aimSteps[i]);
+  if (!aimed) throw new Error('Social driver refused aim');
+  await page.waitForTimeout([320, 260, 230, 420][i]);
+}
 
 await page.mouse.click(195, 320);
 await page.waitForFunction(() => {
@@ -46,21 +55,39 @@ await cdp.send('Input.dispatchMouseEvent', {
   type: 'mousePressed', x: x0, y, button: 'left', buttons: 1, clickCount: 1, timestamp: ts,
 });
 
-// Deliberate, readable backswing: 60 px right, comfortably past the 20 px arming gate.
-for (let i = 1; i <= 6; i++) {
-  ts += 0.05;
+// Use a much larger, readable stroke (about 2.5x the previous travel) with a tiny vertical
+// wobble. The final 40 ms remains solver-accurate, so the production swipe fitter still launches
+// the planned speed/direction instead of bypassing real input handling.
+const backswing = [
+  [214, 320], [236, 319], [260, 321], [286, 318],
+  [312, 320], [332, 317], [345, 319],
+];
+for (const [x, yy] of backswing) {
+  ts += 0.055;
   await cdp.send('Input.dispatchMouseEvent', {
-    type: 'mouseMoved', x: x0 + i * 10, y, button: 'left', buttons: 1, timestamp: ts,
+    type: 'mouseMoved', x, y: yy, button: 'left', buttons: 1, timestamp: ts,
   });
-  await page.waitForTimeout(45);
+  await page.waitForTimeout(55);
 }
 
-// Straight downswing. Event timestamps encode the target px/s from production speedK.
-// Four pixels per sample gives enough samples inside the 40 ms fit window.
+// Accelerating downswing with subtle hand-like wobble. These early points are visual; the
+// measurement fitter ultimately uses the precise samples near impact below.
+const downswing = [
+  [332, 320], [309, 322], [281, 319], [249, 321], [217, 320],
+];
+for (const [x, yy] of downswing) {
+  ts += 0.04;
+  await cdp.send('Input.dispatchMouseEvent', {
+    type: 'mouseMoved', x, y: yy, button: 'left', buttons: 1, timestamp: ts,
+  });
+  await page.waitForTimeout(35);
+}
+
+// Solver-accurate impact window. Four pixels per sample gives enough samples inside the 40 ms fit.
 const speedK = 0.00266;
 const pxPerSample = 4;
 const dt = pxPerSample / (plan.speed / speedK);
-for (let x = x0 + 56; x >= x0 - 12; x -= pxPerSample) {
+for (let x = 213; x >= 155; x -= pxPerSample) {
   ts += dt;
   await cdp.send('Input.dispatchMouseEvent', {
     type: 'mouseMoved', x, y, button: 'left', buttons: 1, timestamp: ts,
@@ -70,7 +97,7 @@ for (let x = x0 + 56; x >= x0 - 12; x -= pxPerSample) {
 }
 ts += dt;
 await cdp.send('Input.dispatchMouseEvent', {
-  type: 'mouseReleased', x: x0 - 12, y, button: 'left', buttons: 0, clickCount: 1, timestamp: ts,
+  type: 'mouseReleased', x: 151, y, button: 'left', buttons: 0, clickCount: 1, timestamp: ts,
 });
 
 await page.waitForFunction(() => window.__puttSocial.lastShot() !== null, null, { timeout: 3000 });
