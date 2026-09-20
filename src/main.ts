@@ -96,6 +96,11 @@ const TERRAIN_LABEL: Record<TerrainType, string> = {
 function courseWithSeed(value: number): CourseDefinition {
   const seed = value >>> 0;
   if (usePrototypeCourse) return { ...PROTOTYPE_COURSE, seed };
+  // SNS録画では固定ツアーの1ホールを練習モードで切り出す。
+  // ?social=1 が無い通常プレイのコース選択には影響しない。
+  if (urlParams.get('social') === '1' && urlParams.get('tour') !== null) {
+    return tourHoleCourse(selectedTour, seed);
+  }
   if (useGeneratorV2) return generateCourseV2(seed, generateOptionsFor(setupForSeed(seed)));
   // 生成器はツアーが持つが、**ホール単位で上書きできる**（BEGINNER は v1 と v2 を混ぜている）。
   // 組み立ては `hole-build.ts` に1本化してある（検証側と食い違わせないため）
@@ -170,6 +175,9 @@ const mode = modeFromUrl();
 function setupForSeed(value: number): CourseSetup {
   const seed = value >>> 0;
   if (mode === 'tour') return setupOfSeed(selectedTour, seed);
+  if (urlParams.get('social') === '1' && urlParams.get('tour') !== null) {
+    return setupOfSeed(selectedTour, seed);
+  }
   return generatorTour ? setupOfSeed(generatorTour, seed) : DEFAULT_SETUP;
 }
 
