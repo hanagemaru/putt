@@ -67,6 +67,28 @@ export const DEFAULT_THEME: CourseTheme = {
   },
 };
 
+/** `CONFIG` から読んだテーマを書き換えられるようにする（調整パネル用） */
+type Mutable<T> = {
+  -readonly [K in keyof T]: T[K] extends object ? Mutable<T[K]> : T[K];
+};
+
+/** 調整パネルで書き換えるテーマ。`CourseTheme` として読む側はそのまま使える */
+export type TunableTheme = Mutable<CourseTheme>;
+
+/**
+ * テーマを書き換え可能な形へ複製する。
+ * **`CONFIG` を直接書き換えない**ため（パネルで触っても元の定義は残る）
+ */
+export function cloneTheme(theme: CourseTheme): TunableTheme {
+  return {
+    sky: theme.sky,
+    light: { ...theme.light },
+    surfaces: { ...theme.surfaces },
+    surround: theme.surround,
+    trees: { ...theme.trees, kinds: { ...theme.trees.kinds } },
+  };
+}
+
 function isThemeId(id: string): id is ThemeId {
   return Object.prototype.hasOwnProperty.call(CONFIG.themes, id);
 }
@@ -76,3 +98,6 @@ export function themeById(id: string | null | undefined): CourseTheme {
   if (id === null || id === undefined) return DEFAULT_THEME;
   return isThemeId(id) ? CONFIG.themes[id] : DEFAULT_THEME;
 }
+
+/** 調整パネルの「テーマ読み込み」に出す一覧。既定を先頭に置く */
+export const THEME_CHOICES: readonly string[] = ['default', ...Object.keys(CONFIG.themes)];

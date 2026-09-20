@@ -1151,9 +1151,16 @@ export const CONFIG = {
     leafColor: 0x2f6b32,
     /**
      * 既定の樹種の混ざり方（重み）。0 の樹種は出ない。テーマで上書きする。
-     * 重みの合計で割った比で1本ずつ引くので、絶対値ではなく比だけが効く
+     * 重みの合計で割った比で決まるので、絶対値ではなく比だけが効く
      */
     kinds: { broadleaf: 1, conifer: 1, shrub: 0 },
+    /**
+     * 樹種がまとまって生える範囲の目安 [m]。
+     * **樹種は1本ずつ引かず、この大きさのなめらかなノイズで決める。**
+     * 1本ずつ引くと広葉樹と針葉樹が交互に並び、実機で「混ざり方がわざとらしい」と出た。
+     * 小さくすると1本ずつ入れ替わり、大きくするとコースの端から端まで同じ樹種になる
+     */
+    standSize: 14,
     /**
      * **1本ごとの揺らぎ。** 同じ樹種でも一本一本違って見えるようにするためのもので、
      * 倍率か範囲。1.0 から離れるほど、並んだときのばらけ方が強くなる。
@@ -1181,8 +1188,17 @@ export const CONFIG = {
       branchPitchDeg: 10,
       /** 枝を幹のどこへ付けるか（幹の高さに対する比） */
       branchAttach: { min: 0.55, max: 0.9 },
-      /** 2個目以降の塊の高さ（幹の上端から、塊の半径に対する比） */
-      clumpLift: { min: 0.35, max: 1.5 },
+      /**
+       * 1個目の塊の高さ（幹の上端から、塊の半径に対する比）。
+       * **幹の上端へ沈めて置く。** 正二十面体は面が半径の 0.79 倍のところにあるので、
+       * 半径ぶん持ち上げると幹と葉の間が空く（実機で「隙間ができている」と出た）
+       */
+      clumpBase: 0.25,
+      /**
+       * 2個目以降の塊の高さ（同上）。
+       * **潰し（`flatten`）を掛けてから使う**ので、潰した木でも塊が縦に離れない
+       */
+      clumpLift: { min: 0.2, max: 1.1 },
     },
     /**
      * 側面の分割数。**少ないほど粗いドット絵に合う。**
@@ -1214,7 +1230,7 @@ export const CONFIG = {
        */
       clumpRadius: 0.26,
       /** 塊を幹からずらす量（塊の半径に対する比） */
-      clumpSpread: 0.95,
+      clumpSpread: 0.85,
       /** 塊の縦の潰し（1 で球） */
       flatten: 0.82,
       /** 枝の本数の範囲。`max: 0` で枝なし */
@@ -1337,8 +1353,9 @@ export const CONFIG = {
       surround: 0x2f5d2a,
       trees: {
         count: 20,
-        heightMin: 3.5,
-        heightMax: 6.5,
+        // 実機で「木が全体に大きすぎる」と出たので下げた（3.5〜6.5 → 2.8〜4.8）
+        heightMin: 2.8,
+        heightMax: 4.8,
         trunkColor: 0x5b4632,
         leafColor: 0x2f6b32,
         kinds: { broadleaf: 1, conifer: 1, shrub: 0 },
@@ -1362,8 +1379,10 @@ export const CONFIG = {
       surround: 0x27512f,
       trees: {
         count: 18,
-        heightMin: 5,
-        heightMax: 8.5,
+        // 実機で「木が全体に大きすぎる」と出たので下げた（5.0〜8.5 → 3.6〜6.0）。
+        // それでも4コースで一番高い
+        heightMin: 3.6,
+        heightMax: 6,
         trunkColor: 0x4a3a2c,
         leafColor: 0x24593a,
         kinds: { broadleaf: 0, conifer: 1, shrub: 0 },
@@ -1377,12 +1396,24 @@ export const CONFIG = {
      * 4コースで最も狭いコースなので、ここを削りきると読みが落ちる
      */
     expert: {
-      sky: 0xd9a97f,
-      light: { directionalIntensity: 1.65, ambientIntensity: 0.62, ambientColor: 0xffe0bd },
+      /**
+       * 実機で「色が赤すぎる」「傾斜のグラデーションが見えづらい」と出たので落とした。
+       * 空 `0xd9a97f`（橙）→ `0xdcc7a4`（かすんだ砂色）、環境光も 0.62/`0xffe0bd` から弱めた
+       */
+      sky: 0xdcc7a4,
+      light: { directionalIntensity: 1.65, ambientIntensity: 0.55, ambientColor: 0xffeedd },
       surfaces: {
-        green: 0xa8c95a,
-        rough: 0x7a9642,
-        deepRough: 0x5c7134,
+        /**
+         * **芝は明るすぎると濃淡が白へ潰れる。**
+         * `0xa8c95a` は高さの濃淡の上側2段が飽和していた（1チャンネル255に張り付く）。
+         * 暗い側へ寄せた `0x8aa84a` は**5段とも飽和せず**、
+         * 画面に出る明るさの幅は 84 → 108 へ広がる（STANDARD は 84 で3段が飽和）。
+         * 基準輝度からは 24 下がるが、**読みは測って良くなっている**のでこちらを採る
+         */
+        green: 0x8aa84a,
+        /** 芝との明暗比（1 : 0.73 : 0.55）を保って落とす */
+        rough: 0x647a36,
+        deepRough: 0x4b5c28,
         bunker: 0xeee0b4,
         water: 0x35708f,
         ob: 0x3b4a24,

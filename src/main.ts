@@ -46,7 +46,7 @@ import {
   tourById,
   type CourseSetup,
 } from './course/tour-holes';
-import { themeById } from './theme';
+import { cloneTheme, themeById } from './theme';
 import { CourseMapMarker } from './course-map-marker';
 import { ensurePixelFont } from './pixel-font';
 import * as i18n from './i18n';
@@ -165,9 +165,18 @@ const mode = modeFromUrl();
  * `?theme=<ID>` を付けるとどのコースへも当てられる（**見比べ用**）。
  * `?gen=v2&setup=<ツアーID>` で1ホールだけ出すときは、そのツアーのテーマで出す
  */
-const activeTheme = themeById(
-  urlParams.get('theme') ?? (mode === 'tour' ? selectedTour.theme : generatorTour?.theme) ?? null,
+const activeTheme = cloneTheme(
+  themeById(
+    urlParams.get('theme') ?? (mode === 'tour' ? selectedTour.theme : generatorTour?.theme) ?? null,
+  ),
 );
+
+/**
+ * URL の `?tune=1` 。**見た目をその場で調整するパネル**を出す（`src/theme-tune.ts`）。
+ * 実機で色や木の大きさの指摘が出たとき、直してプレビューを上げ直す往復をなくすためのもの。
+ * 付けなければ lil-gui ごと読み込まれない
+ */
+const tuning = urlParams.get('tune') === '1';
 
 /**
  * コースの仕立て（うねり・速さ・曲がりの鋭さ・S字・岸なしの池・バンカーの幅・砲台…）。
@@ -435,9 +444,27 @@ dir.position.set(
 );
 scene.add(dir);
 // 環境光は全頂点へ同じ倍率で掛かる（明暗の比が変わらない）ので、色を付けてよい
-scene.add(
-  new THREE.AmbientLight(activeTheme.light.ambientColor, activeTheme.light.ambientIntensity),
+const ambient = new THREE.AmbientLight(
+  activeTheme.light.ambientColor,
+  activeTheme.light.ambientIntensity,
 );
+scene.add(ambient);
+
+if (tuning) {
+  void import('./theme-tune').then(({ setupThemeTuner }) =>
+    setupThemeTuner(activeTheme, {
+      onSky: () => {
+        scene.background = new THREE.Color(activeTheme.sky);
+      },
+      onLight: () => {
+        dir.intensity = activeTheme.light.directionalIntensity;
+        ambient.color.set(activeTheme.light.ambientColor);
+        ambient.intensity = activeTheme.light.ambientIntensity;
+      },
+      onTerrain: () => buildTerrain(),
+    }),
+  );
+}
 
 const ballMesh = new THREE.Mesh(
   new THREE.SphereGeometry(CONFIG.ball.radius, 20, 14),

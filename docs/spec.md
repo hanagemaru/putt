@@ -804,6 +804,9 @@ T6では `lil-gui` とデバッグ表示を整理し、実機調整に必要な�
 - 開発・試遊用の直接URLはトップを経由しない
   - `?tour=breeze` / `?tour=forest` / `?tour=waterside`
   - `?mode=tour` / `?mode=practice` / `?seed=` / `?course=prototype`
+  - `?theme=<テーマID>`（見た目のテーマを当てて見比べる）
+  - `?tune=1`（見た目の調整パネル。色・光・木をその場で動かして値を書き出す。
+    付けたときだけ lil-gui を読み込む）
   - `?debug=1` と上記指定の組み合わせ
 - 画面遷移用URLは `URL` / `URLSearchParams` で組み立て、GitHub Pages の `/putt/` 配下を維持する
 - プレイ中は右上に「トップ」を置く。誤タップ一発で離脱しないよう、必ず確認画面を挟む

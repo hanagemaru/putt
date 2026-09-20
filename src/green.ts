@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { CONFIG } from './config';
 import { DEFAULT_THEME, type TreeKind, type TreeTheme } from './theme';
+import { valueNoise2 } from './course/course-noise';
 import type {
   CoursePoint,
   HeightFeature,
@@ -905,15 +906,28 @@ function jitterCount(rng: () => number, range: { min: number; max: number }): nu
 
 /**
  * 樹種を重みで引く。重み0の樹種は出ない。
- * 全部0のときだけ広葉樹へ落とす（テーマの書き間違いで木が消えないように）
+ * 全部0のときだけ広葉樹へ落とす（テーマの書き間違いで木が消えないように）。
+ *
+ * **1本ずつ乱数で引かず、位置のなめらかなノイズで決める。**
+ * 1本ずつ引くと広葉樹と針葉樹が交互に並び、実機で「混ざり方がわざとらしい」と出た。
+ * 実際の林は樹種がまとまって生えるので、**近くの木どうしは同じ樹種になる**ようにする
  */
-function pickTreeKind(rng: () => number, kinds: Readonly<Record<TreeKind, number>>): TreeKind {
+function pickTreeKind(
+  kinds: Readonly<Record<TreeKind, number>>,
+  seed: number,
+  x: number,
+  z: number,
+): TreeKind {
   const available = (Object.keys(kinds) as TreeKind[]).filter((kind) => kinds[kind] > 0);
   if (available.length === 0) return 'broadleaf';
-  let r = rng() * available.reduce((sum, kind) => sum + kinds[kind], 0);
+  if (available.length === 1) return available[0];
+  const stand = CONFIG.trees.standSize;
+  const t = (valueNoise2(seed, x / stand, z / stand) + 1) / 2;
+  const total = available.reduce((sum, kind) => sum + kinds[kind], 0);
+  let acc = 0;
   for (const kind of available) {
-    r -= kinds[kind];
-    if (r <= 0) return kind;
+    acc += kinds[kind] / total;
+    if (t <= acc) return kind;
   }
   return available[available.length - 1];
 }
@@ -1053,11 +1067,13 @@ function buildClumpedTree(
   const clumps = jitterCount(rng, shape.clumps);
   for (let i = 0; i < clumps; i++) {
     const radius = height * shape.clumpRadius * crownWidth * jitter(rng, J.partWidth);
+    // **縦のずらしは潰しと同じだけ縮める。** 潰した塊を潰していない幅でずらすと、
+    // 塊どうしが縦に離れて隙間ができる（低木は潰しが 0.6 なので特に開く）
+    const lift = (i === 0 ? J.clumpBase : jitter(rng, J.clumpLift)) * shape.flatten * crownHeight;
     if (i === 0) {
-      // 1個目は幹の真上。ここが幹と葉を繋ぐ本体になる
-      parts.push(
-        clumpPart(x, baseY + trunkHeight + radius * 0.7 * crownHeight, z, radius, shape.flatten, leaf),
-      );
+      // 1個目は幹の真上。**幹の上端へ沈めて置く。**
+      // 正二十面体は面が半径の 0.79 倍のところにあるので、半径ぶん上げると幹との間が空く
+      parts.push(clumpPart(x, baseY + trunkHeight + radius * lift, z, radius, shape.flatten, leaf));
       continue;
     }
     const yaw = rng() * Math.PI * 2;
@@ -1066,7 +1082,7 @@ function buildClumpedTree(
     parts.push(
       clumpPart(
         x + Math.cos(yaw) * spread,
-        baseY + trunkHeight + radius * jitter(rng, J.clumpLift) * crownHeight,
+        baseY + trunkHeight + radius * lift,
         z + Math.sin(yaw) * spread,
         radius,
         shape.flatten,
@@ -1188,7 +1204,7 @@ export function createTrees(
     // 色は1本につき1回だけ引く。部位ごとに振ると1本の木が縞に見える
     const trunkColor = new THREE.Color(theme.trunkColor).multiplyScalar(jitter(rng, J.trunkShade));
     const leafColor = new THREE.Color(theme.leafColor).multiplyScalar(jitter(rng, J.leafShade));
-    const kind = pickTreeKind(rng, theme.kinds);
+    const kind = pickTreeKind(theme.kinds, seed, x, z);
     if (kind === 'conifer') {
       buildConiferTree(parts, x, z, baseY, height, trunkColor, leafColor, rng);
     } else {
