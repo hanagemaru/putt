@@ -949,6 +949,8 @@ declare global {
       state: () => State;
       position: () => { ball: { x: number; z: number }; cup: { x: number; z: number } };
       launch: (speedMs: number, direction: number) => boolean;
+      aim: (direction: number) => boolean;
+      lastShot: () => { speed: number; direction: number } | null;
       next: () => boolean;
       map: () => boolean;
     };
@@ -969,6 +971,16 @@ function installSocialDriver(): void {
       updateAimGuide();
       launch(speedMs, 0);
       return true;
+    },
+    aim: (direction) => {
+      if (state !== 'ADDRESS') return false;
+      aim = direction;
+      updateAimGuide();
+      return true;
+    },
+    lastShot: () => {
+      const shot = holeShots.at(-1);
+      return shot ? { speed: shot[0], direction: shot[1] } : null;
     },
     next: () => {
       if (state !== 'RESULT' || holeFinished()) return false;
