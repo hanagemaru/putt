@@ -2,6 +2,8 @@ name: Social Video
 
 on:
   workflow_dispatch:
+  push:
+    branches: [feat/social-video-recorder]
 
 jobs:
   record:
