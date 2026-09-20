@@ -1,3 +1,5 @@
+import { discardContext, isContextDead, resumeContext } from './audio-context';
+
 const STORAGE_KEY = 'putt-sound-enabled';
 
 export type MusicScene = 'menu' | 'play' | 'roundEnd';
@@ -18,10 +20,12 @@ type Chord = {
  * BGMでは同時和音を前へ出さず、ベース + 単音PSG + ノイズだけで和声感を作る。
  *
  * トップは短いPSGモチーフ、プレイ中はベース + リズム中心にして、同じ世界観の別アレンジとして明確に分ける。
+ * プレイ中は音数を減らしているため、バス側で十分に持ち上げて効果音の下でも存在感を保つ。
+ * トップも同じ方向で前へ出すが、音数が多いためプレイ中より低いバス音量で聴感を揃える。
  */
 const MUSIC: Record<MusicScene, MusicSettings> = {
-  menu: { bpm: 90, bars: 8, gain: 0.18 },
-  play: { bpm: 76, bars: 6, gain: 0.28 },
+  menu: { bpm: 90, bars: 8, gain: 0.55 },
+  play: { bpm: 76, bars: 6, gain: 0.90 },
   roundEnd: { bpm: 88, bars: 6, gain: 0.17 },
 };
 
@@ -37,8 +41,100 @@ const LOOK_AHEAD_SEC = 10;
 const SCHEDULER_MS = 2500;
 const SCENE_FADE_SEC = 0.35;
 const MIN_GAIN = 0.0001;
-const JINGLE_GAIN = 0.58;
-const JINGLE_DUCK_RATIO = 0.45;
+/** 中断明けに、過去へずれた予約位置を現在時刻の少し先まで引き戻す余裕。 */
+const RESUME_LEAD_SEC = 0.05;
+
+/**
+ * ホールアウトの結果。ジングルはこの5段階で鳴らし分ける。
+ * 判定の語（BIRDIE / BOGEY …）はスコアカードと同じ区切り方にしてある。
+ */
+export type HoleOutResult = 'eagle' | 'birdie' | 'par' | 'bogey' | 'double';
+
+type CueNote = {
+  note: number;
+  /** ジングルの先頭からの位置 [s] */
+  at: number;
+  duration: number;
+  amount: number;
+};
+
+type HoleOutCue = {
+  /** 下で支える三角波。BGMのベースと同じ音色 */
+  bass: readonly CueNote[];
+  /** 上の旋律。BGMのPSGと同じ音色で、和音は同時に鳴らさない */
+  melody: readonly CueNote[];
+  /** ごく薄い高域のきらめきを置く位置 [s]。イーグル以上だけ */
+  shimmer?: number;
+};
+
+/**
+ * 結果別のジングル。BGMを止めてから鳴らす前提なので、今より小さくても十分に聞こえる。
+ *
+ * 5つとも「2〜4音の同じ形」で、**上へ行くか下へ行くか、途中に♭が入るか**だけが違う。
+ * 別々の曲に聞こえないので、9ホール続けて聞いても結果の違いだけが伝わる。
+ * 音色はBGMと同じ（三角波のベース + 単音のPSG）。同時和音とノイズヒットは使わない。
+ */
+const HOLE_OUT_CUES: Record<HoleOutResult, HoleOutCue> = {
+  // ソ→ド→ミ→ソ と駆け上がる。滅多に出ないので、ここだけ少し長く贅沢にする
+  eagle: {
+    bass: [
+      { note: 48, at: 0, duration: 0.9, amount: 0.05 },
+      { note: 55, at: 0.45, duration: 0.95, amount: 0.036 },
+    ],
+    melody: [
+      { note: 67, at: 0, duration: 0.15, amount: 0.028 },
+      { note: 72, at: 0.13, duration: 0.15, amount: 0.03 },
+      { note: 76, at: 0.26, duration: 0.15, amount: 0.032 },
+      { note: 79, at: 0.39, duration: 1.1, amount: 0.036 },
+      // 最後の音だけ1オクターブ上に薄く重ねる（和音ではなく単音）
+      { note: 91, at: 0.39, duration: 0.7, amount: 0.01 },
+    ],
+    shimmer: 0.39,
+  },
+  // ソ→ド→ミ の上行。最後のミを伸ばし、オクターブ上の単音で明るさを足す
+  birdie: {
+    bass: [{ note: 48, at: 0, duration: 1.05, amount: 0.05 }],
+    melody: [
+      { note: 67, at: 0, duration: 0.16, amount: 0.028 },
+      { note: 72, at: 0.14, duration: 0.16, amount: 0.031 },
+      { note: 76, at: 0.28, duration: 0.9, amount: 0.034 },
+      { note: 88, at: 0.28, duration: 0.55, amount: 0.011 },
+    ],
+  },
+  // ソ→ド の2音だけ。主音で着地して「ちゃんと終わった」で終わる。一番地味に
+  par: {
+    bass: [{ note: 48, at: 0, duration: 0.95, amount: 0.05 }],
+    melody: [
+      { note: 67, at: 0, duration: 0.18, amount: 0.03 },
+      { note: 72, at: 0.16, duration: 0.75, amount: 0.034 },
+    ],
+  },
+  // ラ→ソ→ミ の下行。ベースもラへ動かす（BGMの2つ目のコードと同じ音なので外れない）
+  bogey: {
+    bass: [{ note: 45, at: 0, duration: 1, amount: 0.048 }],
+    melody: [
+      { note: 69, at: 0, duration: 0.17, amount: 0.03 },
+      { note: 67, at: 0.15, duration: 0.17, amount: 0.028 },
+      { note: 64, at: 0.3, duration: 0.8, amount: 0.026 },
+    ],
+  },
+  // ソ→ミ♭→ド の下行。♭が1音入るだけで沈む。一番短く、一番小さく
+  double: {
+    bass: [{ note: 48, at: 0, duration: 0.75, amount: 0.042 }],
+    melody: [
+      { note: 67, at: 0, duration: 0.15, amount: 0.026 },
+      { note: 63, at: 0.13, duration: 0.15, amount: 0.024 },
+      { note: 60, at: 0.26, duration: 0.6, amount: 0.022 },
+    ],
+  },
+};
+
+/** 結果別ジングルの音量。BGMを止めてから鳴らすので、従来（0.28）より小さくてよい。 */
+const HOLE_OUT_GAIN = 0.22;
+/** カードが出る合図でBGMを引くフェード [s]。 */
+const HOLE_OUT_MUTE_FADE = 0.35;
+/** 次のホールの開始でBGMを戻すフェード [s]。 */
+const HOLE_OUT_RESUME_FADE = 0.7;
 
 export class PuttMusic {
   private context: AudioContext | null = null;
@@ -49,6 +145,8 @@ export class PuttMusic {
   private scheduledUntil = 0;
   private scheduler: number | null = null;
   private noiseBuffer: AudioBuffer | null = null;
+  /** ホールアウトでBGMを引いている間だけ true。曲自体は裏で進み続ける。 */
+  private muted = false;
 
   setScene(scene: MusicScene): void {
     if (this.requestedScene === scene && this.activeScene === scene && this.bus) return;
@@ -69,59 +167,107 @@ export class PuttMusic {
   async unlock(): Promise<void> {
     if (!this.enabled) return;
     const context = this.ensureContext();
-    if (context.state === 'suspended') {
-      try {
-        await context.resume();
-      } catch {
-        return;
-      }
+    if (!(await resumeContext(context))) return;
+
+    if (!this.bus || this.activeScene !== this.requestedScene) {
+      this.startRequestedScene();
+      return;
     }
-    if (context.state === 'running') {
-      if (!this.bus || this.activeScene !== this.requestedScene) this.startRequestedScene();
-      else this.ensureScheduled();
-    }
+    this.ensureScheduled();
+    this.ensureScheduler();
   }
 
   /**
-   * ホールアウトだけは選定済みB案を残す。
-   * 低いピックアップ + C6/9の短いコードスタブを2回だけ鳴らす。
-   * カップ音の余韻を十分に聞かせてから入るため、既定は約1秒遅らせる。
+   * バックグラウンドから戻ったときに呼ぶ。
+   * まず resume を試し、それでも復帰しない context だけ作り直して同じシーンを鳴らし直す。
    */
-  playHoleOutJingle(delay = 1): void {
+  async revive(): Promise<void> {
+    if (!this.enabled) return;
+    await this.unlock();
+
+    const context = this.context;
+    if (!context) return;
+    if (!(await isContextDead(context))) return;
+
+    this.discard();
+    await this.unlock();
+  }
+
+  private discard(): void {
+    this.stopScheduler();
+    discardContext(this.context);
+    this.context = null;
+    this.bus = null;
+    this.activeScene = null;
+    this.scheduledUntil = 0;
+    this.noiseBuffer = null;
+    this.muted = false;
+  }
+
+  /**
+   * ホールアウトの合図（新案）。**スコアカードが出るのと同じ瞬間に呼ぶ。**
+   *
+   * BGMを速めのフェードで引いてから、結果別のジングルを重ねる。
+   * 別々の曲が重なることが「浮く」原因だったので、重なり自体をなくす。
+   * BGMは止めずに音量だけ引くので、曲は裏で進み続け、戻したとき毎回同じ出だしにならない。
+   *
+   * 戻すのは次のホールが始まるとき。`resumeAfterHoleOut()` を呼ぶこと。
+   */
+  playHoleOutCue(result: HoleOutResult, delay = 0): void {
     if (!this.enabled) return;
     const context = this.ensureContext();
     if (context.state !== 'running') return;
 
     const start = context.currentTime + delay;
-    const jingleBus = context.createGain();
-    jingleBus.gain.value = JINGLE_GAIN;
-    jingleBus.connect(context.destination);
+    this.fadeBus(start, MIN_GAIN, HOLE_OUT_MUTE_FADE);
+    this.muted = true;
 
-    this.scheduleTriangle(48, start, 0.3, 0.055, jingleBus);
-    const voicing = [55, 57, 62, 64] as const;
-    for (const [hit, amount] of [
-      [0.1, 0.038],
-      [0.34, 0.027],
-    ] as const) {
-      for (const note of voicing) {
-        this.scheduleSquare(note, start + hit, 0.19, amount, jingleBus, 3000);
-      }
+    const cueBus = context.createGain();
+    cueBus.gain.value = HOLE_OUT_GAIN;
+    cueBus.connect(context.destination);
+
+    const cue = HOLE_OUT_CUES[result];
+    let end = 0;
+    for (const note of cue.bass) {
+      this.scheduleTriangle(note.note, start + note.at, note.duration, note.amount, cueBus);
+      end = Math.max(end, note.at + note.duration);
     }
-    this.scheduleNoise(start + 0.34, 0.03, 0.01, jingleBus, 2600, 0.8, 7);
-
-    // ジングルだけ少し前へ出す。ただしBGMを消し切らず、曲の流れは保つ。
-    if (this.bus && this.activeScene) {
-      const base = MUSIC[this.activeScene].gain;
-      const gain = this.bus.gain;
-      const duckStart = Math.max(context.currentTime, start - 0.06);
-      gain.cancelScheduledValues(duckStart);
-      gain.setValueAtTime(base, duckStart);
-      gain.linearRampToValueAtTime(base * JINGLE_DUCK_RATIO, start + 0.04);
-      gain.setValueAtTime(base * JINGLE_DUCK_RATIO, start + 0.55);
-      gain.linearRampToValueAtTime(base, start + 0.95);
+    for (const note of cue.melody) {
+      this.scheduleSquare(note.note, start + note.at, note.duration, note.amount, cueBus, 3000);
+      end = Math.max(end, note.at + note.duration);
+    }
+    if (cue.shimmer !== undefined) {
+      this.scheduleNoise(start + cue.shimmer, 0.5, 0.0035, cueBus, 7200, 1.2, 13);
+      end = Math.max(end, cue.shimmer + 0.5);
     }
 
-    window.setTimeout(() => jingleBus.disconnect(), Math.ceil((delay + 1.25) * 1000));
+    window.setTimeout(
+      () => cueBus.disconnect(),
+      Math.ceil((start - context.currentTime + end + 0.2) * 1000),
+    );
+  }
+
+  /** 次のホールの開始で呼ぶ。引いていたBGMを戻す。 */
+  resumeAfterHoleOut(delay = 0): void {
+    if (!this.muted) return;
+    this.muted = false;
+
+    const context = this.context;
+    const scene = this.activeScene;
+    if (!context || context.state !== 'running' || !scene) return;
+    this.fadeBus(context.currentTime + delay, MUSIC[scene].gain, HOLE_OUT_RESUME_FADE);
+  }
+
+  /** BGMのバスを、指定時刻から目標音量へ滑らかに動かす。 */
+  private fadeBus(at: number, target: number, fade: number): void {
+    const context = this.context;
+    if (!this.bus || !context) return;
+    const gain = this.bus.gain;
+    const from = Math.max(context.currentTime, at);
+    const current = Math.max(gain.value, MIN_GAIN);
+    gain.cancelScheduledValues(from);
+    gain.setValueAtTime(current, from);
+    gain.exponentialRampToValueAtTime(Math.max(target, MIN_GAIN), from + fade);
   }
 
   private startRequestedScene(): void {
@@ -137,10 +283,7 @@ export class PuttMusic {
       window.setTimeout(() => oldBus.disconnect(), Math.ceil((SCENE_FADE_SEC + 0.1) * 1000));
     }
 
-    if (this.scheduler !== null) {
-      window.clearInterval(this.scheduler);
-      this.scheduler = null;
-    }
+    this.stopScheduler();
 
     const now = context.currentTime;
     const bus = context.createGain();
@@ -149,10 +292,22 @@ export class PuttMusic {
     bus.connect(context.destination);
 
     this.bus = bus;
+    this.muted = false;
     this.activeScene = this.requestedScene;
-    this.scheduledUntil = now + 0.05;
+    this.scheduledUntil = now + RESUME_LEAD_SEC;
     this.ensureScheduled();
+    this.ensureScheduler();
+  }
+
+  private ensureScheduler(): void {
+    if (this.scheduler !== null) return;
     this.scheduler = window.setInterval(() => this.ensureScheduled(), SCHEDULER_MS);
+  }
+
+  private stopScheduler(): void {
+    if (this.scheduler === null) return;
+    window.clearInterval(this.scheduler);
+    this.scheduler = null;
   }
 
   private ensureScheduled(): void {
@@ -160,6 +315,11 @@ export class PuttMusic {
     const bus = this.bus;
     const scene = this.activeScene;
     if (!context || context.state !== 'running' || !bus || !scene) return;
+
+    // 中断中に時計だけ進んだ場合、過去ぶんをまとめて鳴らさずに現在位置から続ける。
+    if (this.scheduledUntil < context.currentTime) {
+      this.scheduledUntil = context.currentTime + RESUME_LEAD_SEC;
+    }
 
     const settings = MUSIC[scene];
     const cycleSec = settings.bars * 4 * (60 / settings.bpm);

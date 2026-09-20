@@ -26,7 +26,13 @@ const COPY = {
     english: 'EN',
     backToMenu: '← トップ',
     tourTitle: '通常ツアー',
-    startOver: 'HOLE 1から',
+    /**
+     * コース選択の開始ボタン。**続きが無いときはこれだけが出る。**
+     * 「HOLE 1から」は「HOLE nから再開」と並んだときにしか意味が通らない、と実機で出た
+     */
+    start: 'スタート',
+    /** 続きがあるときの開始ボタン。「HOLE nから再開」と並ぶので、対になる言い方にする */
+    startOver: 'はじめから',
     /** パター選択（§4.4）。形の名前は日本のゴルフでの呼び方に合わせる */
     putter: 'パター',
     /** トップのボタン。「パター」だけでは何をする所か分からないので動詞まで書く */
@@ -39,6 +45,53 @@ const COPY = {
       mallet: 'マレット',
       fang: 'ネオマレット',
     },
+
+    // --- オンラインランキング（docs/ranking.md §6） ---
+    /** トップのボタン。押すとどの板（コース）かを選ぶ画面へ */
+    ranking: 'ランキング',
+    /** 板の一覧とランキング表の見出し */
+    rankingTitle: 'ランキング',
+    /** 表の上に置く「あなた」の行。自分の順位を表の中から探させない */
+    you: 'あなた',
+    colRank: '順位',
+    colName: '名前',
+    rankingEmpty: 'まだ登録がありません',
+    rankingLoading: '読み込み中…',
+    /** 取得に失敗したとき。**ゲームは普通に遊べる**ことが伝わる言い方にする */
+    rankingUnavailable: 'いま見られません',
+    rankingRetry: 'もう一度',
+    /** 段2の検証待ち。本人にだけ見せる */
+    rankingChecking: '確認中',
+    /** 送信に失敗・オフライン。保留に積んだ状態 */
+    rankingHeld: 'あとで登録します',
+    rankingSee: 'ランキング',
+    /**
+     * ランキング画面の下に出す、何を預かるかの一行（`docs/ranking.md` §5-3）。
+     * **消し方（この下の「記録を削除」）と同じ場所に置く。**
+     * 詳しい話はハブのプライバシーポリシーへ送る
+     */
+    dataNote: 'あずかるのは、この端末の匿名IDと名前・スコア・打ち出しの記録だけです。IPアドレスは保存しません。',
+    /** 名前を決める画面 */
+    nameTitle: '名前を決めてください',
+    nameNote: 'ランキングに出る名前です（16文字まで）',
+    nameSave: '決定',
+    nameLater: 'あとで',
+    /**
+     * 「あなた」の行に置くボタン。**名前の隣に並ぶので短くする**
+     * （長いと名前のほうが省略されて、誰の行か分からなくなる）
+     */
+    nameEdit: '変える',
+    /** まだ決めていない人へ。変えるものが無い状態で「変える」と言わない */
+    nameSet: '決める',
+    /** 名前を決めていない人の欄。隣に「名前を決める」が並ぶので短くする */
+    nameUnset: '名前なし',
+    /** 記録の削除（プライバシー。消し方が無い状態で公開しない） */
+    dataDelete: '記録を全部消す',
+    dataDeleteNote: 'この端末の名前と、登録した記録を消します。元には戻せません',
+    dataDeleteConfirm: '消す',
+    dataDeleteCancel: 'やめる',
+    dataDeleted: '消しました',
+    dataDeleteFailed: '消せませんでした',
 
     // --- 画面共通（index.html） ---
     top: 'トップ',
@@ -79,13 +132,12 @@ const COPY = {
     noticeNoBackswing: 'バックスイングなし — 無効',
     noticeFewSamples: 'スイングを読めません — 無効',
     noticeNotPulledRight: '右へ引いていません — 無効',
+    outOfBoundsAlert: 'OB',
 
     // --- スコア表示（main.ts） ---
-    gaveUpMark: '・ギブアップ',
     gaveUpNote: '　* はギブアップ',
     hintNextHole: 'タップで次のホールへ',
     hintResult: 'タップでスコアへ',
-    practiceEnd: '練習終了',
     colHole: 'H',
     colPar: 'PAR',
     colStrokes: '打数',
@@ -117,7 +169,8 @@ const COPY = {
     english: 'EN',
     backToMenu: '← TOP',
     tourTitle: 'TOUR',
-    startOver: 'FROM HOLE 1',
+    start: 'START',
+    startOver: 'FROM START',
     putter: 'PUTTER',
     putterChoose: 'CHOOSE PUTTER',
     putterSelect: 'SELECT',
@@ -128,6 +181,34 @@ const COPY = {
       mallet: 'MALLET',
       fang: 'FANG',
     },
+
+    ranking: 'RANKING',
+    rankingTitle: 'RANKING',
+    you: 'YOU',
+    colRank: 'POS',
+    colName: 'NAME',
+    rankingEmpty: 'NO ENTRIES YET',
+    rankingLoading: 'LOADING…',
+    rankingUnavailable: "CAN'T LOAD RIGHT NOW",
+    rankingRetry: 'RETRY',
+    rankingChecking: 'CHECKING',
+    rankingHeld: "WE'LL SUBMIT THIS LATER",
+    rankingSee: 'RANKING',
+    dataNote:
+      "We keep an anonymous ID for this device, your name, your scores and your shots. We don't store IP addresses.",
+    nameTitle: 'CHOOSE A NAME',
+    nameNote: 'This name shows on the ranking (16 characters max)',
+    nameSave: 'SAVE',
+    nameLater: 'LATER',
+    nameEdit: 'EDIT',
+    nameSet: 'SET',
+    nameUnset: 'NO NAME',
+    dataDelete: 'DELETE MY RECORDS',
+    dataDeleteNote: "Deletes your name and every record you've posted. This can't be undone.",
+    dataDeleteConfirm: 'DELETE',
+    dataDeleteCancel: 'KEEP',
+    dataDeleted: 'DELETED',
+    dataDeleteFailed: "COULDN'T DELETE",
 
     top: 'TOP',
     backToTop: 'Back to top',
@@ -165,12 +246,11 @@ const COPY = {
     noticeNoBackswing: 'No backswing — no stroke',
     noticeFewSamples: "Couldn't read the swing — no stroke",
     noticeNotPulledRight: 'Not taken back — no stroke',
+    outOfBoundsAlert: 'OUT OF BOUNDS',
 
-    gaveUpMark: ' · GAVE UP',
     gaveUpNote: ' · * GAVE UP',
     hintNextHole: 'Tap for the next hole',
     hintResult: 'Tap for the scorecard',
-    practiceEnd: 'PRACTICE OVER',
     colHole: 'H',
     colPar: 'PAR',
     colStrokes: 'STROKES',
@@ -257,41 +337,101 @@ const en = (value: string, jaValue: string): string => (language() === 'en' ? va
 // --- 数値が混じる行 -------------------------------------------------------
 // 数字の書式（打数・パー差・距離・角度）は言語で変えない。変えるのは前後の語だけ
 
-/** 「3 打」。カード見出しの打数。英語は1打だけ単数にする（ホールインワンで出る） */
+/**
+ * カードの打数。「6 STROKES」。1打だけ単数にする（ホールインワンで出る）。
+ * **判定語（BIRDIE など）と同じく日本語でも英語のまま**にして、HUDと語を揃える
+ */
 export function strokesText(strokes: number): string {
-  return en(`${strokes} ${strokes === 1 ? 'STROKE' : 'STROKES'}`, `${strokes} 打`);
-}
-
-/** ホール間・ラウンド終了カードの見出し。「3 打  ±0」 */
-export function strokesHeadline(strokes: number, toPar: string): string {
-  return `${strokesText(strokes)}  ${toPar}`;
+  return `${strokes} ${strokes === 1 ? 'STROKE' : 'STROKES'}`;
 }
 
 /**
- * プレイ中に常時出す1行（ツアー）。
- * **HUDの帯は折り返さず切り落とす**（index.html の `#hud .row`）ので、
- * 区切りは日本語と同じく空白だけにして横幅を増やさない
+ * ホールの結果を表す語。中継と同じで、**スコアはまず語で言う**。
+ * バーディ・ボギーは日本のゴルフでもそのまま使う語なので、日本語版でも英語のまま出す。
+ * +4以上と−4以下は英語圏でも語で言わないので、数字をそのまま出す
  */
-export function progressText(
-  holeNumber: number,
-  holeCount: number,
-  par: number,
-  strokes: number,
-  toPar: string,
-  distance: string,
-): string {
-  return en(
-    `HOLE ${holeNumber}/${holeCount}  PAR ${par}  ${strokes} ${toPar}  ${distance}`,
-    `HOLE ${holeNumber}/${holeCount}  PAR ${par}  ${strokes}打 ${toPar}  ${distance}`,
-  );
+export function holeVerdict(strokes: number, par: number, holedOut: boolean): string {
+  if (!holedOut) return 'GAVE UP';
+  if (strokes === 1) return 'HOLE IN ONE';
+  const diff = strokes - par;
+  if (diff === -3) return 'ALBATROSS';
+  if (diff === -2) return 'EAGLE';
+  if (diff === -1) return 'BIRDIE';
+  if (diff === 0) return 'PAR';
+  if (diff === 1) return 'BOGEY';
+  if (diff === 2) return 'DOUBLE BOGEY';
+  if (diff === 3) return 'TRIPLE BOGEY';
+  return formatDiff(diff);
 }
 
-/** 練習の1行。ホールを進めないので PAR と打数と距離だけ */
-export function practiceProgressText(par: number, strokes: number, distance: string): string {
-  return en(
-    `PAR ${par}  ${strokes}  ${distance}`,
-    `PAR ${par}  ${strokes}打  ${distance}`,
-  );
+/**
+ * パー差の表示。**ゲーム中で唯一の書き方**にする。
+ * 英語のゴルフ表記に合わせ、イーブンは `±0` ではなく `E`
+ */
+export function formatDiff(diff: number): string {
+  if (diff === 0) return 'E';
+  return diff > 0 ? `+${diff}` : String(diff);
+}
+
+/** ホール間カードの1行目。「HOLE 5 / 9   PAR 4」。PARはそのホールの素性なのでここへ置く */
+export function holeCardTitle(holeNumber: number, holeCount: number, par: number): string {
+  return `HOLE ${holeNumber} / ${holeCount}   ${LABEL_PAR} ${par}`;
+}
+
+/**
+ * プレイ中に常時出す進行表示。ゴルフ中継と同じように、**役割ごとに別の欄へ分ける**。
+ * 見た目の大きさと色は index.html の `#hud .progress` が受け持つ。
+ * **帯は折り返さず切り落とす**ので、語を足して横幅を増やさない。
+ *
+ * ここだけは**日本語でも英語のまま**にする。中継のスコア表示と同じ短い語なので
+ * そのまま通じ、幅も一定になる（`SHOT` / `TOTAL` / `LEFT` / `PAR`）
+ */
+
+/** ホール表示の大きい数字。何ホール目か */
+export function holeBadgeNumber(holeNumber: number): string {
+  return String(holeNumber);
+}
+
+/** ホール表示の下段。「PAR 4」 */
+export function holeBadgePar(par: number): string {
+  return `${LABEL_PAR} ${par}`;
+}
+
+/** 打数の見出し。中継の「第2打」に当たる */
+export const LABEL_SHOT = 'SHOT';
+
+/**
+ * パー差の見出し。**このホールの成績ではなく、ホールアウト済みのぶんの合計**。
+ * 英語のリーダーボードと同じで、`TOTAL` が指すのは打数の合計ではなくパー差
+ */
+export const LABEL_TOTAL = 'TOTAL';
+
+/**
+ * カップまでの残りの見出し。中継の「152 YDS TO PIN」と同じ言い方にする
+ * （`LEFT` は会話では使うが、表示の語ではない）
+ */
+export const LABEL_PIN = 'TO PIN';
+
+/** PARの見出し。HUDのホール表示とカードで共通 */
+export const LABEL_PAR = 'PAR';
+
+/** ラウンド終了のカードで使うホール数の見出し */
+export const LABEL_HOLES = 'HOLES';
+
+/**
+ * 打数の合計の見出し。英語のリーダーボードでは `TOTAL` はパー差の列で、
+ * **打数の合計は別列の `STROKES`**。ここを取り違えると意味が逆になる
+ */
+export const LABEL_STROKES = 'STROKES';
+
+/** ホール入り口の紹介（中継のホール紹介）。上段は「HOLE 3」 */
+export function holeIntroNumber(holeNumber: number): string {
+  return `HOLE ${holeNumber}`;
+}
+
+/** ホール入り口の紹介。下段は「PAR 4・12.4m」 */
+export function holeIntroDetail(par: number, distance: string): string {
+  return en(`PAR ${par} · ${distance}`, `PAR ${par}・${distance}`);
 }
 
 export function resumeNotice(tourName: string, holeNumber: number): string {
@@ -314,29 +454,31 @@ export function newBestLabel(best: string): string {
   return en(`NEW BEST!  ${best}`, `NEW BEST!　${best}`);
 }
 
+/**
+ * 順位の表示（`docs/ranking.md` §3-1）。**同打数はゴルフ流にまとめる。**
+ * 38打が12人なら12人とも `T3` で、次は `T15`。日本語でもこの書き方をそのまま使う
+ */
+export function rankLabel(rank: number, tied: boolean): string {
+  return tied ? `T${rank}` : String(rank);
+}
+
+/** 板の登録人数 */
+export function playerCountLabel(count: number): string {
+  return en(`${count} PLAYERS`, `${count}人`);
+}
+
+/** 登録できたときにラウンド終了カードへ出す「T12 / 340人」 */
+export function standingLabel(rank: number, tied: boolean, playerCount: number): string {
+  return `${rankLabel(rank, tied)} / ${playerCountLabel(playerCount)}`;
+}
+
+/** ランキング表の打数。**ギブアップを含む記録は `*`**（スコアカードと同じ印） */
+export function rankingStrokes(strokes: number, gaveUp: boolean): string {
+  return gaveUp ? `${strokes}*` : String(strokes);
+}
+
 export function roundEndTitle(tourName: string): string {
   return en(`${tourName} · FINAL`, `${tourName}・ラウンド終了`);
-}
-
-export function roundEndSub(holeCount: number, totalPar: number, gaveUp: boolean): string {
-  const head = en(
-    `${holeCount} HOLES · PAR ${totalPar}`,
-    `${holeCount} ホール ・ PAR ${totalPar}`,
-  );
-  return head + (gaveUp ? t().gaveUpNote : '');
-}
-
-export function holeOutSub(
-  par: number,
-  holedOut: boolean,
-  totalStrokes: number,
-  toPar: string,
-): string {
-  const mark = holedOut ? '' : t().gaveUpMark;
-  return en(
-    `PAR ${par}${mark} · TOTAL ${totalStrokes} ${toPar}`,
-    `PAR ${par}${mark}　ここまで ${totalStrokes} 打 ${toPar}`,
-  );
 }
 
 export function holedResult(strokes: number): string {

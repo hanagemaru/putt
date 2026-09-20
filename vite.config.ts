@@ -1,4 +1,5 @@
 import { defineConfig, type Plugin } from 'vite';
+import { VitePWA } from 'vite-plugin-pwa';
 
 // Node の型は入れていないので、ここで使う分だけ宣言する
 declare const process: { env: Record<string, string | undefined> };
@@ -8,7 +9,6 @@ declare const process: { env: Record<string, string | undefined> };
 // - Cloudflare Workers（putt.hanage.app）: 独自ドメインの直下なので `/`
 // 既定は GitHub Pages。Cloudflare 向けのビルドだけ `PUTT_BASE=/` を渡す。
 const base = process.env.PUTT_BASE ?? '/putt/';
-const cfBeaconToken = process.env.VITE_CF_BEACON_TOKEN;
 
 const MANIFEST_FILE = 'manifest.webmanifest';
 
@@ -90,32 +90,45 @@ function puttPwa(basePath: string): Plugin {
   };
 }
 
-// Cloudflare Web Analytics は本番ビルド時だけHTMLへ入れる。
-// リポジトリ変数 CF_BEACON_TOKEN が未設定なら何も追加しない。
-function cloudflareWebAnalytics(token: string | undefined): Plugin {
-  return {
-    name: 'cloudflare-web-analytics',
-    apply: 'build',
-    transformIndexHtml() {
-      if (!token) return [];
-      return [
-        {
-          tag: 'script',
-          attrs: {
-            defer: true,
-            src: 'https://static.cloudflareinsights.com/beacon.min.js',
-            'data-cf-beacon': JSON.stringify({ token }),
-          },
-          injectTo: 'head',
-        },
-      ];
-    },
-  };
-}
-
 export default defineConfig({
   base,
-  plugins: [puttPwa(base), cloudflareWebAnalytics(cfBeaconToken)],
+  plugins: [
+    puttPwa(base),
+    // オフラインで開けるようにする。マニフェストは上の puttPwa が作るので生成させない。
+    // 検証ページ（swipe-test / green-test / jingle-test）はキャッシュしない。本編だけを持ち歩く。
+    VitePWA({
+      base,
+      scope: base,
+      manifest: false,
+      // 新しい版は待機させ、次の起動で入れ替える。ラウンド中に読み込み直さないため。
+      // 登録は src/entry.ts で行う（検証ページには登録しない）
+      registerType: 'prompt',
+      injectRegister: false,
+      workbox: {
+        globPatterns: [
+          'index.html',
+          'manifest.webmanifest',
+          'assets/**/*.{js,css,woff2,mp3}',
+          'icons/*.png',
+        ],
+        // 除外するのは検証ページのHTMLと、その入口チャンクだけ。
+        // swipe-measure は本編（stroke-view / audio-bootstrap）も使う共有チャンクなので、
+        // 名前が似ていても外さない。外すとオフラインでストロークが動かなくなる
+        globIgnores: [
+          'swipe-test/**',
+          'green-test/**',
+          'jingle-test/**',
+          'assets/swipeTest-*',
+          'assets/greenTest-*',
+          'assets/jingleTest-*',
+        ],
+        // 単独URLで開かれても本編のHTMLを返す。検証ページはネットワークのまま
+        navigateFallback: `${base}index.html`,
+        navigateFallbackDenylist: [/\/swipe-test\//, /\/green-test\//, /\/jingle-test\//],
+        cleanupOutdatedCaches: true,
+      },
+    }),
+  ],
   build: {
     rollupOptions: {
       // マルチページ構成。パスは root からの相対
@@ -126,6 +139,8 @@ export default defineConfig({
         swipeTest: 'swipe-test/index.html',
         // グリーンと転がりの検証ページ → <base>green-test/
         greenTest: 'green-test/index.html',
+        // ホールアウトのジングル試聴ページ → <base>jingle-test/
+        jingleTest: 'jingle-test/index.html',
       },
     },
   },

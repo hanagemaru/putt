@@ -4,6 +4,13 @@
 // ここは**数の管理だけ**を持つ。コースの生成も表示も知らないので、
 // 通常ツアー（固定9ホール）にもチャレンジ（自動生成3ホール）にも同じものを使う。
 
+/**
+ * 1打の打ち出し `[初速 m/s, 方向 rad]`。
+ * **ラウンドを1mmの誤差なく再生するのに要るのはこの2つだけ**（`docs/ranking.md` §4-1）。
+ * 打った位置は前の打の結果なので持たない
+ */
+export type ShotRecord = readonly [speed: number, direction: number];
+
 /** ホールアウトしたホール1つ分のスコア */
 export interface HoleScore {
   /** 1始まりのホール番号 */
@@ -13,6 +20,13 @@ export interface HoleScore {
   strokes: number;
   /** カップインしたか。false はギブアップ */
   holedOut: boolean;
+  /**
+   * そのホールの打ち出しの列。**後のリプレイ検証のためだけに持つ**（ランキングへ送る）。
+   *
+   * 罰打は打っていないので、`shots.length` は `strokes` 以下になる。
+   * **省略されていることがある**（この項目より前に保存された進行を復元したとき）
+   */
+  shots?: readonly ShotRecord[];
 }
 
 /** 完走した1ラウンドの結果。保存やランキング側へ渡すための読み取り専用スナップショット */
@@ -97,7 +111,12 @@ export class Round {
    * 現在のホールのスコアを確定する。1ホールにつき一度だけ記録し、
    * 二度目以降は無視する（カード表示中の再入で二重に積まない）。
    */
-  recordHole(par: number, strokes: number, holedOut: boolean): void {
+  recordHole(
+    par: number,
+    strokes: number,
+    holedOut: boolean,
+    shots: readonly ShotRecord[] = [],
+  ): void {
     if (this.played.length !== this.index) return;
     this.played.push({
       number: this.holeNumber,
@@ -105,6 +124,7 @@ export class Round {
       par,
       strokes,
       holedOut,
+      shots: shots.map((shot) => [shot[0], shot[1]] as const),
     });
 
     if (this.played.length === this.seeds.length) {
@@ -167,6 +187,19 @@ export class Round {
   }
 }
 
+/** 保存から読んだ打ち出しの列。壊れていたらそのホールごと捨てる */
+function validShots(shots: unknown): boolean {
+  return (
+    Array.isArray(shots) &&
+    shots.every(
+      (shot) =>
+        Array.isArray(shot) &&
+        shot.length === 2 &&
+        shot.every((value) => typeof value === 'number' && Number.isFinite(value)),
+    )
+  );
+}
+
 /** 保存から読んだ1ホール分が、今のシード列のそのホールとして筋が通っているか */
 function validHoleScore(hole: HoleScore, number: number, seed: number): boolean {
   return (
@@ -178,12 +211,8 @@ function validHoleScore(hole: HoleScore, number: number, seed: number): boolean 
     hole.par > 0 &&
     Number.isInteger(hole.strokes) &&
     hole.strokes >= 0 &&
-    typeof hole.holedOut === 'boolean'
+    typeof hole.holedOut === 'boolean' &&
+    // 打ち出しの列は後から足した項目。**無い保存もそのまま受け入れる**
+    (hole.shots === undefined || validShots(hole.shots))
   );
-}
-
-/** パー差の表示。0 は ±0、プラスは符号を付ける */
-export function formatToPar(diff: number): string {
-  if (diff === 0) return '±0';
-  return diff > 0 ? `+${diff}` : String(diff);
 }

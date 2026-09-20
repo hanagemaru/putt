@@ -1,6 +1,6 @@
 # PWA
 
-「ホーム画面に追加」できる素地までを実装している。**Service Worker とオフライン化はまだ入れていない。**
+「ホーム画面に追加」でき、一度開けばオフラインでも遊べる。
 
 ## いま入っているもの
 
@@ -9,6 +9,8 @@
 | マニフェスト | `vite.config.ts` の `putt-pwa` プラグインが `manifest.webmanifest` を生成する |
 | アイコン | `public/icons/`。`scripts/generate-icons.mjs` で生成する |
 | head のタグ | `index.html`（manifest / theme-color / apple-* / apple-touch-icon / icon） |
+| Service Worker | `vite.config.ts` の `VitePWA`（`vite-plugin-pwa`）が生成する |
+| SW の登録 | `src/entry.ts` の `registerSW({ immediate: true })` |
 
 マニフェストの中身は次のとおり。
 
@@ -46,22 +48,36 @@ node scripts/generate-icons.mjs --preview <出力先>     # 比較用に案A・�
 
 不採用案（案A: 俯瞰のカップとボール）も比較できるよう生成器に残してある。
 
-## Service Worker を入れるなら次に要るもの
+## Service Worker
 
-今回はやっていない。やるときに必要なのは以下。
+`vite-plugin-pwa` の `generateSW` で作る。マニフェストは上の `putt-pwa` が作るので `manifest: false`。
 
-1. **キャッシュ対象の決定。** `index.html` / `assets/*` / `icons/*` を precache する。
-   `physics` チャンクだけで約 500 kB あるので、初回取得のタイミングを決める
-2. **更新の反映方法。** 自動デプロイなので、古いキャッシュを掴んだままにしない仕組みが要る。
-   `skipWaiting` で即時更新するか、「新しいバージョンがあります」を出して再読み込みさせるかを決める
-3. **ベースパスごとの scope。** Service Worker の登録パスと scope も `/putt/` と `/` で変わる。
-   マニフェストと同じ切り替えに乗せる
-4. **オフライン時の入口の扱い。** トップメニュー・練習は完全にローカルで動くが、
-   オンラインランキング（未実装）は繋がらない前提の表示が要る
-5. **ローカル確認手段。** Service Worker は https か localhost でしか動かない。
-   `npx wrangler dev` と実機の確認手順を決める
-6. **依存の判断。** `vite-plugin-pwa` を入れるか、自前で書くか。
-   新しいライブラリを入れる前に確認を取ること（`CLAUDE.md`）
+- **キャッシュ対象。** `index.html` / `manifest.webmanifest` / `assets/*`（js・css・woff2・mp3）/ `icons/*`。
+  21ファイル・約720 kB。ゲームが実行時に外へ取りに行くものはこれで全部（音源とフォントは
+  ビルドに取り込まれる。3.5 kB の `flagstick.mp3` だけはデータURLで JS に入る）
+- **検証ページは載せない。** `swipe-test/` / `green-test/` / `jingle-test/` のHTMLと入口チャンクは除外する。
+  `navigateFallbackDenylist` にも入れて、オフラインでは本編のHTMLに化けないようにする。
+  ただし `swipe-measure` は本編（`stroke-view` / `audio-bootstrap`）も使う共有チャンクなので外さない
+- **更新の反映。** `registerType: 'prompt'` にして、案内は出さない。新しい版は裏で用意されるだけで、
+  当たるのは次の起動から。ラウンドの途中で読み込み直さないため。
+  自動デプロイなので `cleanupOutdatedCaches` で古いキャッシュは掃除する
+- **登録場所。** `index.html` への自動注入（`injectRegister`）は使わない。検証ページにも入ってしまうため。
+  本編の `src/entry.ts` からだけ登録する
+- **ベースパス。** `base` と `scope` は配信先のベースをそのまま渡す。マニフェストと同じ切り替えに乗る
+- **オフライン時の入口。** いまは通信が要る機能がないので、特別な表示はない。
+  オンラインランキングを作るときに「繋がらない前提の表示」が要る
+
+### ローカルでの確認
+
+Service Worker は https か localhost でしか動かない。`npm run dev` では登録されない（`registerSW` が
+何もしない）ので、`npm run build` してから `npm run preview` を使う。
+
+Chromium で確認した内容（`PUTT_BASE` 既定 = `/putt/`）:
+
+- 21件がプリキャッシュされ、scope は `/putt/`
+- オフラインで再読み込みしてもトップメニューが出る
+- オフラインのまま `?mode=practice` でグリーンが描画される。失敗したリクエストもコンソールエラーもゼロ
+- オフラインで `swipe-test/` は開けない（意図どおり）
 
 ## 実機で見るところ
 
@@ -72,3 +88,5 @@ node scripts/generate-icons.mjs --preview <出力先>     # 比較用に案A・�
   上端はコンテンツが回り込む。HUDの `env(safe-area-inset-top)` で避けている）
 - スタンドアロン起動でも縦のまま、横向きの警告が出ないこと
 - Android Chrome: インストール後の縦固定とマスカブルアイコンの切り抜き
+- 機内モードで、ホーム画面のアイコンから起動して通常ツアーが最後まで回れること
+- 配信のあと、次の起動で新しい版に入れ替わっていること（起動しっぱなしでは入れ替わらない）

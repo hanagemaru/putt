@@ -5,3 +5,6 @@ dist
 
 # wrangler
 .wrangler/
+
+# npm run maps の出力（1MBの生成物。シードを変えるたびに作り直す）
+docs/course-maps.html

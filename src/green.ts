@@ -3,7 +3,12 @@
 // 比較用の「形状2×」だけは、物理と色を変えず3D形状の高さだけを一時的に誇張する。
 import * as THREE from 'three';
 import { CONFIG } from './config';
-import type { CoursePoint, SurfaceType, TerrainType } from './course/course-types';
+import type {
+  CoursePoint,
+  HeightFeature,
+  SurfaceType,
+  TerrainType,
+} from './course/course-types';
 
 const C = CONFIG.green;
 const T = CONFIG.course.terrain;
@@ -34,6 +39,26 @@ export interface GreenParams {
   tiltPercent: number;
   /** 地形の性格。省略すると `random`（従来どおりの全体傾斜＋うねり） */
   terrain?: TerrainParams;
+  /**
+   * 高さのハザード（生成器v2のマウンド・リッジ・窪地）。
+   * **うねりの正規化が終わった後に足す**ので、ここで指定した高さがそのまま m 単位で出る。
+   * 省略（v1のコース・green-test）なら地形はこれまでと1mmも変わらない
+   */
+  heightFeatures?: readonly HeightFeature[];
+  /**
+   * バンカーのすり鉢による高さの変化 [m] を返す関数（`bunkerBasinAt`）。
+   *
+   * 窪みの縁を**砂の輪郭そのもの**にするには、サーフェス側が持っている角度ごとの歪みが要る。
+   * ハイトマップ側でそれを作り直すと二重管理になるので、コース定義を知っている側から
+   * 関数として渡してもらう。省略（v1のコース・green-test）なら地形は変わらない
+   */
+  bunkerBasin?: (x: number, z: number) => number;
+  /**
+   * 砲台グリーンの高さ [m] を返す関数（`plateauHeightAt`）。
+   * バンカーのすり鉢と同じ理由で、コース定義を知っている側から渡してもらう。
+   * 省略なら地形は変わらない
+   */
+  plateau?: (x: number, z: number) => number;
 }
 
 export function defaultGreenParams(): GreenParams {
@@ -69,6 +94,29 @@ interface Gaussian {
   sigma: number;
   /** 正規化前の重み。符号が山と谷 */
   weight: number;
+}
+
+/**
+ * 高さのハザード1つ分の高さ [m]。
+ *
+ * 形は `(1 - r^2)^2`（r は楕円座標の半径）。r >= 1 で高さも傾きもちょうど 0 になるので、
+ * 周りの地形と段差なく繋がり、楕円の外へは一切影響しない。
+ * 勾配の上限は生成器側（`CONFIG.course.generatorV2.height.maxGradient`）で掛けてある。
+ */
+function heightFeatureAt(feature: HeightFeature, x: number, z: number): number {
+  const dx = x - feature.center.x;
+  const dz = z - feature.center.z;
+  // 長軸（angle）を u 軸、その左を v 軸とする局所座標へ移す
+  const ux = Math.sin(feature.angle);
+  const uz = Math.cos(feature.angle);
+  const u = dx * ux + dz * uz;
+  const v = -dx * uz + dz * ux;
+  const nu = u / feature.radiusU;
+  const nv = v / feature.radiusV;
+  const rSq = nu * nu + nv * nv;
+  if (rSq >= 1) return 0;
+  const falloff = 1 - rSq;
+  return feature.height * falloff * falloff;
 }
 
 /**
@@ -186,13 +234,23 @@ export class Green {
     const targetAmplitude = params.undulationAmplitude * T.undulationGain[type];
     const scale = maxAbs > 0 ? targetAmplitude / maxAbs : 0;
 
+    // 高さのハザード（生成器v2）。**うねりの正規化より後に足す。**
+    // 先に足すと正規化に巻き込まれ、config で指定した高さが出なくなる
+    const features = params.heightFeatures ?? [];
+    const basin = params.bunkerBasin;
+    const plateau = params.plateau;
+
     this.minHeight = Infinity;
     this.maxHeight = -Infinity;
     for (let j = 0; j < this.resZ; j++) {
       const z = -halfLength + j * this.cellZ;
       for (let i = 0; i < this.resX; i++) {
         const x = -halfWidth + i * this.cellX;
-        const h = shapeAt(x, z) + undulation[j * this.resX + i] * scale;
+        let h = shapeAt(x, z) + undulation[j * this.resX + i] * scale;
+        for (const feature of features) h += heightFeatureAt(feature, x, z);
+        if (basin) h += basin(x, z);
+        // 砲台グリーン。うねりの正規化より後に足すので、指定した高さがそのまま出る
+        if (plateau) h += plateau(x, z);
         this.heights[j * this.resX + i] = h;
         if (h < this.minHeight) this.minHeight = h;
         if (h > this.maxHeight) this.maxHeight = h;
@@ -400,6 +458,7 @@ export class GreenMesh {
     green: new THREE.Color(C.surfaceColors.green),
     rough: new THREE.Color(C.surfaceColors.rough),
     deepRough: new THREE.Color(C.surfaceColors.deepRough),
+    bunker: new THREE.Color(C.surfaceColors.bunker),
     water: new THREE.Color(C.surfaceColors.water),
     ob: new THREE.Color(C.surfaceColors.ob),
   };
@@ -583,6 +642,205 @@ export function createSurround(green: Green, heightScale = 1): THREE.Mesh {
   mesh.rotation.x = -Math.PI / 2;
   mesh.position.y = green.minHeight * heightScale - s.drop;
   return mesh;
+}
+
+/** OB境界の線を引く対象か。池は打てないがOBではないので、ここでは「向こう側」に入れる */
+function isBeyondBoundary(surface: SurfaceType): boolean {
+  return surface === 'ob' || surface === 'water';
+}
+
+/**
+ * 格子の辺の上で、打てる地面とその向こうの境目を二分探索で詰める。
+ * 格子の目をそのまま繋ぐと階段になるので、**実際の境界位置まで寄せてから**線を引く。
+ */
+function refineCrossing(
+  green: Green,
+  inX: number,
+  inZ: number,
+  outX: number,
+  outZ: number,
+): CoursePoint {
+  let ax = inX;
+  let az = inZ;
+  let bx = outX;
+  let bz = outZ;
+  for (let step = 0; step < CONFIG.obLine.refineSteps; step++) {
+    const mx = (ax + bx) / 2;
+    const mz = (az + bz) / 2;
+    if (isBeyondBoundary(green.surfaceAt(mx, mz))) {
+      bx = mx;
+      bz = mz;
+    } else {
+      ax = mx;
+      az = mz;
+    }
+  }
+  return { x: (ax + bx) / 2, z: (az + bz) / 2 };
+}
+
+/** 格子の辺1本ぶんの交点。`ok` が false なら、その辺は線を引かない（池際） */
+interface Crossing {
+  point: CoursePoint | null;
+  ok: boolean;
+}
+
+const NO_CROSSING: Crossing = { point: null, ok: false };
+
+/** OB境界の線。マップでは図として、一人称では風景の一部として見せ方を変える */
+export interface ObBoundaryLine {
+  /** 線分の端点。3つで1点、2点で1本。高解像度オーバーレイがこれを描く */
+  readonly points: Float32Array;
+  /** マップ表示中か。オーバーレイが濃さを合わせるために読む */
+  readonly mapMode: boolean;
+  /** マップ表示の間だけ true。図として読むところなので距離で薄くしない */
+  setMapMode(active: boolean): void;
+}
+
+/**
+ * OB境界の線。**見た目だけの目印で、物理には一切関わらない。**
+ *
+ * 形は `green.surfaceAt` からしか読まない。**生成器にも `CONFIG.course.edgeNoise` にも
+ * 触れない**ので、既存ホールの外形・自己ベスト・ラウンド進行は変わらない（backlog §5-1）。
+ *
+ * マーチングスクエアで「打てる地面 / その向こう」の境界を線分の集まりとして取り出す。
+ * 輪郭として順番に繋ぐ必要はないので `LineSegments` 1つ、ドローコールも1つで済む。
+ *
+ * 池際には引かない（OBの印であって、ハザードの印ではない）。
+ */
+export function createObBoundaryLine(green: Green, heightScale = 1): ObBoundaryLine | null {
+  const L = CONFIG.obLine;
+  const halfWidth = green.width / 2;
+  const halfLength = green.length / 2;
+  // **格子をコース枠の外へ1マスぶん広げる。**
+  // 枠の外は必ずOBなので、こうしておくと芝が枠に届いているホールでも輪が閉じる。
+  // 広げないと、そこだけ線が途切れたまま終わる（実機前のプレビューで4ツアー計132点）
+  const nx = Math.floor(green.width / L.sampleCell) + 3;
+  const nz = Math.floor(green.length / L.sampleCell) + 3;
+  if (nx < 2 || nz < 2) return null;
+
+  const gridX = (i: number): number => -halfWidth + (i - 1) * L.sampleCell;
+  const gridZ = (j: number): number => -halfLength + (j - 1) * L.sampleCell;
+
+  // 先に格子を1枚作る。辺の交点は隣り合うマスで共有するので、分類も探索も1回ずつで済む
+  const surfaces: SurfaceType[] = new Array(nx * nz);
+  const beyond = new Uint8Array(nx * nz);
+  for (let j = 0; j < nz; j++) {
+    for (let i = 0; i < nx; i++) {
+      const surface = green.surfaceAt(gridX(i), gridZ(j));
+      surfaces[j * nx + i] = surface;
+      beyond[j * nx + i] = isBeyondBoundary(surface) ? 1 : 0;
+    }
+  }
+
+  /** 格子点 a（打てる）と b（向こう側）の間の交点。向こう側が池なら引かない */
+  const crossingBetween = (ai: number, aj: number, bi: number, bj: number): Crossing => {
+    const a = aj * nx + ai;
+    const b = bj * nx + bi;
+    if (beyond[a] === beyond[b]) return NO_CROSSING;
+    const insideIsA = beyond[a] === 0;
+    const outsideSurface = insideIsA ? surfaces[b] : surfaces[a];
+    if (outsideSurface !== 'ob') return NO_CROSSING;
+    const point = insideIsA
+      ? refineCrossing(green, gridX(ai), gridZ(aj), gridX(bi), gridZ(bj))
+      : refineCrossing(green, gridX(bi), gridZ(bj), gridX(ai), gridZ(aj));
+    return { point, ok: true };
+  };
+
+  // 横の辺（i → i+1）と縦の辺（j → j+1）の交点。
+  // 横の辺は上下2つのマスで共有するので、1行ぶん持ち越して二度探索しない
+  const horizontal: Crossing[] = new Array(nx - 1);
+  const horizontalNext: Crossing[] = new Array(nx - 1);
+  const vertical: Crossing[] = new Array(nx);
+
+  for (let i = 0; i < nx - 1; i++) horizontal[i] = crossingBetween(i, 0, i + 1, 0);
+
+  const points: number[] = [];
+  const push = (p: CoursePoint): void => {
+    points.push(p.x, green.sampleHeight(p.x, p.z) * heightScale + L.lift, p.z);
+  };
+
+  for (let j = 0; j < nz - 1; j++) {
+    for (let i = 0; i < nx - 1; i++) horizontalNext[i] = crossingBetween(i, j + 1, i + 1, j + 1);
+    for (let i = 0; i < nx; i++) vertical[i] = crossingBetween(i, j, i, j + 1);
+
+    for (let i = 0; i < nx - 1; i++) {
+      // マスの4隅。左下 a・右下 b・右上 c・左上 d
+      const a = beyond[j * nx + i];
+      const b = beyond[j * nx + i + 1];
+      const c = beyond[(j + 1) * nx + i + 1];
+      const d = beyond[(j + 1) * nx + i];
+      const code = a | (b << 1) | (c << 2) | (d << 3);
+      if (code === 0 || code === 15) continue;
+
+      const bottom = horizontal[i];
+      const top = horizontalNext[i];
+      const left = vertical[i];
+      const right = vertical[i + 1];
+
+      // 交点が2つ揃った辺の組を繋ぐ。どちらかが池際（ok=false）なら、その線分は引かない
+      const link = (p: Crossing, q: Crossing): void => {
+        if (!p.ok || !q.ok || !p.point || !q.point) return;
+        if (points.length / 6 >= L.maxSegments) return;
+        push(p.point);
+        push(q.point);
+      };
+
+      switch (code) {
+        case 1:
+        case 14:
+          link(left, bottom);
+          break;
+        case 2:
+        case 13:
+          link(bottom, right);
+          break;
+        case 3:
+        case 12:
+          link(left, right);
+          break;
+        case 4:
+        case 11:
+          link(right, top);
+          break;
+        case 6:
+        case 9:
+          link(bottom, top);
+          break;
+        case 7:
+        case 8:
+          link(left, top);
+          break;
+        // 対角だけが向こう側。どちらの繋ぎ方もありうるが、
+        // 0.25m のマスで見た目に差は出ないので素直に2本引く
+        case 5:
+          link(left, bottom);
+          link(right, top);
+          break;
+        case 10:
+          link(bottom, right);
+          link(left, top);
+          break;
+      }
+    }
+
+    // 次の行へ。今のマスの上辺が、次の行のマスの下辺になる
+    for (let i = 0; i < nx - 1; i++) horizontal[i] = horizontalNext[i];
+  }
+
+  if (points.length === 0) return null;
+
+  let mapMode = false;
+  return {
+    points: new Float32Array(points),
+    get mapMode(): boolean {
+      return mapMode;
+    },
+    setMapMode(active: boolean): void {
+      // マップは図として読むところなので、距離で薄くしない。
+      // 一人称では逆に、遠いほど薄くなる
+      mapMode = active;
+    },
+  };
 }
 
 /**

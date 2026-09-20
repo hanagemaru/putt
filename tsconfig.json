@@ -4,8 +4,9 @@
     "useDefineForClassFields": true,
     "module": "ESNext",
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    // import.meta.glob / import.meta.env の型（フォントの読み込みで使う）
-    "types": ["vite/client"],
+    // import.meta.glob / import.meta.env の型（フォントの読み込みで使う）と
+    // virtual:pwa-register の型（Service Worker の登録で使う）
+    "types": ["vite/client", "vite-plugin-pwa/client"],
     "skipLibCheck": true,
 
     "moduleResolution": "bundler",

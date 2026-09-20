@@ -11,28 +11,52 @@
 // **走行中に俯瞰へ切り替えない。** 一人称のまま最後まで見せて、分析は止まってから（§3）。
 import * as THREE from 'three';
 import { CONFIG } from './config';
+import type { ObBoundaryLine } from './green';
 import {
   Green,
   GreenMesh,
   createHole,
+  createObBoundaryLine,
   createSurround,
   createTrees,
-  defaultGreenParams,
   defaultShadeParams,
 } from './green';
 import { Roller } from './physics';
+import {
+  giveUpAvailable,
+  isHoledOut,
+  penaltyStrokes,
+  returnsToShotStart,
+} from './hole-sim';
 import { surfaceAt } from './course/course-map';
+import {
+  buildHoleRoller,
+  holeGreenParams,
+  tourHoleCourse,
+} from './course/hole-build';
 import { PROTOTYPE_COURSE } from './course/prototype-course';
-import { approachDirection, generateCourse } from './course/course-generate';
+import { generateCourse } from './course/course-generate';
+import { generateCourseV2 } from './course/course-generate-v2';
 import type { CourseDefinition, TerrainType } from './course/course-types';
-import { tourById } from './course/tour-holes';
+import {
+  DEFAULT_SETUP,
+  TOUR_SETS,
+  generateOptionsFor,
+  setupOfSeed,
+  tourById,
+  type CourseSetup,
+} from './course/tour-holes';
 import { CourseMapMarker } from './course-map-marker';
 import { ensurePixelFont } from './pixel-font';
 import * as i18n from './i18n';
 import { language, t } from './i18n';
-import { Round, formatToPar, type HoleScore } from './round';
+import { Round, type HoleScore, type ShotRecord } from './round';
 import { RoundProgressStore } from './round-storage';
-import { SmoothLineOverlay, type BallOccluder } from './smooth-line-overlay';
+import {
+  SmoothLineOverlay,
+  type BallOccluder,
+  type ObBoundaryOverlay,
+} from './smooth-line-overlay';
 import { StrokeView } from './stroke-view';
 import {
   CameraRig,
@@ -72,6 +96,10 @@ const TERRAIN_LABEL: Record<TerrainType, string> = {
 function courseWithSeed(value: number): CourseDefinition {
   const seed = value >>> 0;
   if (usePrototypeCourse) return { ...PROTOTYPE_COURSE, seed };
+  if (useGeneratorV2) return generateCourseV2(seed, generateOptionsFor(setupForSeed(seed)));
+  // 生成器はツアーが持つが、**ホール単位で上書きできる**（BEGINNER は v1 と v2 を混ぜている）。
+  // 組み立ては `hole-build.ts` に1本化してある（検証側と食い違わせないため）
+  if (mode === 'tour') return tourHoleCourse(selectedTour, seed);
   return generateCourse(seed);
 }
 
@@ -83,23 +111,67 @@ const selectedTour = tourById(urlParams.get('tour'));
 /** URL の ?course=prototype 。生成器を入れる前の手作りホールを出す */
 const usePrototypeCourse = urlParams.get('course') === 'prototype';
 
+/**
+ * URL の `?gen=v2` 。コース生成器v2（`docs/course-generator-v2.md`）で作ったホールを出す。
+ * **既定は今までどおりv1。** `?gen=v2&seed=N` と `?seed=N` を見比べるための指定で、
+ * **練習モードとして出す**（理由は `modeFromUrl`）。
+ * シードを変えるボタンは `gen=v2` を URL に残すので、そのまま次のホールへ移れる
+ */
+const useGeneratorV2 = urlParams.get('gen') === 'v2';
+
+/**
+ * URL の `?setup=<ツアーID>` 。`?gen=v2` のときだけ効く。
+ *
+ * **そのツアーの仕立てで1ホールだけ作る**ための指定。
+ * `?gen=v2&seed=1931&setup=expert` で EXPERT のH2（S字）をそのまま出せる。
+ * 仕立てはS字の振り・岸なしの池・バンカーの幅まで含むので、
+ * ここを通さないと**同じシードでも別のホールになる**。
+ * 省略・不明なIDのときは既定の仕立て（＝生成器の素の出力）
+ */
+const generatorTour = (() => {
+  const id = urlParams.get('setup');
+  return (id === null ? undefined : TOUR_SETS.find((t) => t.id === id)) ?? null;
+})();
+
 /** 遊び方（spec §6）。通常ツアーは固定9ホールを順に回り、練習は同じホールを打ち直す */
 type GameMode = 'tour' | 'practice';
 
 /**
  * URL からモードを決める。既定は通常ツアー。
- * `?mode=practice` のほか、**1ホールを繰り返し試すための指定**（`?seed=` と
- * `?course=prototype`）が来たときも練習として扱う。ツアーの進行に割り込ませない
+ * `?mode=practice` のほか、**1ホールを繰り返し試すための指定**（`?seed=` ・
+ * `?course=prototype` ・`?gen=v2`）が来たときも練習として扱う。ツアーの進行に割り込ませない。
+ *
+ * `?gen=v2` を練習にするのには理由がある。ラウンド進行と自己ベストは
+ * **ツアーIDとシード列だけで照合している**ので、同じシード列をv2で回ると
+ * v1のツアーの保存へv2のスコアが混ざる。生成器を切り替えて比べたいだけなので、
+ * 練習モード（保存しない）で出す
  */
 function modeFromUrl(): GameMode {
   const raw = urlParams.get('mode');
   if (raw === 'practice') return 'practice';
   if (raw === 'tour') return 'tour';
-  if (urlParams.get('seed') !== null || usePrototypeCourse) return 'practice';
+  if (urlParams.get('seed') !== null || usePrototypeCourse || useGeneratorV2) return 'practice';
   return 'tour';
 }
 
 const mode = modeFromUrl();
+
+/**
+ * コースの仕立て（うねり・速さ・曲がりの鋭さ・S字・岸なしの池・バンカーの幅・砲台…）。
+ *
+ * **ホールごとに違うことがある。** LAB はホール単位で仕掛けを入れ替えるので、
+ * コース単位の値ではなく**シードから引く**。シードはツアー内で重複しない。
+ *
+ * 通常ツアーはセット定義のものを使う。練習・`?seed=`・`?gen=v2` は既定で回すが、
+ * `?setup=<ツアーID>` を付けたときだけそのツアーの仕立てで出す
+ * （**ツアーのホールを1本ずつ確かめるため**。そのツアーに属すシードなら、
+ * そのホール用の上書きまで効く）
+ */
+function setupForSeed(value: number): CourseSetup {
+  const seed = value >>> 0;
+  if (mode === 'tour') return setupOfSeed(selectedTour, seed);
+  return generatorTour ? setupOfSeed(generatorTour, seed) : DEFAULT_SETUP;
+}
 
 /** 通常ツアーのラウンド状態。**練習モードでは null**（ホールを進めず、同じホールを打ち直す） */
 const round = mode === 'tour' ? new Round(selectedTour.seeds) : null;
@@ -143,18 +215,16 @@ if (round && roundStore) {
  * 地形の性格はコース定義が持ち、カップと最終アプローチの向きを基準に形を置く。
  */
 function greenParamsFor(target: CourseDefinition, amplitude: number) {
-  return {
-    ...defaultGreenParams(),
-    seed: target.seed,
-    width: target.bounds.width,
-    length: target.bounds.length,
-    undulationAmplitude: amplitude,
-    terrain: {
-      type: target.terrain,
-      cup: target.cup,
-      approach: approachDirection(target),
-    },
-  };
+  // 中身は `hole-build.ts`。**検証側と同じ組み立てを通す**（`docs/ranking.md` §4-6）
+  return holeGreenParams(target, setupForSeed(target.seed), amplitude);
+}
+
+/**
+ * 現在のグリーンとカップで転がりを作る。
+ * **グリーンの速さはコースの仕立てが決める**ので、作り直すたびにここを通す
+ */
+function makeRoller(): Roller {
+  return buildHoleRoller(green, course, setupForSeed(course.seed));
 }
 
 // --- シーン ---------------------------------------------------------------
@@ -277,6 +347,8 @@ scene.add(props);
 const terrain = new THREE.Group();
 scene.add(terrain);
 let greenMesh: GreenMesh;
+/** OB境界の線。ホールを作り直すたびに差し替わる */
+let obLine: ObBoundaryLine | null = null;
 
 /** URL の ?seed=... 。同じグリーンをもう一度出したいときのため */
 function seedFromUrl(): number | null {
@@ -306,6 +378,10 @@ function buildTerrain(): void {
   greenMesh = new GreenMesh(green, shade, visualHeightScale);
   terrain.add(greenMesh.mesh);
   terrain.add(createHole(green, visualHeightScale, course.cup));
+  // OB境界の線。3Dではなく高解像度Canvasへ重ねるので、シーンには入れない。
+  // 分類を持たない検証用グリーンには境界が無いので null が返る
+  obLine = createObBoundaryLine(green, visualHeightScale);
+  obLine?.setMapMode(showingCourseMap());
   props.add(createSurround(green, visualHeightScale));
   props.add(createTrees(green, seed, visualHeightScale));
 }
@@ -432,10 +508,17 @@ function layoutMapMarkers(): void {
   cupMarker.layout(camera.fov, height, ratio);
 }
 
+/** コースマップを表示中か。マーカーとOB線の見せ方がここで変わる */
+function showingCourseMap(): boolean {
+  return state === 'ADDRESS' && aimView === 'MAP';
+}
+
 /** マップのマーカーを現在のボール・カップへ合わせ、マップの間だけ表示する */
 function syncMapMarkers(): void {
-  const showing = state === 'ADDRESS' && aimView === 'MAP';
+  const showing = showingCourseMap();
   mapMarkers.visible = showing;
+  // マップは図として読むところなので、線を距離で薄くせず、木にも地形にも隠さない
+  obLine?.setMapMode(showing);
   if (!showing) return;
   const M = G.courseMap;
   const lift = M.markerLift;
@@ -485,7 +568,7 @@ function aimViewLabel(view: AimView): string {
 }
 type StrokeCameraView = 'DOWN' | 'CUP';
 
-let roller = new Roller(green, course.cup);
+let roller = makeRoller();
 const cup = new THREE.Vector2(course.cup.x, course.cup.z);
 /** ボールの現在位置（XZ）。roller から毎フレーム写す */
 const ball = new THREE.Vector2(course.tee.x, course.tee.z);
@@ -501,6 +584,11 @@ let aim = 0;
 /** ボール→カップ方向。狙いの振れ幅はここから測る */
 let aimBase = 0;
 let shots = 0;
+/**
+ * このホールの打ち出しの列（`docs/ranking.md` §4-1）。
+ * **ランキングへ送って後から再生するためだけに持つ。** ゲームの進行には使わない
+ */
+let holeShots: ShotRecord[] = [];
 let penaltyApplied = false;
 let lastResult = '';
 let notice = '';
@@ -573,20 +661,35 @@ function guideBallOccluder(): BallOccluder | null {
   };
 }
 
+/** OB境界を高解像度Canvasへ渡す */
+function obBoundaryOverlay(): ObBoundaryOverlay | null {
+  if (!obLine) return null;
+  const L = CONFIG.obLine;
+  return {
+    points: obLine.points,
+    color: L.color,
+    widthPx: L.widthPx,
+    opacity: L.opacity,
+    farOpacity: L.farOpacity,
+    fadeNear: L.fadeNear,
+    fadeFar: L.fadeFar,
+    mapMode: obLine.mapMode,
+  };
+}
+
 function updateSmoothLines(): void {
-  if (lineMode !== 'SMOOTH') {
-    smoothLines.clear();
-    return;
-  }
-  const showAim = aimGuideShouldShow();
+  // OB境界は補助線のモードとは無関係に出すので、ここで早期に抜けない
+  const smooth = lineMode === 'SMOOTH';
+  const showAim = smooth && aimGuideShouldShow();
   smoothLines.draw(
     camera,
     aimGuidePositions,
     showAim,
     trailPositions,
     trailPointCount,
-    trailShouldShow(),
+    smooth && trailShouldShow(),
     showAim ? guideBallOccluder() : null,
+    obBoundaryOverlay(),
   );
 }
 
@@ -831,6 +934,8 @@ function returnToAddress(): void {
 function launch(speedMs: number, launchAngle: number): void {
   // 画面の左＝狙い方向。スワイプが画面下へ流れた分だけ狙いの左へ出る
   const direction = aim - launchAngle;
+  // 打つ前に記録する。打った位置は前の打の結果なので、初速と方向だけで再生できる
+  holeShots.push([speedMs, direction]);
   shotStart.copy(ball);
   penaltyApplied = false;
   cupViewUsed = false;
@@ -916,11 +1021,10 @@ function resumeFollowFromCup(): void {
 /** ボールが完全に停止してから呼ぶ。ここで初めて俯瞰と軌跡を出す（§3） */
 function enterResult(): void {
   state = 'RESULT';
-  if (
-    !penaltyApplied &&
-    (roller.status === 'water' || roller.status === 'outOfBounds')
-  ) {
-    shots += 1;
+  // 罰打の規則は `hole-sim.ts` が正本。検証側も同じ関数を見る
+  const penalty = penaltyStrokes(roller.status);
+  if (!penaltyApplied && penalty > 0) {
+    shots += penalty;
     penaltyApplied = true;
   }
   syncLineVisibility();
@@ -929,7 +1033,14 @@ function enterResult(): void {
   cardElapsed = 0;
   resultReady = false;
   lastResult = describeResult();
+  // 池・OBは音を切っていても分かるよう、通常プレイの知らせ欄にも出す。
+  // 次の一打へ進むと enterAddress() が通常の案内へ戻すため、このRESULTの間だけ表示される。
+  notice = penaltyResultPending() ? lastResult : '';
   ballMesh.visible = roller.status !== 'holed';
+}
+
+function penaltyResultPending(): boolean {
+  return penaltyStrokes(roller.status) > 0;
 }
 
 /** 結果テキスト（§3）。打ち出しラインへの射影で オーバー／ショート と左右のズレを出す */
@@ -953,8 +1064,8 @@ function describeResult(): string {
 
 /** RESULT でタップされた。ホールが続いている場合だけ次のパットへ */
 function nextPutt(): void {
-  if (roller.status === 'water' || roller.status === 'outOfBounds') {
-    // 打つ前の位置へ戻す。打数はそのまま
+  if (returnsToShotStart(roller.status)) {
+    // 打つ前の位置へ戻す。打数はそのまま（罰打は RESULT で足し済み）
     ball.copy(shotStart);
   }
   roller.place(ball.x, ball.y);
@@ -967,7 +1078,7 @@ function nextPutt(): void {
  * 自然に終わるのはカップインだけ（もう一方の出口はギブアップ）
  */
 function holeFinished(): boolean {
-  return roller.status === 'holed';
+  return isHoledOut(roller.status);
 }
 
 /**
@@ -977,8 +1088,8 @@ function holeFinished(): boolean {
  */
 function canGiveUp(): boolean {
   if (state !== 'ADDRESS' && state !== 'RESULT') return false;
-  if (roller.status === 'holed') return false;
-  return shots >= course.par * G.round.giveUpParMultiple;
+  if (isHoledOut(roller.status)) return false;
+  return giveUpAvailable(shots, course.par);
 }
 
 /**
@@ -1004,6 +1115,7 @@ function restartPracticeHole(): void {
   ball.set(course.tee.x, course.tee.z);
   shotStart.copy(ball);
   shots = 0;
+  holeShots = [];
   lastResult = '';
   lastSwing = '';
   roller.place(ball.x, ball.y);
@@ -1025,7 +1137,7 @@ function practiceEndPending(): boolean {
 function enterHoleOut(): void {
   if (!round) return;
   state = 'HOLE_OUT';
-  round.recordHole(course.par, shots, roller.status === 'holed');
+  round.recordHole(course.par, shots, isHoledOut(roller.status), holeShots);
   // スコアが確定した時点で保存する。1打ごとには保存しない（復元はホールの頭からなので、
   // それ以上の頻度に意味がない）。
   // 最終ホールのあとは再開できるホールがない。ここで残すと終わったラウンドを
@@ -1086,7 +1198,7 @@ function rebuildGreenForUndulationCompare(): void {
   const mode = selectedUndulation();
   visualHeightScale = mode.visualScale;
   green = new Green(greenParamsFor(course, mode.amplitude), (x, z) => surfaceAt(course, x, z));
-  roller = new Roller(green, course.cup);
+  roller = makeRoller();
   roller.place(ball.x, ball.y);
   buildTerrain();
   trailPointCount = 0;
@@ -1109,18 +1221,22 @@ function loadHole(next: number): void {
   const mode = selectedUndulation();
   visualHeightScale = mode.visualScale;
   green = new Green(greenParamsFor(course, mode.amplitude), (x, z) => surfaceAt(course, x, z));
-  roller = new Roller(green, course.cup);
+  roller = makeRoller();
   buildTerrain();
   ball.set(course.tee.x, course.tee.z);
   shotStart.copy(ball);
   roller.place(ball.x, ball.y);
   shots = 0;
+  // ホールが変われば打ち出しの列も新しく始める
+  holeShots = [];
   lastResult = '';
   lastSwing = '';
   trailPointCount = 0;
   trailGeometry.setDrawRange(0, 0);
   updateBallMesh();
   enterAddress(true);
+  // ティーに着いてから紹介を出す。距離はティーからカップまでになる
+  showHoleIntro();
 }
 
 /**
@@ -1179,6 +1295,32 @@ let lastX = 0;
 let moved = 0;
 
 const surface = renderer.domElement;
+
+/**
+ * 画面の左右端から始まった指で、ブラウザの「戻る・進む」が発動しないようにする。
+ *
+ * iOS Safari の端スワイプは `touch-action: none` では止まらず、
+ * **`touchstart` を打ち消したときだけ**止まる。ポインターイベントの
+ * `preventDefault()` では効かないので、ここだけ touch イベントを見る。
+ * 端から始まった指だけを対象にし、それ以外の操作には触らない
+ */
+function blockEdgeSwipe(target: HTMLElement): void {
+  target.addEventListener(
+    'touchstart',
+    (e) => {
+      const guard = G.edgeSwipeGuard;
+      for (const touch of Array.from(e.touches)) {
+        if (touch.clientX <= guard || touch.clientX >= window.innerWidth - guard) {
+          e.preventDefault();
+          return;
+        }
+      }
+    },
+    { passive: false },
+  );
+}
+blockEdgeSwipe(surface);
+blockEdgeSwipe(strokeCanvas);
 
 surface.addEventListener('pointerdown', (e) => {
   if (pointerId !== null) return;
@@ -1320,6 +1462,8 @@ renderer.setAnimationLoop((now) => {
     return;
   }
 
+  updateHoleIntro(dt);
+
   const transitioning = rig.update(dt);
 
   switch (state) {
@@ -1383,11 +1527,13 @@ renderer.setAnimationLoop((now) => {
           syncLineVisibility();
           rig.transition(resultPose(shotStart, ball, cup, visualGreen), G.result.transition);
           // カップイン後は終了カードへ移るので、次の一打の案内は出さない
-          notice = holeOutPending() || practiceEndPending() ? '' : t().noticeNextPutt;
+          if (holeOutPending() || practiceEndPending()) notice = '';
+          else if (!penaltyResultPending()) notice = t().noticeNextPutt;
         }
       } else if (holeOutPending() || practiceEndPending()) {
-        // 最後の一打の軌跡を見せてからカードを重ねる
-        cardElapsed += dt;
+        // 最後の一打の軌跡を見せてからカードを重ねる。
+        // 遷移中に数え始めると、俯瞰でラインが見える前にカードが重なってしまう
+        if (!rig.transitioning) cardElapsed += dt;
         if (cardElapsed >= G.round.cardDelay) {
           if (holeOutPending()) enterHoleOut();
           else enterPracticeEnd();
@@ -1414,10 +1560,24 @@ ensurePixelFont(language());
 
 const hud = {
   root: document.getElementById('hud')!,
+  resultAlert: document.getElementById('result-alert')!,
   state: document.getElementById('hud-state')!,
   view: document.getElementById('hud-view')!,
   aim: document.getElementById('hud-aim')!,
-  shots: document.getElementById('hud-shots')!,
+  holeNumber: document.getElementById('hud-hole-number')!,
+  holeLength: document.getElementById('hud-hole-length')!,
+  holePar: document.getElementById('hud-hole-par')!,
+  progress: document.querySelector<HTMLElement>('#hud .progress')!,
+  shotLabel: document.getElementById('hud-shot-label')!,
+  shotValue: document.getElementById('hud-shot-value')!,
+  totalRow: document.getElementById('hud-total')!,
+  totalLabel: document.getElementById('hud-total-label')!,
+  totalValue: document.getElementById('hud-total-value')!,
+  pinLabel: document.getElementById('hud-pin-label')!,
+  pinValue: document.getElementById('hud-pin-value')!,
+  holeIntro: document.getElementById('hole-intro')!,
+  holeIntroNumber: document.getElementById('hole-intro-number')!,
+  holeIntroDetail: document.getElementById('hole-intro-detail')!,
   swing: document.getElementById('hud-swing')!,
   result: document.getElementById('hud-result')!,
   notice: document.getElementById('hud-notice')!,
@@ -1443,6 +1603,8 @@ const courseShuffle = document.getElementById('course-shuffle') as HTMLButtonEle
 const giveUpControl = document.getElementById('giveup-control')!;
 const giveUpButton = document.getElementById('giveup') as HTMLButtonElement;
 const giveUpFill = document.getElementById('giveup-fill') as HTMLSpanElement;
+const giveUpSizeIdle = document.getElementById('giveup-size-idle') as HTMLSpanElement;
+const giveUpSizeHolding = document.getElementById('giveup-size-holding') as HTMLSpanElement;
 const giveUpLabel = document.getElementById('giveup-label') as HTMLSpanElement;
 const strokeControls = document.getElementById('stroke-controls')!;
 const strokeBack = document.getElementById('stroke-back') as HTMLButtonElement;
@@ -1512,7 +1674,9 @@ const scoreOverlay = document.getElementById('score-overlay') as HTMLDivElement;
 const scoreCard = document.getElementById('score-card') as HTMLDivElement;
 const scoreTitle = document.getElementById('score-title')!;
 const scoreHeadline = document.getElementById('score-headline')!;
+const scoreStrokes = document.getElementById('score-strokes')!;
 const scoreSub = document.getElementById('score-sub')!;
+const scoreNote = document.getElementById('score-note')!;
 const scoreTable = document.getElementById('score-table') as HTMLTableElement;
 const scoreRows = document.getElementById('score-rows')!;
 const scoreHint = document.getElementById('score-hint') as HTMLDivElement;
@@ -1537,23 +1701,64 @@ function hideScoreOverlay(): void {
   scoreCard.classList.remove('list');
 }
 
-/** 打数とパー差の見出し。「3 打 ±0」 */
-function strokesHeadline(strokes: number, par: number): string {
-  return i18n.strokesHeadline(strokes, formatToPar(strokes - par));
+/**
+ * カードの見出し。**HUDと同じ組み方**で、見出しを小さく沈めて数字を明るく出す。
+ * パー差は中継の規約に合わせ、アンダーを赤、オーバーを青にする
+ */
+function readoutNode(label: string, value: string, tone?: number): HTMLElement {
+  const root = document.createElement('span');
+  root.className = 'readout';
+  const labelNode = document.createElement('span');
+  labelNode.className = 'readout-label';
+  labelNode.textContent = label;
+  const valueNode = document.createElement('span');
+  valueNode.className = 'readout-value';
+  if (tone !== undefined && tone !== 0) valueNode.classList.add(tone < 0 ? 'under' : 'over');
+  valueNode.textContent = value;
+  root.append(labelNode, valueNode);
+  return root;
+}
+
+/**
+ * このホールの結果を5段階で返す。カードの判定語と同じ区切り方。
+ * ギブアップはカップインしていないので `none`（音を鳴らさない）。
+ */
+function holeOutResult(strokes: number, par: number, holedOut: boolean): string {
+  if (!holedOut) return 'none';
+  const diff = strokes - par;
+  if (diff <= -2) return 'eagle';
+  if (diff === -1) return 'birdie';
+  if (diff === 0) return 'par';
+  if (diff === 1) return 'bogey';
+  return 'double';
+}
+
+/** 判定語（BIRDIE など）を、パー差の色付きで見出しへ入れる */
+function showVerdict(strokes: number, par: number, holedOut: boolean): void {
+  const diff = strokes - par;
+  scoreHeadline.className = 'verdict';
+  if (diff !== 0) scoreHeadline.classList.add(diff < 0 ? 'under' : 'over');
+  scoreHeadline.textContent = i18n.holeVerdict(strokes, par, holedOut);
+  scoreStrokes.textContent = i18n.strokesText(strokes);
+  // カードが出たことと結果を、音の側（`src/audio-bootstrap.ts`）へ渡す。
+  // 同じ結果が続いても属性を書けば変更として届くので、毎ホール必ず鳴る
+  scoreTitle.dataset.result = holeOutResult(strokes, par, holedOut);
 }
 
 /** ホールアウトのカード。今のホールの結果と、ここまでの合計を出す */
 function showHoleOutCard(current: Round): void {
   const last = current.scores[current.scores.length - 1];
   scoreTitle.dataset.screen = 'hole-out';
-  scoreTitle.textContent = `HOLE ${last.number} / ${current.holeCount}`;
-  scoreHeadline.textContent = strokesHeadline(last.strokes, last.par);
-  scoreSub.textContent = i18n.holeOutSub(
-    last.par,
-    last.holedOut,
-    current.totalStrokes,
-    formatToPar(current.toPar),
+  // PARはそのホールの素性なので、ホール番号と同じ行に置く
+  scoreTitle.textContent = i18n.holeCardTitle(last.number, current.holeCount, last.par);
+  showVerdict(last.strokes, last.par, last.holedOut);
+  // パー差と打数の合計は別物なので、欄を分けて離す。
+  // 英語のリーダーボードと同じく、`TOTAL` が指すのはパー差のほう
+  scoreSub.replaceChildren(
+    readoutNode(i18n.LABEL_TOTAL, i18n.formatDiff(current.toPar), current.toPar),
+    readoutNode(i18n.LABEL_STROKES, String(current.totalStrokes)),
   );
+  scoreNote.textContent = '';
   scoreTable.hidden = true;
   scoreRows.replaceChildren();
   scoreHint.hidden = false;
@@ -1568,9 +1773,19 @@ function showHoleOutCard(current: Round): void {
 function showRoundEndCard(current: Round): void {
   const gaveUp = current.scores.some((hole) => !hole.holedOut);
   scoreTitle.dataset.screen = 'round-end';
+  // ラウンド終了に判定語は無い。ホールの結果音を持ち越さないよう消す
+  delete scoreTitle.dataset.result;
   scoreTitle.textContent = i18n.roundEndTitle(selectedTour.name[language()]);
-  scoreHeadline.textContent = strokesHeadline(current.totalStrokes, current.totalPar);
-  scoreSub.textContent = i18n.roundEndSub(current.holeCount, current.totalPar, gaveUp);
+  // ラウンドには判定語が無いので、主役は中継のリーダーボードと同じく通算パー差にする
+  scoreHeadline.className = 'verdict';
+  if (current.toPar !== 0) scoreHeadline.classList.add(current.toPar < 0 ? 'under' : 'over');
+  scoreHeadline.textContent = i18n.formatDiff(current.toPar);
+  scoreStrokes.textContent = i18n.strokesText(current.totalStrokes);
+  scoreSub.replaceChildren(
+    readoutNode(i18n.LABEL_HOLES, String(current.holeCount)),
+    readoutNode(i18n.LABEL_PAR, String(current.totalPar)),
+  );
+  scoreNote.textContent = gaveUp ? t().gaveUpNote : '';
   scoreRows.replaceChildren(
     scoreHeaderRow(),
     ...current.scores.map(scoreRow),
@@ -1590,9 +1805,11 @@ function showRoundEndCard(current: Round): void {
 /** 練習のカップイン後。結果と、打ち直すかトップへ戻るかの選択を出す */
 function showPracticeEndCard(): void {
   scoreTitle.dataset.screen = 'practice-end';
-  scoreTitle.textContent = t().practiceEnd;
-  scoreHeadline.textContent = strokesHeadline(shots, course.par);
-  scoreSub.textContent = `PAR ${course.par}`;
+  // 練習はホールを進めないので、ホール番号を出さずPARだけを置く
+  scoreTitle.textContent = i18n.holeBadgePar(course.par);
+  showVerdict(shots, course.par, true);
+  scoreSub.replaceChildren();
+  scoreNote.textContent = '';
   scoreTable.hidden = true;
   scoreRows.replaceChildren();
   scoreHint.hidden = true;
@@ -1629,7 +1846,7 @@ function scoreRow(hole: HoleScore): HTMLTableRowElement {
     scoreCell('td', String(hole.par)),
     // ギブアップしたホールは印を付けて、カップインしたホールと区別する
     scoreCell('td', hole.holedOut ? String(hole.strokes) : `${hole.strokes}*`),
-    scoreCell('td', formatToPar(hole.strokes - hole.par), 'diff'),
+    scoreCell('td', i18n.formatDiff(hole.strokes - hole.par), 'diff'),
   );
   return row;
 }
@@ -1641,7 +1858,7 @@ function scoreTotalRow(current: Round): HTMLTableRowElement {
     scoreCell('th', t().colTotal),
     scoreCell('td', String(current.totalPar)),
     scoreCell('td', String(current.totalStrokes)),
-    scoreCell('td', formatToPar(current.toPar), 'diff'),
+    scoreCell('td', i18n.formatDiff(current.toPar), 'diff'),
   );
   return row;
 }
@@ -1695,6 +1912,7 @@ for (const button of cameraButtons) {
  */
 let giveUpTimer: number | null = null;
 let giveUpStartedAt = 0;
+let giveUpPointerId: number | null = null;
 
 function giveUpHoldProgress(): number {
   if (giveUpTimer === null) return 0;
@@ -1706,11 +1924,23 @@ function holdingGiveUp(): boolean {
   return giveUpTimer !== null;
 }
 
+function releaseGiveUpPointer(): void {
+  const id = giveUpPointerId;
+  giveUpPointerId = null;
+  if (id === null || !giveUpButton.hasPointerCapture(id)) return;
+  try {
+    giveUpButton.releasePointerCapture(id);
+  } catch {
+    // 捕捉がすでに解除されているだけなので無視する
+  }
+}
+
 function cancelGiveUpHold(): void {
   if (giveUpTimer !== null) {
     clearTimeout(giveUpTimer);
     giveUpTimer = null;
   }
+  releaseGiveUpPointer();
   giveUpFill.style.width = '0%';
 }
 
@@ -1719,8 +1949,16 @@ function startGiveUpHold(e: PointerEvent): void {
   if (!canGiveUp()) return;
   e.preventDefault();
   giveUpStartedAt = performance.now();
+  giveUpPointerId = e.pointerId;
+  try {
+    // PCでも押下中の見た目移動や微小なマウス移動で長押しが途切れないようにする
+    giveUpButton.setPointerCapture(e.pointerId);
+  } catch {
+    // 捕捉できない環境では従来のイベント処理へフォールバックする
+  }
   giveUpTimer = window.setTimeout(() => {
     giveUpTimer = null;
+    releaseGiveUpPointer();
     giveUpFill.style.width = '0%';
     giveUp();
   }, G.round.giveUpHoldMs);
@@ -1729,7 +1967,10 @@ function startGiveUpHold(e: PointerEvent): void {
 giveUpButton.addEventListener('pointerdown', startGiveUpHold);
 giveUpButton.addEventListener('pointerup', cancelGiveUpHold);
 giveUpButton.addEventListener('pointercancel', cancelGiveUpHold);
-giveUpButton.addEventListener('pointerleave', cancelGiveUpHold);
+giveUpButton.addEventListener('pointerleave', (e) => {
+  // 捕捉中は下のpointermoveで実座標を判定する。CSSの押下移動だけでは取り消さない
+  if (!giveUpButton.hasPointerCapture(e.pointerId)) cancelGiveUpHold();
+});
 // タッチは押した要素へ暗黙に捕捉されるので、指がボタンから外れても pointerleave が来ない。
 // 位置を見て自分で取り消す。押したまま指をずらせば、決まる前にやめられる
 giveUpButton.addEventListener('pointermove', (e) => {
@@ -1809,11 +2050,10 @@ function updateControls(): void {
   giveUpControl.style.display = showGiveUp ? 'block' : 'none';
   // 押し続けないと決まらないことは、ボタンの中で先に言っておく。
   // 帯（#giveup-fill）はもう押している人にしか見えないので、それだけでは気づけない
-  giveUpLabel.textContent = holdingGiveUp()
-    ? t().giveUpHolding
-    : round
-      ? t().giveUp
-      : t().giveUpToTee;
+  const idleGiveUpLabel = round ? t().giveUp : t().giveUpToTee;
+  giveUpSizeIdle.textContent = idleGiveUpLabel;
+  giveUpSizeHolding.textContent = t().giveUpHolding;
+  giveUpLabel.textContent = holdingGiveUp() ? t().giveUpHolding : idleGiveUpLabel;
   giveUpFill.style.width = `${(giveUpHoldProgress() * 100).toFixed(1)}%`;
 
   const inAddress = state === 'ADDRESS';
@@ -1841,29 +2081,96 @@ function updateControls(): void {
 }
 
 /**
- * プレイ中に常時出す1行。ホール・PAR・打数・スコア・カップまでの距離だけを並べる。
- *
- * HUDが画面を食うとプレイの邪魔になるので、これ以上は増やさない。
- * 視点名・方角・直前の結果・スワイプの数値は `?debug=1` のときだけ出す。
- * パー差はホールアウト済みのぶんだけで、プレイ中のホールは打数の側に出る
+ * ホールの全長 [m]。中継の「499Y」に当たる。
+ * ティーとカップを直線で結んだ距離ではなく、**遊べる芝の中心線（route）に沿った長さ**
  */
-function progressText(): string {
-  const distance = `${distanceToCup().toFixed(2)}m`;
-  // 「・」で区切ると横幅が足りず2行になる。区切りは空白だけにして1行に収める
-  if (!round) return i18n.practiceProgressText(course.par, shots, distance);
-  return i18n.progressText(
-    round.holeNumber,
-    round.holeCount,
-    course.par,
-    shots,
-    formatToPar(round.toPar),
-    distance,
-  );
+function holeLength(): number {
+  let total = 0;
+  for (let i = 1; i < course.route.length; i++) {
+    const a = course.route[i - 1];
+    const b = course.route[i];
+    total += Math.hypot(b.x - a.x, b.z - a.z);
+  }
+  return total;
+}
+
+/**
+ * ホール入り口の紹介表示の残り時間 [s]。0 になったらフェードで消す。
+ * `setTimeout` ではなくフレームの経過時間で数え、タブが止まっている間は進めない
+ */
+let holeIntroRemaining = 0;
+
+/**
+ * ホールの入り口で一度だけ、何ホール目・PAR・ティーからカップまでを大きく見せる。
+ * 中継のホール紹介にあたる。**ツアーだけ**（練習は同じホールを打ち直すので出さない）
+ */
+function showHoleIntro(): void {
+  if (!round) return;
+  hud.holeIntroNumber.textContent = i18n.holeIntroNumber(round.holeNumber);
+  // HUDのホール表示と同じ全長を出す。別の数字を見せると混乱する
+  hud.holeIntroDetail.textContent = i18n.holeIntroDetail(course.par, `${Math.round(holeLength())}m`);
+  // 出るときはカメラの切り替わりと同時にパッと出す
+  hud.holeIntro.style.transitionDuration = '0s';
+  hud.holeIntro.classList.add('show');
+  holeIntroRemaining = G.round.holeIntro.duration;
+}
+
+function updateHoleIntro(dt: number): void {
+  if (holeIntroRemaining <= 0) return;
+  holeIntroRemaining -= dt;
+  if (holeIntroRemaining > 0) return;
+  // 消えるときだけフェードさせる
+  hud.holeIntro.style.transitionDuration = `${G.round.holeIntro.fade}s`;
+  hud.holeIntro.classList.remove('show');
+}
+
+/**
+ * 今どの一打の話をしているか。中継の「第2打」に当たる。
+ * 構えている間はこれから打つ一打、転がってから停止までは今打った一打を指す
+ */
+function currentShotNumber(): number {
+  if (state === 'ADDRESS' || state === 'STROKE') return shots + 1;
+  return Math.max(shots, 1);
+}
+
+/**
+ * プレイ中に常時出す1行。ホール・PAR・打数・カップまでの距離・通算パー差を並べる。
+ *
+ * HUDが画面を食うとプレイの邪魔になるので、**行はこれ以上増やさない**。
+ * 代わりに中継と同じく、今の打数だけを大きく出して他を従属させる（見た目は index.html）。
+ * 視点名・方角・直前の結果・スワイプの数値は `?debug=1` のときだけ出す。
+ * 通算パー差はホールアウト済みのぶんだけなので、打数から離して語を付ける
+ */
+function updateProgress(hidden: boolean): void {
+  hud.progress.classList.toggle('is-off', hidden);
+  if (hidden) return;
+  // 練習はホールを進めないので、ホール番号も通算も出さない
+  hud.holeNumber.textContent = round ? i18n.holeBadgeNumber(round.holeNumber) : '';
+  // ホール全長は中継のヤード表記と同じく整数で出す。残り距離（小数2桁）と桁を合わせない
+  hud.holeLength.textContent = `${Math.round(holeLength())}m`;
+  hud.holePar.textContent = i18n.holeBadgePar(course.par);
+  hud.shotValue.textContent = String(currentShotNumber());
+  hud.pinValue.textContent = `${distanceToCup().toFixed(2)}m`;
+  hud.totalRow.classList.toggle('is-off', round === null);
+  if (round) {
+    hud.totalValue.textContent = i18n.formatDiff(round.toPar);
+    hud.totalValue.classList.toggle('under', round.toPar < 0);
+    hud.totalValue.classList.toggle('over', round.toPar > 0);
+  }
 }
 
 function updateHud(): void {
-  // スコアカードを出している間は、同じことを言うHUDを引っ込めてカードだけ読ませる
-  const showingScore = state === 'HOLE_OUT' || state === 'ROUND_END';
+  // スコアカードを出している間は、同じことを言うHUDを引っ込めてカードだけ読ませる。
+  // 練習終了もカードを出すので同じ扱いにする（帯の `SHOT 3` とカードの `3 STROKES` が並ばない）
+  const showingScore =
+    state === 'HOLE_OUT' || state === 'ROUND_END' || state === 'PRACTICE_END';
+  hud.resultAlert.textContent =
+    state === 'RESULT' &&
+    resultReady &&
+    !rig.transitioning &&
+    roller.status === 'outOfBounds'
+      ? t().outOfBoundsAlert
+      : '';
   // 文字が消えるときは、後ろの帯も一緒に消す（空の帯だけが残らないように）
   hud.root.classList.toggle('quiet', showingScore);
   // 状態名は英語の内部名なので、通常のプレイ画面には出さない
@@ -1890,7 +2197,7 @@ function updateHud(): void {
     hud.aim.textContent = '';
   }
   // カードが同じことを言うので、ホールアウト中は進行の1行も引っ込める
-  hud.shots.textContent = showingScore ? '' : progressText();
+  updateProgress(showingScore);
   // 直前の結果とスワイプの数値は帯が伸びるので開発用だけに出す
   hud.swing.textContent = debugEnabled && !showingScore ? lastSwing : '';
   hud.result.textContent = debugEnabled && !showingScore ? lastResult : '';
@@ -1944,6 +2251,11 @@ window.addEventListener('resize', resize);
 
 // --- 開始 -----------------------------------------------------------------
 
+// 帯の見出しは言語で変わらないので、一度だけ入れる
+hud.shotLabel.textContent = i18n.LABEL_SHOT;
+hud.totalLabel.textContent = i18n.LABEL_TOTAL;
+hud.pinLabel.textContent = i18n.LABEL_PIN;
+
 buildTerrain();
 applyPixelMode();
 updatePutterTuningUi();
@@ -1951,3 +2263,4 @@ roller.place(course.tee.x, course.tee.z);
 ball.set(roller.x, roller.z);
 updateBallMesh();
 enterAddress(true);
+showHoleIntro();

@@ -40,7 +40,9 @@
 
 - 変更したら `npm run dev` が通ることを確認
 - **操作感に関わる変更は実機確認が必要。** その場合は「実機で確認してください」と明示して止まること。自分で「良くなった」と判断しない
-- **main への push で自動デプロイされる。** ブランチごとのプレビュー環境はない。実機で確認するにはマージが要る
+- **main への push で自動デプロイされる。**
+  - **main 以外への push では Cloudflare のプレビューが上がる**（`Preview on Cloudflare Workers`）。
+    URLは Actions の実行結果の Summary に出る。本番は差し替わらないので、マージ前に実機で確認できる
   - 本番（Cloudflare Workers）: `https://putt.hanage.app/`
   - 退避先（GitHub Pages、当面併走）: `https://hanagemaru.github.io/putt/`
   - スワイプ計測: `https://putt.hanage.app/swipe-test/`

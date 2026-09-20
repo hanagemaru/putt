@@ -1,4 +1,5 @@
 import { loadPutterShape, type PutterShapeId } from './putter-shape';
+import { discardContext, isContextDead, resumeContext } from './audio-context';
 
 const STORAGE_KEY = 'putt-sound-enabled';
 
@@ -42,11 +43,10 @@ const IMPACT_VOLUME = {
   exponent: 1.75,
 };
 
-// 旗竿はゲーム進行上の補助音に留め、カップ音より明確に奥へ置く。
-// 元素材の鋭い高域がiPhoneで目立つため、音量を大きく絞りつつローパスも強める。
-const FLAGSTICK_GAIN = 0.11;
+// 旗竿/カップはBGMを遮らない補助音として、前版からさらに約半分まで下げる。
+const FLAGSTICK_GAIN = 0.055;
 const FLAGSTICK_LOWPASS_HZ = 3200;
-const CUP_GAIN = 0.28;
+const CUP_GAIN = 0.14;
 
 /**
  * CC0 の実録素材を Web Audio API で鳴らす。
@@ -62,6 +62,8 @@ export class PuttAudio {
   private readonly buffers = new Map<SampleName, AudioBuffer>();
   private readonly impactBuffers = new Map<PutterShapeId, AudioBuffer>();
   private loading: Promise<void> | null = null;
+  /** context を作り直したときに、古い context 由来の読み込み結果を混ぜないための世代番号。 */
+  private generation = 0;
 
   isEnabled(): boolean {
     return this.enabled;
@@ -83,14 +85,33 @@ export class PuttAudio {
   async unlock(): Promise<void> {
     if (!this.enabled) return;
     const context = this.ensureContext();
-    if (context.state === 'suspended') {
-      try {
-        await context.resume();
-      } catch {
-        return;
-      }
-    }
-    if (context.state === 'running') void this.preloadSamples(context);
+    if (!(await resumeContext(context))) return;
+    void this.preloadSamples(context);
+  }
+
+  /**
+   * バックグラウンドから戻ったときに呼ぶ。
+   * まず resume を試し、それでも復帰しない context だけ作り直す。
+   */
+  async revive(): Promise<void> {
+    if (!this.enabled) return;
+    await this.unlock();
+
+    const context = this.context;
+    if (!context) return;
+    if (!(await isContextDead(context))) return;
+
+    this.discard();
+    await this.unlock();
+  }
+
+  private discard(): void {
+    discardContext(this.context);
+    this.context = null;
+    this.generation++;
+    this.buffers.clear();
+    this.impactBuffers.clear();
+    this.loading = null;
   }
 
   /** 打球初速から、実際に使う打音の音量係数を返す。 */
@@ -222,6 +243,7 @@ export class PuttAudio {
   private preloadSamples(context: AudioContext): Promise<void> {
     if (this.loading) return this.loading;
 
+    const generation = this.generation;
     this.loading = Promise.all(
       (Object.entries(SAMPLE_URLS) as Array<[SampleName, string]>).map(async ([name, url]) => {
         if (this.buffers.has(name)) return;
@@ -230,6 +252,8 @@ export class PuttAudio {
           if (!response.ok) return;
           const data = await response.arrayBuffer();
           const buffer = await context.decodeAudioData(data);
+          // 作り直しをまたいだ結果は、新しい context のバッファへ混ぜない。
+          if (generation !== this.generation) return;
           this.buffers.set(name, buffer);
           if (name === 'impact') this.prepareImpactBuffers(context, buffer);
         } catch {
@@ -239,7 +263,7 @@ export class PuttAudio {
     )
       .then(() => undefined)
       .finally(() => {
-        this.loading = null;
+        if (generation === this.generation) this.loading = null;
       });
 
     return this.loading;

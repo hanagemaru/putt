@@ -1,0 +1,53 @@
+name: Apply D1 migrations
+
+# ランキングのD1（`putt-ranking`）へ `migrations/` の連番SQLを適用する。
+#
+# **手で押したときだけ走る。** デプロイに混ぜていないのは、表の作り直しを含む移行を
+# 気づかないうちに流さないため（`DEPLOY.md`「D1」）。
+#
+# `wrangler d1 migrations apply` は適用済みの版を D1 側の表に覚えるので、
+# 二度押しても同じ移行は流れない。`0001_ranking.sql` は全て IF NOT EXISTS なので、
+# コンソールで先に作ってあっても素通りする。
+#
+# まず `dry: true` で「何が流れるか」だけ見るのが安全。
+on:
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: '適用せず、未適用の移行を一覧するだけ'
+        type: boolean
+        default: true
+
+concurrency:
+  group: migrate-d1
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    if: vars.CLOUDFLARE_DEPLOY == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: List pending migrations
+        run: npx wrangler d1 migrations list putt-ranking --remote
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Apply migrations
+        if: ${{ !inputs.dry }}
+        run: npm run db:migrate
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Show schema
+        run: |
+          npx wrangler d1 execute putt-ranking --remote --command \
+            "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
