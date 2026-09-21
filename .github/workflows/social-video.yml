@@ -1,0 +1,54 @@
+name: Social Video
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/social-video-recorder]
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Find a deterministic cup-in
+        run: npm run --silent social:solve > social-plan.json
+      - name: Build
+        run: npm run build
+        env:
+          VITE_SOCIAL_RECORDING: "true"
+      - name: Install recording browser
+        run: |
+          npm install --no-save --package-lock=false playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Start preview
+        run: |
+          npm run preview -- --host 127.0.0.1 --port 4173 > /tmp/putt-preview.log 2>&1 &
+          npx --yes wait-on http://127.0.0.1:4173/putt/
+      - name: Record real gameplay
+        run: node scripts/record-social-video.mjs
+      - name: Prepare post text
+        run: node scripts/generate-social-post.mjs
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Encode MP4 for X
+        run: |
+          cat social-video-frames/stats.json
+          ffprobe -v error -show_entries stream=width,height -of default=nw=1 social-first-frame.jpg
+          ffmpeg -y -f concat -safe 0 -i social-video-frames/frames.ffconcat -vf "minterpolate=fps=60:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1,scale=780:1280:flags=neighbor,format=yuv420p" -c:v libx264 -preset slow -crf 17 -profile:v high -level 4.2 -movflags +faststart putt-social.mp4
+          ffprobe -v error -show_entries format=duration,size,bit_rate -show_entries stream=width,height,codec_name,r_frame_rate,avg_frame_rate -of default=nw=1 putt-social.mp4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: putt-social-video
+          path: |
+            putt-social.mp4
+            social-plan.json
+            social-post.txt
+            social-video-frames/stats.json
+            social-first-frame.jpg
+          retention-days: 14

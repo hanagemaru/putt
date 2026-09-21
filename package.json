@@ -18,7 +18,8 @@
     "maps": "node --experimental-transform-types --import ./scripts/ts-resolve.mjs scripts/course-maps.ts",
     "font:pixel": "node scripts/build-pixel-font.mjs",
     "survey:holes": "node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/survey-holes.ts",
-    "survey:v2": "node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/survey-v2.ts"
+    "survey:v2": "node --experimental-strip-types --import ./scripts/ts-resolve.mjs scripts/survey-v2.ts",
+    "social:solve": "node --experimental-transform-types --import ./scripts/ts-resolve.mjs scripts/solve-social-shot.ts"
   },
   "dependencies": {
     "lil-gui": "^0.21.0",

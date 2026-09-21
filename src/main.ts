@@ -97,6 +97,11 @@ const TERRAIN_LABEL: Record<TerrainType, string> = {
 function courseWithSeed(value: number): CourseDefinition {
   const seed = value >>> 0;
   if (usePrototypeCourse) return { ...PROTOTYPE_COURSE, seed };
+  // SNS録画では固定ツアーの1ホールを練習モードで切り出す。
+  // ?social=1 が無い通常プレイのコース選択には影響しない。
+  if (socialRecording && urlParams.get('tour') !== null) {
+    return tourHoleCourse(selectedTour, seed);
+  }
   if (useGeneratorV2) return generateCourseV2(seed, generateOptionsFor(setupForSeed(seed)));
   // 生成器はツアーが持つが、**ホール単位で上書きできる**（BEGINNER は v1 と v2 を混ぜている）。
   // 組み立ては `hole-build.ts` に1本化してある（検証側と食い違わせないため）
@@ -156,6 +161,9 @@ function modeFromUrl(): GameMode {
 }
 
 const mode = modeFromUrl();
+// Recording builds only; never expose automated shots in ranked tours.
+const socialRecording = import.meta.env.VITE_SOCIAL_RECORDING === 'true'
+  && urlParams.get('social') === '1' && mode === 'practice';
 
 /**
  * 見た目のテーマ（`docs/PLAYTEST_BACKLOG.md` §12）。**空・光の強さ・地面の色・木だけ**を
@@ -192,6 +200,9 @@ const tuning = urlParams.get('tune') === '1';
 function setupForSeed(value: number): CourseSetup {
   const seed = value >>> 0;
   if (mode === 'tour') return setupOfSeed(selectedTour, seed);
+  if (socialRecording && urlParams.get('tour') !== null) {
+    return setupOfSeed(selectedTour, seed);
+  }
   return generatorTour ? setupOfSeed(generatorTour, seed) : DEFAULT_SETUP;
 }
 
@@ -989,6 +1000,62 @@ function returnToAddress(): void {
 }
 
 /** インパクト（§4.6）。計測結果を初速と方向に直して打ち出す */
+/**
+ * SNS録画専用の最小ドライバ。
+ * ?social=1 のときだけ公開し、本番プレイでは window に何も足さない。
+ */
+declare global {
+  interface Window {
+    __puttSocial?: {
+      state: () => State;
+      position: () => { ball: { x: number; z: number }; cup: { x: number; z: number } };
+      launch: (speedMs: number, direction: number) => boolean;
+      aim: (direction: number) => boolean;
+      lastShot: () => { speed: number; direction: number } | null;
+      next: () => boolean;
+      map: () => boolean;
+    };
+  }
+}
+
+function installSocialDriver(): void {
+  if (!socialRecording) return;
+  window.__puttSocial = {
+    state: () => state,
+    position: () => ({
+      ball: { x: ball.x, z: ball.y },
+      cup: { x: cup.x, z: cup.y },
+    }),
+    launch: (speedMs, direction) => {
+      if (state !== 'ADDRESS') return false;
+      aim = direction;
+      updateAimGuide();
+      launch(speedMs, 0);
+      return true;
+    },
+    aim: (direction) => {
+      if (state !== 'ADDRESS') return false;
+      aim = direction;
+      updateAimGuide();
+      return true;
+    },
+    lastShot: () => {
+      const shot = holeShots[holeShots.length - 1];
+      return shot ? { speed: shot[0], direction: shot[1] } : null;
+    },
+    next: () => {
+      if (state !== 'RESULT' || holeFinished()) return false;
+      nextPutt();
+      return true;
+    },
+    map: () => {
+      if (state !== 'ADDRESS') return false;
+      toggleMap();
+      return true;
+    },
+  };
+}
+
 function launch(speedMs: number, launchAngle: number): void {
   // 画面の左＝狙い方向。スワイプが画面下へ流れた分だけ狙いの左へ出る
   const direction = aim - launchAngle;
@@ -2322,3 +2389,4 @@ ball.set(roller.x, roller.z);
 updateBallMesh();
 enterAddress(true);
 showHoleIntro();
+installSocialDriver();
