@@ -347,7 +347,7 @@ export function ensureRankingStyles(): void {
     .ranking-readout-value {
       color: #ffe66d;
     }
-    /* 何を預かるか。消し方のすぐ上に、同じ大きさの文字で置く */
+    /* プライバシーポリシーへのリンク。記録の削除のすぐ上に置く */
     .ranking-privacy {
       margin-top: 18px;
       text-align: center;
