@@ -1,12 +1,11 @@
 import * as THREE from 'three';
 
-/** OB境界の濃さを丸める段数。1本ずつ stroke しないための粒度 */
-const OB_ALPHA_LEVELS = 8;
-
 /** OB境界を高解像度Canvasへ描くときの見た目 */
 export interface ObBoundaryOverlay {
   /** 線分の端点。3つで1点、2点で1本 */
   points: Float32Array;
+  /** 線が乗っている地面のおおよその高さ [m]。距離の薄まりを画面の縦位置へ置き換えるのに使う */
+  groundY: number;
   color: number;
   widthPx: number;
   opacity: number;
@@ -33,6 +32,7 @@ export class SmoothLineOverlay {
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
   private readonly tmp = new THREE.Vector3();
+  private readonly tmp2 = new THREE.Vector3();
   private readonly cameraTmp = new THREE.Vector3();
   private cssWidth = 1;
   private cssHeight = 1;
@@ -102,52 +102,81 @@ export class SmoothLineOverlay {
    * 3Dのドット化とは別にこの高解像度Canvasへ描くので**なめらかに出る**代わりに、
    * このCanvasは深度を持てないので**地形にも木にも隠れない**。
    * 距離で薄くすることで、遠くの線が主張しすぎないようにしている。
+   *
+   * **線分をまとめて1回で stroke する。** 半透明の線を2回に分けて描くと、
+   * 隣り合う線分の丸い端が重なったところだけ濃くなり、**一定間隔の点に見える**
+   * （実機で指摘。以前は濃さを8段に丸めて段ごとに stroke していたので、
+   * 段の変わり目に点が出ていた）。1回の stroke なら、線分が重なっても濃さは変わらない。
+   *
+   * 距離による薄まりは、**画面の縦方向のグラデーション**に置き換えて表す。
+   * 線は地面に乗っているので、遠いほど画面の上に来る。
+   * 段に丸める必要がなくなるので、薄まり方もなめらかになる
    */
   private drawObBoundary(camera: THREE.PerspectiveCamera, ob: ObBoundaryOverlay): void {
     const segments = ob.points.length / 6;
     if (segments === 0) return;
-    const cameraWorld = this.cameraTmp;
-    camera.getWorldPosition(cameraWorld);
-    const span = Math.max(ob.fadeFar - ob.fadeNear, 0.0001);
 
-    // 濃さは線分ごとに違うが、1本ずつ stroke すると毎フレーム数百回になる。
-    // 段に丸めて同じ濃さのものをまとめ、段の数だけ stroke する
-    const paths: Path2D[] = [];
-    for (let i = 0; i <= OB_ALPHA_LEVELS; i++) paths.push(new Path2D());
+    const path = new Path2D();
     let drew = false;
-
     for (let s = 0; s < segments; s++) {
       const a = this.projectPoint(camera, ob.points, s * 2);
       const b = this.projectPoint(camera, ob.points, s * 2 + 1);
       if (!a || !b) continue;
-      let alpha = ob.opacity;
-      if (!ob.mapMode) {
-        // 線分の中点までの距離で決める。3D版はピクセルごとだが、見た目の差は出ない
-        const mx = (ob.points[s * 6] + ob.points[s * 6 + 3]) / 2;
-        const my = (ob.points[s * 6 + 1] + ob.points[s * 6 + 4]) / 2;
-        const mz = (ob.points[s * 6 + 2] + ob.points[s * 6 + 5]) / 2;
-        const distance = Math.hypot(cameraWorld.x - mx, cameraWorld.y - my, cameraWorld.z - mz);
-        const t = Math.min(Math.max((distance - ob.fadeNear) / span, 0), 1);
-        alpha = ob.opacity + (ob.farOpacity - ob.opacity) * t;
-      }
-      const level = Math.round((alpha / Math.max(ob.opacity, 0.0001)) * OB_ALPHA_LEVELS);
-      paths[Math.min(Math.max(level, 0), OB_ALPHA_LEVELS)].moveTo(a.x, a.y);
-      paths[Math.min(Math.max(level, 0), OB_ALPHA_LEVELS)].lineTo(b.x, b.y);
+      path.moveTo(a.x, a.y);
+      path.lineTo(b.x, b.y);
       drew = true;
     }
     if (!drew) return;
 
     const ctx = this.ctx;
     ctx.save();
-    ctx.strokeStyle = new THREE.Color(ob.color).getStyle();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = this.obStrokeStyle(camera, ob);
     ctx.lineWidth = ob.widthPx;
-    for (let i = 0; i <= OB_ALPHA_LEVELS; i++) {
-      const alpha = (i / OB_ALPHA_LEVELS) * ob.opacity;
-      if (alpha <= 0.001) continue;
-      ctx.globalAlpha = alpha;
-      ctx.stroke(paths[i]);
-    }
+    ctx.stroke(path);
     ctx.restore();
+  }
+
+  /**
+   * OB境界の塗り。距離の薄まりを画面の縦方向のグラデーションで表す。
+   *
+   * 地面の上で `fadeNear` / `fadeFar` の位置が画面のどこに来るかを1回だけ測り、
+   * その間を繋ぐ。**真下を向いている間**（打った直後のプレイヤー視点）は
+   * 手前も奥も同じ距離なので、グラデーションにせず一様に描く
+   */
+  private obStrokeStyle(
+    camera: THREE.PerspectiveCamera,
+    ob: ObBoundaryOverlay,
+  ): string | CanvasGradient {
+    // マップは図として読むところなので薄めない
+    if (ob.mapMode) return this.rgba(ob.color, ob.opacity);
+
+    camera.getWorldPosition(this.cameraTmp);
+    camera.getWorldDirection(this.tmp);
+    const forward = Math.hypot(this.tmp.x, this.tmp.z);
+    if (forward > 0.001) {
+      const fx = this.tmp.x / forward;
+      const fz = this.tmp.z / forward;
+      const near = this.projectWorld(
+        camera,
+        this.cameraTmp.x + fx * ob.fadeNear,
+        ob.groundY,
+        this.cameraTmp.z + fz * ob.fadeNear,
+      );
+      const far = this.projectWorld(
+        camera,
+        this.cameraTmp.x + fx * ob.fadeFar,
+        ob.groundY,
+        this.cameraTmp.z + fz * ob.fadeFar,
+      );
+      if (near && far && Math.abs(near.y - far.y) >= 1) {
+        const gradient = this.ctx.createLinearGradient(0, near.y, 0, far.y);
+        gradient.addColorStop(0, this.rgba(ob.color, ob.opacity));
+        gradient.addColorStop(1, this.rgba(ob.color, ob.farOpacity));
+        return gradient;
+      }
+    }
+    return this.rgba(ob.color, ob.opacity);
   }
 
   /**
@@ -246,6 +275,21 @@ export class SmoothLineOverlay {
     return {
       x: (this.tmp.x * 0.5 + 0.5) * this.cssWidth,
       y: (-this.tmp.y * 0.5 + 0.5) * this.cssHeight,
+    };
+  }
+
+  /** ワールド座標1点を画面の CSS px へ。カメラの後ろなら null */
+  private projectWorld(
+    camera: THREE.PerspectiveCamera,
+    x: number,
+    y: number,
+    z: number,
+  ): { x: number; y: number } | null {
+    this.tmp2.set(x, y, z).project(camera);
+    if (this.tmp2.z < -1 || this.tmp2.z > 1) return null;
+    return {
+      x: (this.tmp2.x * 0.5 + 0.5) * this.cssWidth,
+      y: (-this.tmp2.y * 0.5 + 0.5) * this.cssHeight,
     };
   }
 

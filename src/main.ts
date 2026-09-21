@@ -46,6 +46,7 @@ import {
   tourById,
   type CourseSetup,
 } from './course/tour-holes';
+import { cloneTheme, themeById } from './theme';
 import { CourseMapMarker } from './course-map-marker';
 import { ensurePixelFont } from './pixel-font';
 import * as i18n from './i18n';
@@ -157,6 +158,27 @@ function modeFromUrl(): GameMode {
 const mode = modeFromUrl();
 
 /**
+ * 見た目のテーマ（`docs/PLAYTEST_BACKLOG.md` §12）。**空・光の強さ・地面の色・木だけ**を
+ * コースごとに差し替える。ホールの形・物理・自己ベスト・ランキングには関わらない。
+ *
+ * 通常ツアーはセットが持つテーマ、練習モードは既定。
+ * `?theme=<ID>` を付けるとどのコースへも当てられる（**見比べ用**）。
+ * `?gen=v2&setup=<ツアーID>` で1ホールだけ出すときは、そのツアーのテーマで出す
+ */
+const activeTheme = cloneTheme(
+  themeById(
+    urlParams.get('theme') ?? (mode === 'tour' ? selectedTour.theme : generatorTour?.theme) ?? null,
+  ),
+);
+
+/**
+ * URL の `?tune=1` 。**見た目をその場で調整するパネル**を出す（`src/theme-tune.ts`）。
+ * 実機で色や木の大きさの指摘が出たとき、直してプレビューを上げ直す往復をなくすためのもの。
+ * 付けなければ lil-gui ごと読み込まれない
+ */
+const tuning = urlParams.get('tune') === '1';
+
+/**
  * コースの仕立て（うねり・速さ・曲がりの鋭さ・S字・岸なしの池・バンカーの幅・砲台…）。
  *
  * **ホールごとに違うことがある。** LAB はホール単位で仕掛けを入れ替えるので、
@@ -236,7 +258,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, CONFIG.renderer.maxPixe
 app.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(CONFIG.renderer.background);
+scene.background = new THREE.Color(activeTheme.sky);
 
 /**
  * レトロなドット感（試作）。低い解像度のレンダーターゲットに描いて、
@@ -375,15 +397,15 @@ function disposeGroup(group: THREE.Group): void {
 function buildTerrain(): void {
   disposeGroup(terrain);
   disposeGroup(props);
-  greenMesh = new GreenMesh(green, shade, visualHeightScale);
+  greenMesh = new GreenMesh(green, shade, visualHeightScale, activeTheme.surfaces);
   terrain.add(greenMesh.mesh);
   terrain.add(createHole(green, visualHeightScale, course.cup));
   // OB境界の線。3Dではなく高解像度Canvasへ重ねるので、シーンには入れない。
   // 分類を持たない検証用グリーンには境界が無いので null が返る
   obLine = createObBoundaryLine(green, visualHeightScale);
   obLine?.setMapMode(showingCourseMap());
-  props.add(createSurround(green, visualHeightScale));
-  props.add(createTrees(green, seed, visualHeightScale));
+  props.add(createSurround(green, visualHeightScale, activeTheme.surround));
+  props.add(createTrees(green, seed, visualHeightScale, activeTheme.trees));
 }
 
 /**
@@ -412,14 +434,37 @@ function setReadingFlagFade(active: boolean): void {
   });
 }
 
-const dir = new THREE.DirectionalLight(0xffffff, CONFIG.light.directionalIntensity);
+// 平行光は**向きも色もテーマで変えない**。低い光や色付きの光は斜面の陰影を変えるので、
+// 「明るい＝高い」の読みと競合する。テーマが触るのは強さだけ（`CONFIG.themes`）
+const dir = new THREE.DirectionalLight(0xffffff, activeTheme.light.directionalIntensity);
 dir.position.set(
   CONFIG.light.directionalDirection.x,
   CONFIG.light.directionalDirection.y,
   CONFIG.light.directionalDirection.z,
 );
 scene.add(dir);
-scene.add(new THREE.AmbientLight(0xffffff, CONFIG.light.ambientIntensity));
+// 環境光は全頂点へ同じ倍率で掛かる（明暗の比が変わらない）ので、色を付けてよい
+const ambient = new THREE.AmbientLight(
+  activeTheme.light.ambientColor,
+  activeTheme.light.ambientIntensity,
+);
+scene.add(ambient);
+
+if (tuning) {
+  void import('./theme-tune').then(({ setupThemeTuner }) =>
+    setupThemeTuner(activeTheme, {
+      onSky: () => {
+        scene.background = new THREE.Color(activeTheme.sky);
+      },
+      onLight: () => {
+        dir.intensity = activeTheme.light.directionalIntensity;
+        ambient.color.set(activeTheme.light.ambientColor);
+        ambient.intensity = activeTheme.light.ambientIntensity;
+      },
+      onTerrain: () => buildTerrain(),
+    }),
+  );
+}
 
 const ballMesh = new THREE.Mesh(
   new THREE.SphereGeometry(CONFIG.ball.radius, 20, 14),
@@ -661,12 +706,25 @@ function guideBallOccluder(): BallOccluder | null {
   };
 }
 
+/**
+ * OB境界を出す状態。**打った後のカメラでは出さない**（分析の邪魔になる）。
+ *
+ * 例外は `FOLLOW`。**打った直後の最初のプレイヤー視点**で、
+ * ここだけは残して「いま境界を越えたか」を見られるようにする。
+ * カップ確認（`CUP`）と停止後の俯瞰（`RESULT` 以降）では消す。
+ * 次の一打の `ADDRESS` へ戻れば、また出る
+ */
+function obBoundaryShouldShow(): boolean {
+  return state === 'ADDRESS' || state === 'STROKE' || state === 'FOLLOW';
+}
+
 /** OB境界を高解像度Canvasへ渡す */
 function obBoundaryOverlay(): ObBoundaryOverlay | null {
-  if (!obLine) return null;
+  if (!obLine || !obBoundaryShouldShow()) return null;
   const L = CONFIG.obLine;
   return {
     points: obLine.points,
+    groundY: obLine.groundY,
     color: L.color,
     widthPx: L.widthPx,
     opacity: L.opacity,

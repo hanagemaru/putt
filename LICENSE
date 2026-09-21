@@ -1,0 +1,33 @@
+Copyright (c) 2026 hanagemaru (@hanageapp)
+All rights reserved. / 無断での利用・再配布を禁じます。
+
+このリポジトリは、開発の経過を見られる状態にしてあるだけで、
+オープンソースソフトウェアではありません。
+
+著作権者の事前の書面による許諾なく、本ソフトウェアおよびその一部または
+派生物を、使用、複製、改変、結合、公開、頒布、サブライセンス、販売する
+ことを認めません。とくに、本アプリケーションの全部または一部を別のアドレスで
+再公開（再ホスティング）することは認めません。
+
+GitHub 利用規約の範囲での閲覧および GitHub 内での fork は、上記以外の権利を
+与えるものではありません。
+
+同梱または参照している第三者のライブラリ・フォント・素材は、それぞれの
+ライセンスに従います。本ファイルの定めはそれらには及びません。
+
+---
+
+This repository is made publicly viewable so that the work in progress can be
+followed. It is NOT open source.
+
+No license is granted to use, copy, modify, merge, publish, distribute,
+sublicense, or sell copies of this software, or of any derivative work, in
+whole or in part, without prior written permission from the copyright holder.
+In particular, re-hosting this application, in whole or in part, at any other
+address is not permitted.
+
+Viewing the source, and forking within GitHub as permitted by the GitHub Terms
+of Service, does not grant any rights beyond those stated above.
+
+Third-party libraries, fonts, and assets that are bundled or referenced remain
+under their own licenses, which are unaffected by this file.
