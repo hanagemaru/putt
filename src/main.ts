@@ -1,3 +1,5 @@
+import { resultShareUrl } from './result-share';
+import { resultPreview } from './result-preview';
 import { trackGameplay } from './gameplay-analytics';
 // ゲーム本体。ADDRESS（読み＋方向調整）→ STROKE → FOLLOW → CUP → RESULT の状態機械（spec §3）。
 //
@@ -204,7 +206,7 @@ const round = mode === 'tour' ? new Round(selectedTour.seeds) : null;
  * 練習モードは同じホールを打ち直すだけなので、保存も復元もしない
  */
 const roundStore =
-  mode === 'tour'
+  mode === 'tour' && !resultPreview
     ? new RoundProgressStore(
         `${CONFIG.game.round.save.tourKey}-${selectedTour.id}`,
         CONFIG.game.round.save.version,
@@ -1746,6 +1748,7 @@ const scoreActions = document.getElementById('score-actions') as HTMLDivElement;
 const scoreCourse = document.getElementById('score-course') as HTMLButtonElement;
 const scoreAgain = document.getElementById('score-again') as HTMLButtonElement;
 const scoreHome = document.getElementById('score-home') as HTMLButtonElement;
+const scoreShare = document.getElementById('score-share') as HTMLAnchorElement;
 
 scoreCourse.addEventListener('click', () => navigateToMenu('tour'));
 scoreAgain.addEventListener('click', () => {
@@ -1760,6 +1763,8 @@ scoreHome.addEventListener('click', () => navigateToMenu());
 function hideScoreOverlay(): void {
   scoreOverlay.hidden = true;
   scoreActions.hidden = true;
+  scoreShare.hidden = true;
+  scoreShare.removeAttribute('href');
   scoreCard.classList.remove('list');
 }
 
@@ -1834,6 +1839,11 @@ function showHoleOutCard(current: Round): void {
 /** ラウンド終了のカード。全ホールの一覧と合計を出す */
 function showRoundEndCard(current: Round): void {
   const gaveUp = current.scores.some((hole) => !hole.holedOut);
+  scoreShare.href = resultShareUrl({
+    tourId: selectedTour.id, tourName: selectedTour.name[language()],
+    totalStrokes: current.totalStrokes, totalPar: current.totalPar, gaveUp,
+  }, language());
+  scoreShare.hidden = false;
   scoreTitle.dataset.screen = 'round-end';
   // ラウンド終了に判定語は無い。ホールの結果音を持ち越さないよう消す
   delete scoreTitle.dataset.result;
@@ -1866,6 +1876,8 @@ function showRoundEndCard(current: Round): void {
 
 /** 練習のカップイン後。結果と、打ち直すかトップへ戻るかの選択を出す */
 function showPracticeEndCard(): void {
+  scoreShare.hidden = true;
+  scoreShare.removeAttribute('href');
   scoreTitle.dataset.screen = 'practice-end';
   // 練習はホールを進めないので、ホール番号を出さずPARだけを置く
   scoreTitle.textContent = i18n.holeBadgePar(course.par);
@@ -2326,3 +2338,18 @@ ball.set(roller.x, roller.z);
 updateBallMesh();
 enterAddress(true);
 showHoleIntro();
+
+// Preview-only sample. No enterRoundEnd/record persistence/leaderboard listener/analytics.
+if (resultPreview && round) {
+  const sample = new Round(selectedTour.seeds);
+  for (const [index, seed] of selectedTour.seeds.entries()) {
+    const par = tourHoleCourse(selectedTour, seed).par;
+    sample.recordHole(par, par + (index % 3 === 0 ? 1 : 0), true);
+    sample.next();
+  }
+  state = 'ROUND_END';
+  holeIntroRemaining = 0;
+  hud.holeIntro.classList.remove('show');
+  showRoundEndCard(sample);
+  scoreNote.textContent = 'PREVIEW';
+}

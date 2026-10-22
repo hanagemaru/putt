@@ -856,6 +856,12 @@
         background: #3a7332;
         padding: 12px 18px;
       }
+      #score-share[hidden] { display: none; }
+      #score-share {
+        display: block;
+        text-align: center;
+        text-decoration: none;
+      }
       /* 遊び続ける側は白地。トップへ戻る側と見た目で分ける */
       #score-course,
       #score-again {
@@ -1019,6 +1025,7 @@
         <div id="score-actions" hidden>
           <button type="button" class="score-action" id="score-course">コース選択へ</button>
           <button type="button" class="score-action" id="score-again">もう一度</button>
+          <a class="score-action" id="score-share" target="_blank" rel="noopener noreferrer" hidden>Xで結果を共有</a>
           <button type="button" class="score-action" id="score-home">トップへ</button>
         </div>
       </div>

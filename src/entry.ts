@@ -1,3 +1,4 @@
+import { resultPreview } from './result-preview';
 import { trackGameplay } from './gameplay-analytics';
 import { installWebAnalytics } from './web-analytics';
 import { CONFIG } from './config';
@@ -49,7 +50,7 @@ applyStaticUiText();
 
 // 前回送れなかった記録を送り直す（`docs/ranking.md` §6-2）。
 // 積んでいるものが無ければ何もしないので、遊ぶだけの人には何も起きない
-void flushPendingSubmissions();
+if (!resultPreview) void flushPendingSubmissions();
 
 if (params.get('menu') === 'ranking') {
   // **ゲームは始めない**ので、直接プレイの判定より先に見る。
@@ -57,7 +58,7 @@ if (params.get('menu') === 'ranking') {
   renderRanking(tourById(params.get('tour')));
 } else if (shouldStartGameDirectly(params)) {
   const tour = directTourFromParams(params);
-  if (tour) setupTourBestTracking(tour);
+  if (tour && !resultPreview) setupTourBestTracking(tour);
   void import('./main');
 } else if (params.get('menu') === 'tour') {
   renderTourSelection();
