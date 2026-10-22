@@ -3,7 +3,6 @@ import type { Round, HoleScore } from './round';
 import type { TourDefinition } from './course/tour-holes';
 import * as i18n from './i18n';
 import { t, language } from './i18n';
-import { resultShareUrl } from './result-share';
 
 export function readoutNode(label: string, value: string, tone?: number): HTMLElement {
   const root = document.createElement('span');
@@ -35,17 +34,11 @@ export function renderRoundResult(current: Round, selectedTour: TourDefinition):
   const scoreCourse = document.getElementById('score-course') as HTMLButtonElement;
   const scoreAgain = document.getElementById('score-again') as HTMLButtonElement;
   const scoreHome = document.getElementById('score-home') as HTMLButtonElement;
-  const scoreShare = document.getElementById('score-share') as HTMLAnchorElement;
   const gaveUp = current.scores.some((hole) => !hole.holedOut);
-  scoreShare.href = resultShareUrl({
-    tourId: selectedTour.id, tourName: selectedTour.name[language()],
-    totalStrokes: current.totalStrokes, totalPar: current.totalPar, gaveUp,
-  }, language());
   prepareImageShare({
     tourId: selectedTour.id, tourName: selectedTour.name[language()],
     totalStrokes: current.totalStrokes, totalPar: current.totalPar, gaveUp,
   }, current.scores.map(hole => ({ ...hole })), language());
-  scoreShare.hidden = false;
   scoreTitle.dataset.screen = 'round-end';
   // ラウンド終了に判定語は無い。ホールの結果音を持ち越さないよう消す
   delete scoreTitle.dataset.result;

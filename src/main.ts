@@ -1748,7 +1748,6 @@ const scoreActions = document.getElementById('score-actions') as HTMLDivElement;
 const scoreCourse = document.getElementById('score-course') as HTMLButtonElement;
 const scoreAgain = document.getElementById('score-again') as HTMLButtonElement;
 const scoreHome = document.getElementById('score-home') as HTMLButtonElement;
-const scoreShare = document.getElementById('score-share') as HTMLAnchorElement;
 
 scoreCourse.addEventListener('click', () => navigateToMenu('tour'));
 scoreAgain.addEventListener('click', () => {
@@ -1764,8 +1763,6 @@ function hideScoreOverlay(): void {
   resetImageShare();
   scoreOverlay.hidden = true;
   scoreActions.hidden = true;
-  scoreShare.hidden = true;
-  scoreShare.removeAttribute('href');
   scoreCard.classList.remove('list');
 }
 
@@ -1832,8 +1829,6 @@ function showRoundEndCard(current: Round): void {
 /** 練習のカップイン後。結果と、打ち直すかトップへ戻るかの選択を出す */
 function showPracticeEndCard(): void {
   resetImageShare();
-  scoreShare.hidden = true;
-  scoreShare.removeAttribute('href');
   scoreTitle.dataset.screen = 'practice-end';
   // 練習はホールを進めないので、ホール番号を出さずPARだけを置く
   scoreTitle.textContent = i18n.holeBadgePar(course.par);
