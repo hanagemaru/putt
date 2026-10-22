@@ -1,5 +1,6 @@
 // Production smoke data is removed even when verification fails.
 import { execFileSync } from 'node:child_process';
+import { setTimeout as delay } from 'node:timers/promises';
 import { randomUUID } from 'node:crypto';
 const session = randomUUID();
 const sql = command => {
@@ -10,6 +11,8 @@ const sql = command => {
 };
 try {
   const base = { session, source: 'direct', tour: '', hole: 0, outcome: 'none' };
+  let verified = false;
+  for (let attempt = 1; attempt <= 6; attempt++) {
   for (const payload of [
     { ...base, event: 'visit' },
     { ...base, event: 'first_shot', tour: 'beginner' },
@@ -24,7 +27,11 @@ try {
     if (response.status !== 204) throw new Error(`Event API: ${response.status}`);
   }
   const rows = sql(`SELECT event, COUNT(*) AS n FROM gameplay_events WHERE session_id='${session}' GROUP BY event`);
-  if (rows.length !== 4 || rows.some(row => row.n !== 1)) throw new Error('Event persistence or deduplication failed');
+  if (rows.length === 4 && rows.every(row => row.n === 1)) { verified = true; break; }
+  console.log(`Propagation check ${attempt}/6: ${JSON.stringify(rows)}`);
+  if (attempt < 6) await delay(5000);
+  }
+  if (!verified) throw new Error('Event persistence or deduplication failed after propagation window');
   console.log('Gameplay events: visit, first shot, hole and round persisted; duplicate ignored.');
 } finally {
   sql(`DELETE FROM gameplay_events WHERE session_id='${session}'`);
