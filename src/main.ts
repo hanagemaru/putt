@@ -1,3 +1,4 @@
+import { resetImageShare } from './result-image-share';
 import { renderRoundResult, readoutNode } from './round-result-view';
 import { trackGameplay } from './gameplay-analytics';
 // ゲーム本体。ADDRESS（読み＋方向調整）→ STROKE → FOLLOW → CUP → RESULT の状態機械（spec §3）。
@@ -1760,6 +1761,7 @@ scoreAgain.addEventListener('click', () => {
 scoreHome.addEventListener('click', () => navigateToMenu());
 
 function hideScoreOverlay(): void {
+  resetImageShare();
   scoreOverlay.hidden = true;
   scoreActions.hidden = true;
   scoreShare.hidden = true;
@@ -1829,6 +1831,7 @@ function showRoundEndCard(current: Round): void {
 
 /** 練習のカップイン後。結果と、打ち直すかトップへ戻るかの選択を出す */
 function showPracticeEndCard(): void {
+  resetImageShare();
   scoreShare.hidden = true;
   scoreShare.removeAttribute('href');
   scoreTitle.dataset.screen = 'practice-end';

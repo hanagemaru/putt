@@ -856,6 +856,14 @@
         background: #3a7332;
         padding: 12px 18px;
       }
+      #score-image-preview[hidden] { display: none; }
+      #score-image-preview { font-size: 14px; }
+      #score-image-preview summary { padding: 10px; cursor: pointer; }
+      #score-image { width: 100%; height: auto; display: block; margin: 8px 0; }
+      #score-image-download { color: #eef7ec; display: block; padding: 10px; }
+      #score-image-status { font-size: 13px; line-height: 1.4; }
+      #score-image-status:empty { display: none; }
+      #score-image-share:disabled { opacity: 0.6; }
       #score-share[hidden] { display: none; }
       #score-share {
         display: block;
@@ -1025,6 +1033,13 @@
         <div id="score-actions" hidden>
           <button type="button" class="score-action" id="score-course">コース選択へ</button>
           <button type="button" class="score-action" id="score-again">もう一度</button>
+          <button type="button" class="score-action" id="score-image-share" hidden>画像付きで共有</button>
+          <div id="score-image-status" role="status" aria-live="polite"></div>
+          <details id="score-image-preview" hidden>
+            <summary>共有画像を見る</summary>
+            <img id="score-image" alt="" />
+            <a id="score-image-download" download="putt-score.png">スコア画像を保存</a>
+          </details>
           <a class="score-action" id="score-share" target="_blank" rel="noopener noreferrer" hidden>Xで結果を共有</a>
           <button type="button" class="score-action" id="score-home">トップへ</button>
         </div>

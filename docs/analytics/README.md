@@ -23,7 +23,7 @@
 - メニューを含む通常入口の `visit`、通常ツアーの `first_shot`、`hole_complete`、`round_complete`。
 - ランキングとは無関係のランダムなタブ内セッションID。sessionStorageでページ遷移を越えて保持し、イベント発生から30分以上空いたら更新。Cookie・localStorage・永続的な訪問者IDは使わない。
 - サーバー受信時刻、コースID、ホール番号、カップイン/ギブアップ。
-- 流入分類は `x_ads/x_share/x_other/hub/search/other/direct` の固定値のみ。最初の入口で分類し、30分以内の同一タブでは引き継ぐ。広告UTMは `utm_source=x&utm_medium=cpc`（paid_socialも可）、共有は `utm_source=x&utm_medium=share`。UTMなしのt.coは広告と断定せずx_other。
+- 流入分類は `x_ads/x_share/social_share/x_other/hub/search/other/direct` の固定値のみ。最初の入口で分類し、30分以内の同一タブでは引き継ぐ。広告UTMは `utm_source=x&utm_medium=cpc`（paid_socialも可）、共有は `utm_source=x&utm_medium=share`。UTMなしのt.coは広告と断定せずx_other。
 - 生URL・検索語・任意UTM文字列・参照元URL・IP・ユーザーエージェント・名前・ランキングID・認証情報・操作リプレイは計測表へ保存しない。ホスティング側のログとは別。
 - 受信処理時に30日を超えた行を削除する。無流入の間は削除が走らないため厳密な30日破棄ではない。運営終了・計測停止時は `DELETE FROM gameplay_events` で削除する。
 - 生データを公開する取得APIは設けない。
@@ -49,3 +49,5 @@
 
 Puttの結果画面へ日英のX共有を追加し、共有リンクに `utm_source=x&utm_medium=share` を付ける。
 まず共有経由の訪問・初打が生まれるかを確認する。週間報酬・個別OGP生成・共通基盤化はその前提にしない。
+
+画像付きネイティブ共有のリンクは `utm_source=share&utm_medium=share` を使い、social_shareと分類する。共有先アプリが分からないためX経由とは断定しない。

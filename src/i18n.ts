@@ -156,6 +156,12 @@ const COPY = {
     playAgain: 'もう一度',
     toTop: 'トップへ',
     shareResult: 'Xで結果を共有',
+    shareImage: '画像付きで共有',
+    saveImage: 'スコア画像を保存',
+    viewShareImage: '共有画像を見る',
+    imagePreparing: '画像を作成中…',
+    imageShareFailed: '共有できませんでした。画像を保存して添付できます。',
+    imageSaveNote: '保存した画像をXなどへ添付してください。',
   },
   en: {
     menuSubtitle: 'CHOOSE A MODE',
@@ -267,6 +273,12 @@ const COPY = {
     playAgain: 'PLAY AGAIN',
     toTop: 'TOP',
     shareResult: 'SHARE ON X',
+    shareImage: 'SHARE WITH IMAGE',
+    saveImage: 'SAVE SCORE IMAGE',
+    viewShareImage: 'VIEW SHARE IMAGE',
+    imagePreparing: 'Preparing image…',
+    imageShareFailed: 'Sharing failed. Save the image to attach it instead.',
+    imageSaveNote: 'Attach the saved image to your post.',
   },
 } as const;
 

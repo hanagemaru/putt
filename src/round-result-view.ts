@@ -1,3 +1,4 @@
+import { prepareImageShare } from './result-image-share';
 import type { Round, HoleScore } from './round';
 import type { TourDefinition } from './course/tour-holes';
 import * as i18n from './i18n';
@@ -40,6 +41,10 @@ export function renderRoundResult(current: Round, selectedTour: TourDefinition):
     tourId: selectedTour.id, tourName: selectedTour.name[language()],
     totalStrokes: current.totalStrokes, totalPar: current.totalPar, gaveUp,
   }, language());
+  prepareImageShare({
+    tourId: selectedTour.id, tourName: selectedTour.name[language()],
+    totalStrokes: current.totalStrokes, totalPar: current.totalPar, gaveUp,
+  }, current.scores.map(hole => ({ ...hole })), language());
   scoreShare.hidden = false;
   scoreTitle.dataset.screen = 'round-end';
   // ラウンド終了に判定語は無い。ホールの結果音を持ち越さないよう消す
