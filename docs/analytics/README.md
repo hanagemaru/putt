@@ -5,16 +5,18 @@
 
 ## 状態と有効化
 
-実装済み、既定は無効。本番で受信したことは未確認。次の順で有効化する。
+2026-10-22: 所有者の指示で有効化する変更を準備。ハブの公開プライバシー日英に短い一文を追加する。実際の配信/受信結果は以下のPR/Actionsで確認する。
 
-1. ハブの公開プライバシーポリシー（日英）に、下記の保存内容・用途・期間を追記し公開する。
-2. このPRをマージ後、既存 `Apply D1 migrations` Actions を dry=true で確認し、dry=false で `0003_gameplay_events.sql` を適用する。ランキング表には変更を加えない。
-3. `wrangler.jsonc` の `vars.GAMEPLAY_ANALYTICS` を `true` にし、GitHub Repository variable `GAMEPLAY_ANALYTICS=true` を設定して本番ビルド・配信する。両方が必要。プレビューでは送信しない。
-4. 本番の通常入口→初打→ホール終了→9ホール終了を実機確認する。D1で1つのsession_idに各イベントが保存されること、同じ内容の再送が増えないことを確認する。名前登録は不要。
-5. `funnel.sql` をD1コンソール等で実行し、同じ期間の流入と到達数を比較する。共有導線の追加前に基準値を残す。
+本番デプロイは次を順に実行する。
 
-停止はRepository variableをfalseにして再ビルド（クライアント停止）、Workerのvarsもfalseにして配信（旧キャッシュを含む受信停止）。
-イベント受信はプライバシー公開・移行完了前には有効化しない。
+1. `VITE_GAMEPLAY_ANALYTICS=true` でビルド（Repository variableは不要）。
+2. ハブの公開プライバシー日英に計測の記載があることを検証。
+3. レビュー済みの `0003_gameplay_events.sql` のみ冪等適用。他の未適用migrationは自動実行しない。
+4. `wrangler.jsonc` の `GAMEPLAY_ANALYTICS=true` を配信。
+5. `scripts/verify-gameplay-live.mjs` で訪問/初打/ホール/ラウンドの本番保存・重複排除をD1まで確認し、検証データを削除。
+
+停止はWorkerの `GAMEPLAY_ANALYTICS=false` とビルドの `VITE_GAMEPLAY_ANALYTICS=false` をコミット・配信する。受信側の無効化は旧キャッシュのクライアントにも効く。
+プレビュー/Pages用ビルドは引き続き無効。本番の実機操作で一巡する確認は自動受信確認とは別。
 
 ## 保存するもの・保存しないもの
 
@@ -26,11 +28,11 @@
 - 受信処理時に30日を超えた行を削除する。無流入の間は削除が走らないため厳密な30日破棄ではない。運営終了・計測停止時は `DELETE FROM gameplay_events` で削除する。
 - 生データを公開する取得APIは設けない。
 
-公開文案（日英、**公開前に現行ページへ統合する**）:
+公開文（日英）:
 
-> Puttでは、ゲーム改善のため、訪問、最初のショット、ホール終了、ラウンド終了を集計する場合があります。短時間のタブ内セッションを区別するランダムなIDと、流入元の分類、コース、到達ホール、終了状態、受信時刻を保存します。このIDはランキングの名前や認証情報には結び付けず、タブ内のsessionStorageで保持し、操作の計測が30分以上空いたら更新します。生の参照元URLやUTM値は保存しません。記録は受信処理時に30日を超えたものを削除し、計測停止時にも削除します。
+> Puttでは、ゲーム改善のため、一時的な訪問ID、流入元の分類、プレイの進行状況、計測時刻を記録します。
 
-> Putt may collect visits, first shots, hole finishes and round finishes to improve the game. We store a random short-lived tab-session ID, acquisition category, course, hole reached, finish status and receipt time. This ID is held in sessionStorage, renewed after 30 minutes without a measured action, and is not linked to ranking names or credentials. Raw referrer URLs and UTM values are not stored. Records older than 30 days are deleted when new events are received; records are also deleted when collection is discontinued.
+> Putt records a temporary visit ID, acquisition category, gameplay progress and measurement time to improve the game.
 
 ## 定義と限界
 

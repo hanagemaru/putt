@@ -24,8 +24,8 @@
       "migrations_dir": "migrations"
     }
   ],
-  // Enable only after migration and public privacy disclosure are deployed.
-  "vars": { "GAMEPLAY_ANALYTICS": "false" },
+  // Deployment checks the public disclosure and prepares the analytics table first.
+  "vars": { "GAMEPLAY_ANALYTICS": "true" },
   "observability": {
     "enabled": true
   }
