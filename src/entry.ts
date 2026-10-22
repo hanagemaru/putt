@@ -52,7 +52,9 @@ applyStaticUiText();
 // 積んでいるものが無ければ何もしないので、遊ぶだけの人には何も起きない
 if (!resultPreview) void flushPendingSubmissions();
 
-if (params.get('menu') === 'ranking') {
+if (resultPreview) {
+  void import('./result-preview-view');
+} else if (params.get('menu') === 'ranking') {
   // **ゲームは始めない**ので、直接プレイの判定より先に見る。
   // `?tour=` はどのタブを開くかの指定で、無ければ最初のコース
   renderRanking(tourById(params.get('tour')));
