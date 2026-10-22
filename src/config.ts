@@ -5,6 +5,7 @@
 export const FEET_TO_METERS = 0.3048;
 
 export const CONFIG = {
+  analytics: { sessionIdleMs: 30 * 60 * 1000, maxBodyBytes: 1024, retentionDays: 30 },
   green: {
     /** コース指定がない検証ページで使う既定寸法 [m] */
     width: 20,

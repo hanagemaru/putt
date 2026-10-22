@@ -21,6 +21,7 @@ jobs:
       # 独自ドメインの直下に置くので、ベースパスを / にしてビルドする
       - run: npm run build:cloudflare
         env:
+          VITE_GAMEPLAY_ANALYTICS: ${{ vars.GAMEPLAY_ANALYTICS }}
           VITE_CF_BEACON_TOKEN: ${{ vars.CF_BEACON_TOKEN }}
       - name: Deploy to Cloudflare Workers
         run: npx wrangler deploy

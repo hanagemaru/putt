@@ -1,3 +1,4 @@
+import { receiveGameplay } from './gameplay-analytics';
 // ランキングのサーバ（Cloudflare Workers + D1）。`docs/ranking.md` §5。
 //
 // 参照実装は Multicolor Sweeper の `src/server/worker.ts`。**構造はそのまま踏襲する。**
@@ -57,6 +58,7 @@ interface D1Database {
 }
 
 interface Env {
+  GAMEPLAY_ANALYTICS?: string;
   /** D1を作る前は**無い**。無ければ器が要る入口だけ 503 を返す */
   DB?: D1Database;
 }
@@ -531,6 +533,10 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   const url = new URL(request.url);
   // Static Assets が先に当たるので、ここへ来るのは /api/* と、資産の無いパスだけ
   if (!url.pathname.startsWith('/api/')) return new Response('Not Found', { status: 404 });
+
+  if (request.method === 'POST' && url.pathname === '/api/gameplay-events') {
+    return receiveGameplay(request, env.DB, env.GAMEPLAY_ANALYTICS === 'true');
+  }
 
   if (request.method === 'GET' && url.pathname === '/api/health') {
     // `database` はバインディングの有無、`schema` は表ができているか。

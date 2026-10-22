@@ -1,3 +1,4 @@
+import { trackGameplay } from './gameplay-analytics';
 // ゲーム本体。ADDRESS（読み＋方向調整）→ STROKE → FOLLOW → CUP → RESULT の状態機械（spec §3）。
 //
 // 部品はすでにある。ここは配線に徹する。
@@ -999,6 +1000,7 @@ function launch(speedMs: number, launchAngle: number): void {
   cupViewUsed = false;
   roller.launch(ball.x, ball.y, speedMs, direction);
   shots++;
+  if (round) trackGameplay('first_shot', selectedTour.id);
   enterFollow();
 }
 
@@ -1196,6 +1198,8 @@ function enterHoleOut(): void {
   if (!round) return;
   state = 'HOLE_OUT';
   round.recordHole(course.par, shots, isHoledOut(roller.status), holeShots);
+  trackGameplay('hole_complete', selectedTour.id, round.holeNumber, isHoledOut(roller.status) ? 'holed' : 'gave_up');
+  if (!round.hasNext) trackGameplay('round_complete', selectedTour.id);
   // スコアが確定した時点で保存する。1打ごとには保存しない（復元はホールの頭からなので、
   // それ以上の頻度に意味がない）。
   // 最終ホールのあとは再開できるホールがない。ここで残すと終わったラウンドを
