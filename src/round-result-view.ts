@@ -116,4 +116,3 @@ function scoreTotalRow(current: Round): HTMLTableRowElement {
   );
   return row;
 }
-
