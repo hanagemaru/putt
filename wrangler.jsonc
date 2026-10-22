@@ -24,6 +24,8 @@
       "migrations_dir": "migrations"
     }
   ],
+  // Enable only after migration and public privacy disclosure are deployed.
+  "vars": { "GAMEPLAY_ANALYTICS": "false" },
   "observability": {
     "enabled": true
   }

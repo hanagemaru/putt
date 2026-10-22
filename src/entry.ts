@@ -1,3 +1,4 @@
+import { trackGameplay } from './gameplay-analytics';
 import { installWebAnalytics } from './web-analytics';
 import { CONFIG } from './config';
 import { DEFAULT_TOUR, TOUR_SETS, tourById, type TourDefinition } from './course/tour-holes';
@@ -31,6 +32,7 @@ import {
 import { registerSW } from 'virtual:pwa-register';
 
 installWebAnalytics();
+trackGameplay('visit');
 
 const HUB_ORIGIN = 'https://hanage.app';
 const HOW_TO_PATH = '/games/putt/how-to-play/';
