@@ -5,6 +5,7 @@
 export const FEET_TO_METERS = 0.3048;
 
 export const CONFIG = {
+  shareImage: { width: 1200, height: 800, padding: 64, headerY: 100, courseY: 170, scoreY: 340, labelY: 390, tableY: 480, cellHeight: 104, footerY: 650, urlY: 720, titleSize: 64, courseSize: 32, scoreSize: 160, labelSize: 28, cellSize: 38, smallSize: 24 },
   analytics: { sessionIdleMs: 30 * 60 * 1000, maxBodyBytes: 1024, retentionDays: 30 },
   green: {
     /** コース指定がない検証ページで使う既定寸法 [m] */

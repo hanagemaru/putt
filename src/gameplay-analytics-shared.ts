@@ -1,5 +1,5 @@
 /** Fixed categories only: never send raw URLs, UTM values, referrers or ranking identity. */
-export const ACQUISITION_SOURCES = ['x_ads', 'x_share', 'x_other', 'hub', 'search', 'other', 'direct'] as const;
+export const ACQUISITION_SOURCES = ['x_ads', 'x_share', 'social_share', 'x_other', 'hub', 'search', 'other', 'direct'] as const;
 export type AcquisitionSource = typeof ACQUISITION_SOURCES[number];
 export const GAMEPLAY_EVENTS = ['visit', 'first_shot', 'hole_complete', 'round_complete'] as const;
 export type GameplayEvent = typeof GAMEPLAY_EVENTS[number];
@@ -15,6 +15,7 @@ export function acquisitionSource(search: string, referrer: string): Acquisition
   const params = new URLSearchParams(search);
   const source = params.get('utm_source')?.toLowerCase();
   const medium = params.get('utm_medium')?.toLowerCase();
+  if (source === 'share' && medium === 'share') return 'social_share';
   if (source === 'x' || source === 'twitter') {
     if (['cpc', 'paid_social'].includes(medium ?? '')) return 'x_ads';
     if (medium === 'share') return 'x_share';

@@ -1,3 +1,5 @@
+import { resetImageShare } from './result-image-share';
+import { renderRoundResult, readoutNode } from './round-result-view';
 import { trackGameplay } from './gameplay-analytics';
 // ゲーム本体。ADDRESS（読み＋方向調整）→ STROKE → FOLLOW → CUP → RESULT の状態機械（spec §3）。
 //
@@ -52,7 +54,7 @@ import { CourseMapMarker } from './course-map-marker';
 import { ensurePixelFont } from './pixel-font';
 import * as i18n from './i18n';
 import { language, t } from './i18n';
-import { Round, type HoleScore, type ShotRecord } from './round';
+import { Round, type ShotRecord } from './round';
 import { RoundProgressStore } from './round-storage';
 import {
   SmoothLineOverlay,
@@ -1758,6 +1760,7 @@ scoreAgain.addEventListener('click', () => {
 scoreHome.addEventListener('click', () => navigateToMenu());
 
 function hideScoreOverlay(): void {
+  resetImageShare();
   scoreOverlay.hidden = true;
   scoreActions.hidden = true;
   scoreCard.classList.remove('list');
@@ -1767,19 +1770,6 @@ function hideScoreOverlay(): void {
  * カードの見出し。**HUDと同じ組み方**で、見出しを小さく沈めて数字を明るく出す。
  * パー差は中継の規約に合わせ、アンダーを赤、オーバーを青にする
  */
-function readoutNode(label: string, value: string, tone?: number): HTMLElement {
-  const root = document.createElement('span');
-  root.className = 'readout';
-  const labelNode = document.createElement('span');
-  labelNode.className = 'readout-label';
-  labelNode.textContent = label;
-  const valueNode = document.createElement('span');
-  valueNode.className = 'readout-value';
-  if (tone !== undefined && tone !== 0) valueNode.classList.add(tone < 0 ? 'under' : 'over');
-  valueNode.textContent = value;
-  root.append(labelNode, valueNode);
-  return root;
-}
 
 /**
  * このホールの結果を5段階で返す。カードの判定語と同じ区切り方。
@@ -1833,39 +1823,12 @@ function showHoleOutCard(current: Round): void {
 
 /** ラウンド終了のカード。全ホールの一覧と合計を出す */
 function showRoundEndCard(current: Round): void {
-  const gaveUp = current.scores.some((hole) => !hole.holedOut);
-  scoreTitle.dataset.screen = 'round-end';
-  // ラウンド終了に判定語は無い。ホールの結果音を持ち越さないよう消す
-  delete scoreTitle.dataset.result;
-  scoreTitle.textContent = i18n.roundEndTitle(selectedTour.name[language()]);
-  // ラウンドには判定語が無いので、主役は中継のリーダーボードと同じく通算パー差にする
-  scoreHeadline.className = 'verdict';
-  if (current.toPar !== 0) scoreHeadline.classList.add(current.toPar < 0 ? 'under' : 'over');
-  scoreHeadline.textContent = i18n.formatDiff(current.toPar);
-  scoreStrokes.textContent = i18n.strokesText(current.totalStrokes);
-  scoreSub.replaceChildren(
-    readoutNode(i18n.LABEL_HOLES, String(current.holeCount)),
-    readoutNode(i18n.LABEL_PAR, String(current.totalPar)),
-  );
-  scoreNote.textContent = gaveUp ? t().gaveUpNote : '';
-  scoreRows.replaceChildren(
-    scoreHeaderRow(),
-    ...current.scores.map(scoreRow),
-    scoreTotalRow(current),
-  );
-  scoreTable.hidden = false;
-  scoreHint.hidden = true;
-  scoreCourse.hidden = false;
-  scoreAgain.hidden = false;
-  scoreHome.hidden = false;
-  scoreActions.hidden = false;
-  // 一覧表があるぶん縦に長い。字と余白を詰め、収まらない画面では枠の中をスクロールさせる
-  scoreCard.classList.add('list');
-  scoreOverlay.hidden = false;
+  renderRoundResult(current, selectedTour);
 }
 
 /** 練習のカップイン後。結果と、打ち直すかトップへ戻るかの選択を出す */
 function showPracticeEndCard(): void {
+  resetImageShare();
   scoreTitle.dataset.screen = 'practice-end';
   // 練習はホールを進めないので、ホール番号を出さずPARだけを置く
   scoreTitle.textContent = i18n.holeBadgePar(course.par);
@@ -1883,47 +1846,9 @@ function showPracticeEndCard(): void {
   scoreOverlay.hidden = false;
 }
 
-function scoreCell(tag: 'td' | 'th', text: string, className = ''): HTMLTableCellElement {
-  const cell = document.createElement(tag);
-  cell.textContent = text;
-  if (className) cell.className = className;
-  return cell;
-}
 
-function scoreHeaderRow(): HTMLTableRowElement {
-  const row = document.createElement('tr');
-  row.append(
-    scoreCell('th', t().colHole),
-    scoreCell('th', t().colPar),
-    scoreCell('th', t().colStrokes),
-    scoreCell('th', ''),
-  );
-  return row;
-}
 
-function scoreRow(hole: HoleScore): HTMLTableRowElement {
-  const row = document.createElement('tr');
-  row.append(
-    scoreCell('td', String(hole.number)),
-    scoreCell('td', String(hole.par)),
-    // ギブアップしたホールは印を付けて、カップインしたホールと区別する
-    scoreCell('td', hole.holedOut ? String(hole.strokes) : `${hole.strokes}*`),
-    scoreCell('td', i18n.formatDiff(hole.strokes - hole.par), 'diff'),
-  );
-  return row;
-}
 
-function scoreTotalRow(current: Round): HTMLTableRowElement {
-  const row = document.createElement('tr');
-  row.className = 'total';
-  row.append(
-    scoreCell('th', t().colTotal),
-    scoreCell('td', String(current.totalPar)),
-    scoreCell('td', String(current.totalStrokes)),
-    scoreCell('td', i18n.formatDiff(current.toPar), 'diff'),
-  );
-  return row;
-}
 
 const tuningPanel = document.getElementById('tuning-panel') as HTMLDivElement;
 const putterPower = document.getElementById('putter-power') as HTMLInputElement;

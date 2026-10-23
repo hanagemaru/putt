@@ -155,6 +155,7 @@ const COPY = {
     toCourseSelect: 'コース選択へ',
     playAgain: 'もう一度',
     toTop: 'トップへ',
+    shareResult: '結果をシェア',
   },
   en: {
     menuSubtitle: 'CHOOSE A MODE',
@@ -265,6 +266,7 @@ const COPY = {
     toCourseSelect: 'COURSES',
     playAgain: 'PLAY AGAIN',
     toTop: 'TOP',
+    shareResult: 'SHARE RESULT',
   },
 } as const;
 
@@ -552,6 +554,7 @@ export function applyStaticUiText(): void {
   setText('score-course', copy.toCourseSelect);
   setText('score-again', copy.playAgain);
   setText('score-home', copy.toTop);
+  setText('score-share', copy.shareResult);
   setText('home-dialog-title', copy.homeDialogTitle);
   setText('home-cancel', copy.homeContinue);
   setText('home-confirm', copy.homeConfirm);

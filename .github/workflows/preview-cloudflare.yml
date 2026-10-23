@@ -29,6 +29,8 @@ jobs:
       - run: npm ci
       # プレビューも独自ドメインと同じ条件で見たいので、ベースパスは / でビルドする
       - run: npm run build:cloudflare
+        env:
+          VITE_RESULT_PREVIEW: 'true'
       - name: Upload version to Cloudflare
         id: upload
         env:
