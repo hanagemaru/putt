@@ -1,0 +1,87 @@
+name: Hub path preview (isolated)
+
+on:
+  push:
+    branches: [feature/hub-path-putt-20261113]
+    paths:
+      - 'src/**'
+      - 'scripts/verify-hub-preview.mjs'
+      - 'vite.config.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'wrangler.hub-preview.jsonc'
+      - '.github/workflows/hub-path-preview.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: hub-path-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    # mainへのデプロイWorkflowとは別。独立Workerにのみ配信する。
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build under /games/putt/play/
+        run: npm run build:hub-preview
+        env:
+          VITE_GAMEPLAY_ANALYTICS: 'false'
+          VITE_RANKING_API_ENABLED: 'false'
+      - name: Verify path and PWA output
+        run: npm run verify:hub-preview
+      - name: Disable preview indexing
+        run: |
+          printf '/games/putt/play/*\n  X-Robots-Tag: noindex, nofollow\n' > dist/_headers
+      - name: Deploy a dedicated preview Worker
+        run: npx --yes wrangler@4.148.0 deploy --config wrangler.hub-preview.jsonc
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Smoke test: assets, API, isolation
+        env:
+          BASE_URL: https://putt-hub-preview.jibunnha.workers.dev/games/putt/play
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          const base = process.env.BASE_URL;
+          let res = await fetch(base + '/');
+          assert.equal(res.status, 200, 'game must be accessible');
+          const html = await res.text();
+          assert.ok(html.includes('/games/putt/play/assets/'), 'assets must use the new prefix');
+          assert.match(res.headers.get('x-robots-tag') || '', /noindex/i, 'preview must not be indexed');
+          const files = [...html.matchAll(/src="([^"]+\.js)"/g)].map(match => match[1]);
+          const entry = files.find(path => path.startsWith('/games/putt/play/assets/'));
+          assert.ok(entry, 'entry JS must use new prefix');
+          res = await fetch(new URL(entry, base));
+          assert.equal(res.status, 200, 'entry JS unavailable');
+          res = await fetch(base + '/manifest.webmanifest');
+          assert.equal(res.status, 200, 'PWA manifest unavailable');
+          assert.equal((await res.json()).scope, '/games/putt/play/');
+          res = await fetch(base + '/sw.js');
+          assert.equal(res.status, 200, 'service worker unavailable');
+          res = await fetch(base + '/api/health');
+          assert.equal(res.status, 200, 'API health unavailable');
+          const health = await res.json();
+          assert.equal(health.database, false, 'preview must not bind production D1');
+          res = await fetch(base + '/api/records', { method: 'POST' });
+          assert.equal(res.status, 503, 'preview must reject ranking writes');
+          console.log('PASS: Putt subpath assets, PWA, noindex, and API isolation');
+          NODE
+      - name: Record preview URL
+        if: always()
+        run: |
+          {
+            echo '### Putt path preview (not production)'
+            echo
+            echo 'https://putt-hub-preview.jibunnha.workers.dev/games/putt/play/'
+            echo
+            echo 'Independent Worker: no hanage.app routes and no production D1 binding.'
+          } >> "$GITHUB_STEP_SUMMARY"
