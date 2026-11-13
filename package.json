@@ -8,6 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview --host",
     "build:cloudflare": "PUTT_BASE=/ npm run build",
+    "build:hub-preview": "PUTT_BASE=/games/putt/play/ npm run build",
+    "verify:hub-preview": "node scripts/verify-hub-preview.mjs",
     "deploy": "wrangler deploy",
     "db:migrate:local": "wrangler d1 migrations apply putt-ranking --local",
     "db:migrate": "wrangler d1 migrations apply putt-ranking --remote",
