@@ -5,7 +5,7 @@
 - 作業ブランチ: `feature/hub-path-putt-20261113`。
 - `/games/putt/play/` 配下の配信・PWA・APIパスを独立Worker `putt-hub-preview` で検証する。
 - 本番D1バインディングなし、ランキングと計測は無効。既存 `putt.hanage.app` はそのまま維持。
-- プレビューの自動検証と実機確認後、本番への経路設定・保存データ移行は別フェーズで判断する。
+- プレビューの自動検証成功: https://github.com/hanagemaru/putt/actions/runs/43437337388 。独立WorkerがHTTP 200、JS/PWA/APIの検証を通過。**iPhone実機の操作は未確認**。本番の経路設定・保存データ移行は別フェーズ。
 - 正本: `docs/hub-path-preview.md`。全体の判断・計画は `hanage-hub` 側に記録。
 
 
