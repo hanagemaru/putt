@@ -7,6 +7,7 @@ declare const process: { env: Record<string, string | undefined> };
 // 配信先ごとにベースパスが違う。
 // - GitHub Pages（従来）: プロジェクトサイトなので `/putt/` 配下
 // - Cloudflare Workers（putt.hanage.app）: 独自ドメインの直下なので `/`
+// - hanage.app配下の検証: `/games/putt/play/`（静的資産とPWAのscopeを揃える）
 // 既定は GitHub Pages。Cloudflare 向けのビルドだけ `PUTT_BASE=/` を渡す。
 const base = process.env.PUTT_BASE ?? '/putt/';
 
