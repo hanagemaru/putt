@@ -52,7 +52,19 @@ jobs:
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict';
           const base = process.env.BASE_URL;
-          let res = await fetch(base + '/');
+          let res;
+          for (let attempt = 1; attempt <= 12; attempt++) {
+            res = await fetch(base + '/', { cache: 'no-store' });
+            console.log(`Attempt ${attempt}: GET ${base}/ => ${res.status}`);
+            if (res.status === 200) break;
+            await new Promise(resolve => setTimeout(resolve, 3000));
+          }
+          if (res.status !== 200) {
+            for (const path of ['/index.html', '/games/putt/play/index.html', '/games/putt/play/api/health', '/api/health']) {
+              const diagnostic = await fetch(new URL(path, base));
+              console.log(`Diagnostics ${path} => ${diagnostic.status}`);
+            }
+          }
           assert.equal(res.status, 200, 'game must be accessible');
           const html = await res.text();
           assert.ok(html.includes('/games/putt/play/assets/'), 'assets must use the new prefix');
