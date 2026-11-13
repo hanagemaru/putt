@@ -13,6 +13,18 @@
 - プレビュー専用ビルドに `X-Robots-Tag: noindex, nofollow` を追加する。URL自体は公開されるため秘密情報を置かない。
 - `main` へのマージ・本番配信・Cloudflareルート設定はこのフェーズではしない。
 
+## 2026-11-13 検証結果
+
+- [x] `npm ci` とサブパスのビルドが成功
+- [x] `verify:hub-preview` でViteアセット・PWA manifest・Service Workerを検証
+- [x] 独立Worker `putt-hub-preview` へのデプロイ成功
+- [x] 新URLでHTTP 200、JS配信・manifest・SW・noindexを検証
+- [x] `/games/putt/play/api/health` でD1不在、ランキング書き込みが503になることを検証
+- [ ] iPhoneでのゲーム操作・9ホール・PWAインストール/オフライン（利用者実機での確認待ち）
+- [ ] hanage.app本番への経路設定（フェーズ3のため未実施）
+
+成功したActions: https://github.com/hanagemaru/putt/actions/runs/43437337388
+
 ## 自動検証
 
 1. `npm ci`、`npm run build:hub-preview`、`npm run verify:hub-preview`。
