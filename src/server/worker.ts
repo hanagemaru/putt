@@ -531,14 +531,18 @@ async function schemaReady(db: D1Database): Promise<boolean> {
 
 export async function handleRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
-  // Static Assets が先に当たるので、ここへ来るのは /api/* と、資産の無いパスだけ
-  if (!url.pathname.startsWith('/api/')) return new Response('Not Found', { status: 404 });
+  // 既存の /api/* に加え、hanage.app配下の /games/putt/play/api/* に対応する。
+  const hubPrefix = '/games/putt/play';
+  const apiPath = url.pathname.startsWith(`${hubPrefix}/api/`)
+    ? url.pathname.slice(hubPrefix.length)
+    : url.pathname;
+  if (!apiPath.startsWith('/api/')) return new Response('Not Found', { status: 404 });
 
-  if (request.method === 'POST' && url.pathname === '/api/gameplay-events') {
+  if (request.method === 'POST' && apiPath === '/api/gameplay-events') {
     return receiveGameplay(request, env.DB, env.GAMEPLAY_ANALYTICS === 'true');
   }
 
-  if (request.method === 'GET' && url.pathname === '/api/health') {
+  if (request.method === 'GET' && apiPath === '/api/health') {
     // `database` はバインディングの有無、`schema` は表ができているか。
     // **2つを分けて返す**ので、「D1は繋がっているが移行を流していない」が一目で分かる
     return json({
@@ -553,16 +557,16 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   // ゲームの配信は動いたまま、ランキングの入口だけが使えない状態にする
   if (!db) return error('Ranking database is not configured', 503);
 
-  if (request.method === 'GET' && url.pathname === '/api/rankings') {
+  if (request.method === 'GET' && apiPath === '/api/rankings') {
     return handleRanking(request, db, url);
   }
-  if (request.method === 'POST' && url.pathname === '/api/records') {
+  if (request.method === 'POST' && apiPath === '/api/records') {
     return handleSubmit(request, db);
   }
-  if (request.method === 'PUT' && url.pathname === '/api/player') {
+  if (request.method === 'PUT' && apiPath === '/api/player') {
     return handleUpdatePlayer(request, db);
   }
-  if (request.method === 'DELETE' && url.pathname === '/api/player') {
+  if (request.method === 'DELETE' && apiPath === '/api/player') {
     return handleDeletePlayer(request, db);
   }
   return error('Not found', 404);
