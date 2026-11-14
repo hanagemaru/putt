@@ -1,5 +1,7 @@
 # デプロイ手順
 
+> **2026-11-14現在:** 正式な新プレイURLは `https://hanage.app/games/putt/play/`（独立Worker `putt-hub`、Putt専用Zone Route）。従来の `https://putt.hanage.app/` もそのまま利用でき、新旧が同じ本番ランキングD1 `putt-ranking` を共用しています。ハブからの「遊ぶ」は新URLを別タブで開きます。本文に残る「旧Puttを初めてCloudflareへ移行する」手順は過去の構成の記録です。新パスの本番稼働・検証証跡は [PROJECT_STATUS.md](PROJECT_STATUS.md) 冒頭を優先し、新パスのデプロイ構成は `.github/workflows/deploy-hub-path-production.yml` と `wrangler.hub-production.jsonc` を参照してください。
+
 ## 現在の配信
 
 - 本番: Cloudflare Workers（Static Assets）で `https://putt.hanage.app/`
