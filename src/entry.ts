@@ -360,7 +360,16 @@ function renderTopMenu(): void {
   const privacy = externalMenuLink(copy.privacy, hubUrl(PRIVACY_PATH));
 
   secondary.append(howTo, privacy);
-  panel.append(title, subtitle, actions, secondary, languageToggle(renderTopMenu));
+  panel.append(title, subtitle);
+  if (import.meta.env.VITE_RANKING_DEFAULT_MOCK === 'true') {
+    const previewNote = document.createElement('p');
+    previewNote.textContent = language() === 'ja'
+      ? '検証版：ランキングはテストデータです'
+      : 'Preview: leaderboard uses test data';
+    previewNote.style.cssText = 'margin: 8px 0; font-size: 12px; text-align: center; color: #f1d883;';
+    panel.append(previewNote);
+  }
+  panel.append(actions, secondary, languageToggle(renderTopMenu));
   root.append(panel);
 }
 
