@@ -34,6 +34,16 @@
 
 プレビューの旧サイトは`https://putt-hub-preview.jibunnha.workers.dev/games/putt/play/`へのリンクを設定済み。**プレビューはモックデータでランキングを共有しない**ことを別の説明文に表示する。
 
+## ゲーム本体とハブの往復導線（2026-11-14）
+
+- **新Puttのみ**、トップメニューの補助リンクに「ゲーム紹介に戻る」（`/games/putt/`）を追加。従来の「遊び方」（`/games/putt/how-to-play/`）も維持する。
+- 同じ`hanage.app`オリジンからのプレイ中は紹介・遊び方・プライバシーへ**同じタブ**で移動する。アプリ外の旧Putt／独立プレビューは別タブリンクを維持し、旧ユーザーの操作を変えない。
+- 狭い画面では3つの補助リンクを折り返せるようにする。ゲームの操作画面そのものにはリンクを重ねず、トップメニューから行き来する。
+- 新URLで配信するHTMLに`<link rel="canonical" href="https://hanage.app/games/putt/play/" />`を出力。旧Puttのcanonicalは**新URLを実際に公開した後**、`VITE_LEGACY_NEW_SITE_URL`のビルド設定が一致した場合だけ新URLに向ける。
+- プレビューは従来どおり`X-Robots-Tag: noindex, nofollow`。canonicalが付いてもインデックス対象として扱わない。
+- Chromium/WebKitで新メニューの2つのリンク先、旧サイトの導線不変、PWA/asset、canonical HTMLを自動テスト。
+- 既存サイト紹介文、制作ノート、プレイ内容、ランキング構造は変更しない。
+
 ## 技術検証・安全性
 
 - `PUTT_BASE=/games/putt/play/`、PWA manifest/scopeとSW、Worker `assets.base_path=/games/putt/play`を一致させる。
