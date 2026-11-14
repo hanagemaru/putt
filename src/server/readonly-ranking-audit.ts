@@ -6,7 +6,7 @@
  */
 import { handleRequest } from './worker';
 
-type ReadOnlyEnv = { DB: D1Database; GAMEPLAY_ANALYTICS?: string };
+type ReadOnlyEnv = Parameters<typeof handleRequest>[1];
 
 export default {
   async fetch(request: Request, env: ReadOnlyEnv): Promise<Response> {
