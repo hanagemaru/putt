@@ -35,7 +35,7 @@ npx(['d1', 'migrations', 'apply', 'putt-ranking-hub-test-local-only', '--local',
 
 const processHandle = spawn('npx', [
   ...wrangler, 'dev', '--local', '--config', config, '--port', String(port), '--ip', '127.0.0.1',
-], { env: runner.env, stdio: ['ignore', 'pipe', 'pipe'] });
+], { env: runner.env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
 let output = '';
 processHandle.stdout?.on('data', chunk => { output = (output + chunk.toString()).slice(-3000); });
 processHandle.stderr?.on('data', chunk => { output = (output + chunk.toString()).slice(-3000); });
@@ -121,7 +121,11 @@ try {
   assert.equal(response.data.yourBest, null);
   console.log('PASS: isolated local D1 real ranking registration, old/new URLs, credentials, idempotence, rename and deletion');
 } finally {
-  processHandle.kill('SIGTERM');
+  // npx spawns Wrangler as a child. Kill the *whole group* so an orphaned
+  // workerd cannot retain stdout pipes and keep CI running indefinitely.
+  try { process.kill(-processHandle.pid!, 'SIGTERM'); } catch { /* exited */ }
   await delay(500);
-  if (processHandle.exitCode === null) processHandle.kill('SIGKILL');
+  try { process.kill(-processHandle.pid!, 'SIGKILL'); } catch { /* exited */ }
+  processHandle.stdout?.destroy();
+  processHandle.stderr?.destroy();
 }
