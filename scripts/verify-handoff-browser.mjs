@@ -53,7 +53,7 @@ async function runHandoff(target) {
 
 try {
   {
-    const context = await browser.newContext({ serviceWorkers: 'block' });
+    const context = await browser.newContext({ serviceWorkers: 'block', locale: 'ja-JP' });
     const { old, result } = await seedOld(context);
     const target = await context.newPage();
     await runHandoff(target);
@@ -73,7 +73,7 @@ try {
     await context.close();
   }
   {
-    const context = await browser.newContext({ serviceWorkers: 'block' });
+    const context = await browser.newContext({ serviceWorkers: 'block', locale: 'ja-JP' });
     await seedOld(context);
     const target = await context.newPage();
     await target.goto(NEW, { waitUntil: 'domcontentloaded' });
@@ -93,7 +93,7 @@ try {
     await context.close();
   }
   {
-    const context = await browser.newContext({ serviceWorkers: 'block' });
+    const context = await browser.newContext({ serviceWorkers: 'block', locale: 'ja-JP' });
     const old = await context.newPage();
     await old.goto(OLD + '?legacyHandoff=1');
     await old.getByRole('status').filter({ hasText: '接続がありません' }).waitFor();
