@@ -1,5 +1,14 @@
 # 現在地 / Project Status
 
+## 2026-11-14: Cloudflare新パス・本番D1接続の検証成功（公開は未実施）
+
+- Cloudflare本番Zoneのread-only監査で、`hanage.app`は`hanage-hub` Custom Domain、Zone Routeは0件、新Puttパスは404で未使用と確認。
+- `wrangler.hub-production.jsonc`に別Worker`putt-hub`、旧Puttと同じ`putt-ranking` D1、新パスRoute（末尾/ありなし）を準備。Wrangler dry-run成功。**本番Route未登録**。
+- 一時的なread-only Workerから実本番D1に接続し、Puttの4コースの総合ランキングが旧Workerと完全一致（35/16/8/10件）し、書き込みAPI拒否・一時Worker削除も成功。
+- Cloudflare監査: https://github.com/hanagemaru/putt/actions/runs/43594376873 、実D1共用の確認: https://github.com/hanagemaru/putt/actions/runs/43595040164 。
+- ハブでの本番Route作成と公開後の新URLからの登録・PWA確認は未実施。旧サイトとハブの本番`main`は不変。
+- 公開ゲート: https://github.com/hanagemaru/hanage-hub/blob/plan/putt-hub-path-20261113/docs/PUTT_HUB_RELEASE_GATE_2026-11-14.md
+
 ## 2026-11-14: 旧URL維持＋新URL追加の並行公開方式に決定
 
 - **最新方針:** 旧Puttは引き続き遊べるまま残す。新Puttは`hanage.app/games/putt/play/`に追加予定。**手動のプレイヤー記録引き継ぎ機能は提供しない。**
