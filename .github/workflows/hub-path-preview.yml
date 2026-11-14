@@ -8,8 +8,7 @@ on:
       - 'scripts/verify-hub-preview.mjs'
       - 'scripts/verify-hub-api.ts'
       - 'scripts/report-gameplay-activity.mjs'
-      - 'scripts/verify-legacy-migration.ts'
-      - 'scripts/verify-handoff-browser.mjs'
+      - 'scripts/verify-legacy-notice-browser.mjs'
       - 'scripts/verify-hub-ranking-local.ts'
       - 'vite.config.ts'
       - 'package.json'
@@ -43,7 +42,7 @@ jobs:
           VITE_GAMEPLAY_ANALYTICS: 'false'
           VITE_RANKING_API_ENABLED: 'false'
           VITE_RANKING_DEFAULT_MOCK: 'true'
-          VITE_HANDOFF_ENV: 'preview-source'
+          VITE_LEGACY_NEW_SITE_URL: 'https://putt-hub-preview.jibunnha.workers.dev/games/putt/play/'
       - name: Disable old-origin preview indexing
         run: |
           printf '/*\\n  X-Robots-Tag: noindex, nofollow\\n' > dist/_headers
@@ -58,13 +57,10 @@ jobs:
           VITE_GAMEPLAY_ANALYTICS: 'false'
           VITE_RANKING_API_ENABLED: 'false'
           VITE_RANKING_DEFAULT_MOCK: 'true'
-          VITE_HANDOFF_ENV: 'preview-target'
       - name: Verify path and PWA output
         run: npm run verify:hub-preview
       - name: Verify API URL variants without D1
         run: npm run verify:hub-api
-      - name: Verify local score migration safeguards
-        run: npm run verify:legacy-migration
       - name: Verify real ranking CRUD against disposable local D1
         run: npm run verify:hub-ranking-local
       - name: Disable preview indexing
@@ -117,16 +113,16 @@ jobs:
           assert.equal(res.status, 503, 'preview must reject ranking writes');
           console.log('PASS: Putt subpath assets, PWA, noindex, and API isolation');
           NODE
-      - name: Install headless browser for cross-origin handoff test
+      - name: Install browsers for legacy-link validation
         run: |
           npm install --no-save --no-package-lock --ignore-scripts playwright@1.56.1
           npx playwright install chromium webkit --with-deps
-      - name: Cross-origin handoff Chromium E2E
-        run: node scripts/verify-handoff-browser.mjs
-      - name: Cross-origin handoff WebKit E2E
-        run: node scripts/verify-handoff-browser.mjs
+      - name: Legacy-site notice and navigation on Chromium
+        run: node scripts/verify-legacy-notice-browser.mjs
+      - name: Legacy-site notice and navigation on WebKit
+        run: node scripts/verify-legacy-notice-browser.mjs
         env:
-          HANDOFF_BROWSER: webkit
+          NOTICE_BROWSER: webkit
       - name: Record preview URL
         if: always()
         run: |
