@@ -12,7 +12,7 @@ function enabled(): boolean {
   const hub = location.hostname === 'hanage.app' && ['/games/putt/play/', '/games/putt/play/index.html'].includes(location.pathname);
   if (!legacy && !hub) return false;
   const params = new URLSearchParams(location.search);
-  return !['social', 'debug', 'ranking', 'rankingMock', 'tune', 'theme', 'seed', 'gen', 'course', 'setup'].some(key => params.has(key));
+  return !['social', 'debug', 'ranking', 'rankingMock', 'tune', 'theme', 'seed', 'gen', 'course', 'setup', 'legacyHandoff'].some(key => params.has(key));
 }
 
 /** A tab visit with a 30-minute idle timeout; no cross-day visitor identity. */
