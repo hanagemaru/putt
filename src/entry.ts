@@ -415,6 +415,15 @@ function renderRanking(tour: TourDefinition = DEFAULT_TOUR): void {
   panel.className = 'menu-panel course-panel ranking-panel';
   panel.append(menuHeading(copy.rankingTitle, renderTopMenu));
 
+  if (import.meta.env.VITE_RANKING_DEFAULT_MOCK === 'true') {
+    const demoNotice = document.createElement('p');
+    demoNotice.textContent = language() === 'ja'
+      ? 'テスト用ランキングです。実際のスコアは登録されません。'
+      : 'Test leaderboard. No scores are submitted to the live service.';
+    demoNotice.style.cssText = 'margin: 10px 0; font-size: 12px; line-height: 1.5; text-align: center; color: #f1d883;';
+    panel.append(demoNotice);
+  }
+
   // 板の切り替え。押した先も同じ画面なので、戻る道が増えない
   const tabs = document.createElement('div');
   tabs.className = 'ranking-tabs';
