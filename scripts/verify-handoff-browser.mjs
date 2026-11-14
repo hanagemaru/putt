@@ -55,7 +55,11 @@ async function runHandoff(target) {
 
 try {
   {
-    const context = await browser.newContext({ serviceWorkers: 'block', locale: 'ja-JP' });
+    const context = await browser.newContext({
+      serviceWorkers: 'block',
+      locale: 'ja-JP',
+      ...(browserName === 'webkit' ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } : {}),
+    });
     const { old, result } = await seedOld(context);
     const target = await context.newPage();
     await runHandoff(target);
@@ -75,7 +79,11 @@ try {
     await context.close();
   }
   {
-    const context = await browser.newContext({ serviceWorkers: 'block', locale: 'ja-JP' });
+    const context = await browser.newContext({
+      serviceWorkers: 'block',
+      locale: 'ja-JP',
+      ...(browserName === 'webkit' ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } : {}),
+    });
     await seedOld(context);
     const target = await context.newPage();
     await target.goto(NEW, { waitUntil: 'domcontentloaded' });
@@ -95,7 +103,11 @@ try {
     await context.close();
   }
   {
-    const context = await browser.newContext({ serviceWorkers: 'block', locale: 'ja-JP' });
+    const context = await browser.newContext({
+      serviceWorkers: 'block',
+      locale: 'ja-JP',
+      ...(browserName === 'webkit' ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } : {}),
+    });
     const old = await context.newPage();
     await old.goto(OLD + '?legacyHandoff=1');
     await old.getByRole('status').filter({ hasText: '接続がありません' }).waitFor();
