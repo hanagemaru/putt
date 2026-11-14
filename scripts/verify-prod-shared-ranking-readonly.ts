@@ -22,7 +22,7 @@ const configFile = '.wrangler/readonly-audit-config.jsonc';
 mkdirSync('.wrangler', { recursive: true });
 writeFileSync(configFile, JSON.stringify({
   name,
-  main: './src/server/readonly-ranking-audit.ts',
+  main: '../src/server/readonly-ranking-audit.ts',
   compatibility_date: '2026-08-01',
   d1_databases: [{
     binding: 'DB',
