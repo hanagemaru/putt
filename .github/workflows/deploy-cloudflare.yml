@@ -25,7 +25,10 @@ jobs:
           VITE_CF_BEACON_TOKEN: ${{ vars.CF_BEACON_TOKEN }}
           # 新Puttの実URLと共有ランキングを確認した後だけ設定する。
           # 既定で空なら既存の旧URLトップには新URL案内を出さない。
-          VITE_LEGACY_NEW_SITE_URL: ${{ vars.PUTT_HUB_PLAY_URL }}
+          # New URL has passed the production release smoke tests.
+          # Set PUTT_HUB_PLAY_URL to a different value (e.g. disabled) to hide
+          # this notice and canonical tag if the new path must be rolled back.
+          VITE_LEGACY_NEW_SITE_URL: ${{ vars.PUTT_HUB_PLAY_URL || 'https://hanage.app/games/putt/play/' }}
       - name: Verify published analytics disclosure
         run: |
           node --input-type=module <<'NODE'
@@ -67,3 +70,38 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Install Chromium for live old-Putt notice verification
+        run: |
+          npm install --no-save --no-package-lock --ignore-scripts playwright@1.56.1
+          npx playwright install chromium --with-deps
+      - name: Check old Putt, new link, and shared ranking notice in real browser
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { chromium } from 'playwright';
+          const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
+          try {
+            const context = await browser.newContext({ locale: 'ja-JP', serviceWorkers: 'block' });
+            const old = await context.newPage();
+            const response = await old.goto('https://putt.hanage.app/', { waitUntil: 'domcontentloaded' });
+            assert.equal(response.status(), 200);
+            const notice = old.locator('.menu-legacy-notice');
+            await notice.waitFor({ timeout: 16000 });
+            assert.match(await notice.innerText(), /ランキングの記録は新旧共通/);
+            const link = old.getByTestId('new-putt-link');
+            assert.equal(await link.getAttribute('href'), 'https://hanage.app/games/putt/play/');
+            assert.equal(await link.getAttribute('target'), '_blank');
+            assert.ok(await old.getByRole('button', { name: '通常ツアー' }).isVisible());
+            const popupPromise = old.waitForEvent('popup', { timeout: 16000 });
+            await link.click({ noWaitAfter: true });
+            const fresh = await popupPromise;
+            await fresh.waitForLoadState('domcontentloaded');
+            assert.equal(fresh.url().split('?')[0], 'https://hanage.app/games/putt/play/');
+            assert.ok(await fresh.getByRole('button', { name: '通常ツアー' }).isVisible());
+            assert.equal(await fresh.getByTestId('hub-game-details').getAttribute('target'), null);
+            assert.equal(await fresh.getByTestId('hub-game-how-to').getAttribute('target'), '_blank');
+            const oldHtml = await response.text();
+            assert.match(oldHtml, /rel="canonical" href="https:\/\/hanage\.app\/games\/putt\/play\/"/);
+            console.log('PASS: old Putt stays playable, notice + new-tab link work, new Putt returns via same-tab details and separate-tab how-to');
+          } finally { await browser.close(); }
+          NODE
