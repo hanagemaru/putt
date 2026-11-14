@@ -23,20 +23,28 @@ async function seedOld(context) {
   return { old, result };
 }
 
+async function openLegacyPopup(target) {
+  const popupResult = target.waitForEvent('popup', { timeout: 12000 }).catch(() => null);
+  const button = target.getByRole('button', { name: '以前の記録を引き継ぐ' });
+  try {
+    await button.click({ noWaitAfter: true, timeout: 12000 });
+  } catch (error) {
+    console.log('DIAGNOSTIC: click did not complete', String(error).slice(0, 500));
+  }
+  const popup = await popupResult;
+  if (!popup) {
+    console.log('DIAGNOSTIC: target URL', target.url());
+    console.log('DIAGNOSTIC: target status', await target.locator('[role=status]').allTextContents());
+    console.log('DIAGNOSTIC: browser tabs', target.context().pages().map(page => page.url()));
+    throw new Error('No popup created by browser handoff UI');
+  }
+  assert.ok(popup.url().startsWith(OLD), 'popup must use isolated old origin');
+  return popup;
+}
+
 async function runHandoff(target) {
   await target.goto(NEW, { waitUntil: 'domcontentloaded' });
-  const popupPromise = target.waitForEvent('popup', { timeout: 15000 });
-  await target.getByRole('button', { name: '以前の記録を引き継ぐ' }).click();
-  let popup;
-  try {
-    popup = await popupPromise;
-  } catch (error) {
-    console.log('DIAGNOSTIC: new page URL', target.url());
-    console.log('DIAGNOSTIC: status text', await target.locator('[role=status]').allTextContents());
-    console.log('DIAGNOSTIC: open pages', target.context().pages().map(page => page.url()));
-    throw error;
-  }
-  assert.ok(popup.url().startsWith(OLD), 'popup must use the isolated old origin');
+  const popup = await openLegacyPopup(target);
   const approve = popup.getByRole('button', { name: '記録を移す' });
   await approve.waitFor({ state: 'visible', timeout: 15000 });
   await approve.click();
@@ -73,9 +81,7 @@ try {
       'putt-player-identity-v1',
       JSON.stringify({ playerId: '99999999-9999-4999-8999-999999999999', credential: 'b'.repeat(64) }),
     ));
-    const popupPromise = target.waitForEvent('popup', { timeout: 15000 });
-    await target.getByRole('button', { name: '以前の記録を引き継ぐ' }).click();
-    const popup = await popupPromise;
+    const popup = await openLegacyPopup(target);
     await popup.getByRole('button', { name: '記録を移す' }).waitFor({ state: 'visible', timeout: 15000 });
     await popup.getByRole('button', { name: '記録を移す' }).click();
     await target.getByRole('status').filter({ hasText: '上書きせずに中止' }).waitFor({ timeout: 15000 });
