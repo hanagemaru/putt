@@ -60,7 +60,21 @@ function puttPwa(basePath: string): Plugin {
     transformIndexHtml: {
       order: 'post',
       handler(html: string) {
-        return html.split(`"/${MANIFEST_FILE}"`).join(`"${basePath}${MANIFEST_FILE}"`);
+        let result = html.split(`"/${MANIFEST_FILE}"`).join(`"${basePath}${MANIFEST_FILE}"`);
+        const hubPlayUrl = 'https://hanage.app/games/putt/play/';
+        // New path: signal the preferred indexable game URL to crawlers.
+        // Old Putt: only switch canonical after the new game is actually live.
+        // Both preview Workers explicitly return X-Robots-Tag: noindex.
+        const canonicalToHub =
+          basePath === '/games/putt/play/' ||
+          (basePath === '/' && process.env.VITE_LEGACY_NEW_SITE_URL === hubPlayUrl);
+        if (canonicalToHub) {
+          result = result.replace(
+            '</head>',
+            `    <link rel="canonical" href="${hubPlayUrl}" />\n  </head>`,
+          );
+        }
+        return result;
       },
     },
     configureServer(server) {
