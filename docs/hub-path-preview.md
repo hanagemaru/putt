@@ -103,7 +103,9 @@ Cloudflare D1の本番`gameplay_events`と`players`/`records`に、読み取り�
 
 ## 2026-11-14: G2/G3の自動検証が成功（本番未変更）
 
-成功したGitHub Actions: https://github.com/hanagemaru/putt/actions/runs/43590970005
+成功したGitHub Actions（Chromium＋WebKit / ローカルD1）: https://github.com/hanagemaru/putt/actions/runs/43591313342
+
+- **追加成功:** WebKitの390×844、タッチ対応エミュレーションでも、2つの異なるHTTPSオリジン間でユーザー許可による記録引き継ぎ、衝突時の上書き禁止、openerがない場合の転送禁止が成功。これはiOS Safariの実機テストに代わるものではない。
 
 - [x] 本番とは別の `putt-legacy-preview`（旧URL相当）と `putt-hub-preview`（新URL相当）を個別Workerとしてデプロイ
 - [x] 旧環境 `https://putt-legacy-preview.jibunnha.workers.dev/` と新環境 `https://putt-hub-preview.jibunnha.workers.dev/games/putt/play/` の**異なるHTTPSオリジン**間で、ブラウザによる同意・データ受け渡しを実証
