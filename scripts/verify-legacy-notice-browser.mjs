@@ -52,6 +52,39 @@ try {
   assert.equal(await old.evaluate(() => localStorage.getItem('old-game-data-still-here')), 'unchanged');
   assert.equal(await newTab.evaluate(() => localStorage.getItem('old-game-data-still-here')), null);
 
+  // Route only the new game path to the isolated preview Worker, while
+  // keeping the browser URL on the actual hanage.app origin. This tests the
+  // production-only same-tab behavior without publishing a Route or touching D1.
+  const sameOrigin = await browser.newContext({
+    locale: 'ja-JP',
+    serviceWorkers: 'block',
+    ...(engine === 'webkit' ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } : {}),
+  });
+  await sameOrigin.route('https://hanage.app/games/putt/play/**', async route => {
+    const proxyUrl = route.request().url().replace(
+      'https://hanage.app/games/putt/play/',
+      NEW,
+    );
+    const response = await route.fetch({ url: proxyUrl });
+    await route.fulfill({ response });
+  });
+  const simulatedHubGame = await sameOrigin.newPage();
+  const simulatedResponse = await simulatedHubGame.goto('https://hanage.app/games/putt/play/', {
+    waitUntil: 'domcontentloaded',
+  });
+  assert.equal(simulatedResponse.status(), 200);
+  const sameTabDetail = simulatedHubGame.getByTestId('hub-game-details');
+  const sameTabHowTo = simulatedHubGame.getByTestId('hub-game-how-to');
+  await sameTabDetail.waitFor({ timeout: 15000 });
+  assert.equal(await sameTabDetail.getAttribute('target'), null);
+  assert.equal(await sameTabHowTo.getAttribute('target'), null);
+  assert.equal(await sameTabDetail.getAttribute('href'), 'https://hanage.app/games/putt/');
+  assert.equal(await sameTabHowTo.getAttribute('href'), 'https://hanage.app/games/putt/how-to-play/');
+  await sameTabDetail.click();
+  await simulatedHubGame.waitForURL('https://hanage.app/games/putt/', { timeout: 15000 });
+  assert.ok(!simulatedHubGame.isClosed(), 'same-tab navigation must not close the tab');
+  await sameOrigin.close();
+  console.log(`PASS: ${engine} - same-origin game exits to hub details in the same tab`);
   console.log(`PASS: ${engine} - old game remains playable, new-site notice is accurate, link works, local storage remains separate`);
 } finally {
   await browser.close();
