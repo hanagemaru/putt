@@ -36,6 +36,8 @@ installWebAnalytics();
 trackGameplay('visit');
 
 const HUB_ORIGIN = 'https://hanage.app';
+const HUB_PLAY_PATH = '/games/putt/play/';
+const GAME_DETAIL_PATH = '/games/putt/';
 const HOW_TO_PATH = '/games/putt/how-to-play/';
 const PRIVACY_PATH = '/privacy/';
 const params = new URLSearchParams(window.location.search);
@@ -356,9 +358,23 @@ function renderTopMenu(): void {
   secondary.className = 'menu-secondary';
   secondary.setAttribute('aria-label', copy.guideLabel);
 
-  const howTo = externalMenuLink(copy.howTo, hubUrl(HOW_TO_PATH));
-  const privacy = externalMenuLink(copy.privacy, hubUrl(PRIVACY_PATH));
+  // ハブ内の新Puttだけ、説明ページと遊び方へ同じタブで戻れる。
+  // 旧サブドメインのPuttは既存の別タブ導線を変えない。
+  const inHubGame = import.meta.env.BASE_URL === HUB_PLAY_PATH;
+  const sameTab = inHubGame && window.location.origin === HUB_ORIGIN;
+  const howTo = externalMenuLink(copy.howTo, hubUrl(HOW_TO_PATH), sameTab);
+  const privacy = externalMenuLink(copy.privacy, hubUrl(PRIVACY_PATH), sameTab);
 
+  if (inHubGame) {
+    const detail = externalMenuLink(
+      language() === 'ja' ? 'ゲーム紹介に戻る' : 'Back to game details',
+      hubUrl(GAME_DETAIL_PATH),
+      sameTab,
+    );
+    detail.setAttribute('data-testid', 'hub-game-details');
+    howTo.setAttribute('data-testid', 'hub-game-how-to');
+    secondary.append(detail);
+  }
   secondary.append(howTo, privacy);
   panel.append(title, subtitle);
   if (import.meta.env.VITE_RANKING_DEFAULT_MOCK === 'true') {
@@ -995,12 +1011,16 @@ function hubUrl(path: string): string {
   return `${HUB_ORIGIN}${language() === 'en' ? '/en' : ''}${path}`;
 }
 
-function externalMenuLink(label: string, href: string): HTMLAnchorElement {
+function externalMenuLink(label: string, href: string, sameTab = false): HTMLAnchorElement {
   const link = document.createElement('a');
   link.className = 'menu-text-link';
   link.href = href;
-  link.target = '_blank';
-  link.rel = 'noopener noreferrer';
+  // In the new, same-origin Putt, navigate naturally back to the hub.
+  // Existing standalone Putt on its old subdomain keeps opening a separate tab.
+  if (!sameTab) {
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+  }
   link.textContent = label;
   return link;
 }
