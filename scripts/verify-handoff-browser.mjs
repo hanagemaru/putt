@@ -27,7 +27,15 @@ async function runHandoff(target) {
   await target.goto(NEW, { waitUntil: 'domcontentloaded' });
   const popupPromise = target.waitForEvent('popup', { timeout: 15000 });
   await target.getByRole('button', { name: '以前の記録を引き継ぐ' }).click();
-  const popup = await popupPromise;
+  let popup;
+  try {
+    popup = await popupPromise;
+  } catch (error) {
+    console.log('DIAGNOSTIC: new page URL', target.url());
+    console.log('DIAGNOSTIC: status text', await target.locator('[role=status]').allTextContents());
+    console.log('DIAGNOSTIC: open pages', target.context().pages().map(page => page.url()));
+    throw error;
+  }
   assert.ok(popup.url().startsWith(OLD), 'popup must use the isolated old origin');
   const approve = popup.getByRole('button', { name: '記録を移す' });
   await approve.waitFor({ state: 'visible', timeout: 15000 });
