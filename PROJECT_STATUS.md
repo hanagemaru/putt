@@ -1,5 +1,14 @@
 # 現在地 / Project Status
 
+## 2026-11-14: 旧URLから新URLへの記録引き継ぎ・ランキングの検証
+
+- 2つの独立プレビューWorkerで、明示許可・匿名認証情報・自己ベストの引き継ぎをChromiumとWebKit（iPhone相当の画面/タッチ）でE2E検証し、成功。
+- 登録済み別IDとの衝突時に上書きされないこと、旧記録が残ることを確認。
+- ローカル専用D1を使い、ランキングの旧新両API・登録・重複防止・名前変更・認証・削除を自動検証し成功。
+- 成功したActions: https://github.com/hanagemaru/putt/actions/runs/43591313342
+- **次はiPhone Safari実機確認**。既存本番`putt.hanage.app`・`hanage.app`・本番D1は変更していない。
+- 詳細と実機手順: `docs/hub-path-preview.md`。
+
 ## 2026-11-13: hanage.app配下Puttの検証（本番未変更）
 
 - 作業ブランチ: `feature/hub-path-putt-20261113`。
