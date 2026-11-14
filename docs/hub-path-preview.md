@@ -70,6 +70,12 @@
 - 一時Workerの**削除成功をCIで確認**。本番D1へのテスト書き込み・本番Workerへの新Route・旧サイトへの変更なし。
 - これにより**本番D1の別Workerからの共用読み取りは実証済み**。ただし実際の`hanage.app`のRoute経由でのAPI通信・本番書き込みは未検証。
 
+### wwwからの新ゲームURL
+
+- 実HTTP確認で`www.hanage.app`はrootへ自動転送されず、www版の新Puttパスは現時点404。
+- ハブ側リポジトリで`wrangler.game-www-redirect.jsonc`と`src/workers/game-www-redirect.ts`を準備。wwwのPuttプレイパスだけをrootへ302/no-storeで転送し、別オリジンのプレイヤーIDが増えるのを防ぐ。
+- Chromium等でのHTTP上の実Zone Routeは**未登録**。ハブ側で[動作ユニットテスト・Wrangler dry-run成功](https://github.com/hanagemaru/hanage-hub/actions/runs/43596320442)。本番での転送確認は本番公開段階のゲートに含める。
+
 ## 本番公開前に残ること
 
 1. Chromium/WebKitで旧サイトの告知とリンク、モックランキングのCIが通ること。
