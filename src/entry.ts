@@ -358,12 +358,13 @@ function renderTopMenu(): void {
   secondary.className = 'menu-secondary';
   secondary.setAttribute('aria-label', copy.guideLabel);
 
-  // ハブ内の新Puttだけ、説明ページと遊び方へ同じタブで戻れる。
-  // 旧サブドメインのPuttは既存の別タブ導線を変えない。
+  // 紹介ページへはゲームのタブから戻る。遊び方・プライバシーは
+  // プレイ中のタブを残せるよう別タブで開く。
+  // 旧サブドメインPuttは従来の別タブ動作を維持する。
   const inHubGame = import.meta.env.BASE_URL === HUB_PLAY_PATH;
   const sameTab = inHubGame && window.location.origin === HUB_ORIGIN;
-  const howTo = externalMenuLink(copy.howTo, hubUrl(HOW_TO_PATH), sameTab);
-  const privacy = externalMenuLink(copy.privacy, hubUrl(PRIVACY_PATH), sameTab);
+  const howTo = externalMenuLink(copy.howTo, hubUrl(HOW_TO_PATH));
+  const privacy = externalMenuLink(copy.privacy, hubUrl(PRIVACY_PATH));
 
   if (inHubGame) {
     secondary.classList.add('menu-secondary-hub');
