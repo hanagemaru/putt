@@ -35,6 +35,7 @@ jobs:
         env:
           VITE_GAMEPLAY_ANALYTICS: 'false'
           VITE_RANKING_API_ENABLED: 'false'
+          VITE_RANKING_DEFAULT_MOCK: 'true'
       - name: Verify path and PWA output
         run: npm run verify:hub-preview
       - name: Disable preview indexing
