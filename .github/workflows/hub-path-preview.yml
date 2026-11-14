@@ -95,11 +95,6 @@ jobs:
           assert.equal(res.status, 503, 'preview must reject ranking writes');
           console.log('PASS: Putt subpath assets, PWA, noindex, and API isolation');
           NODE
-      - name: Read aggregate production activity (SELECT only)
-        run: node scripts/report-gameplay-activity.mjs
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Record preview URL
         if: always()
         run: |
