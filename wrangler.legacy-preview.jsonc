@@ -1,0 +1,16 @@
+{
+  // A second completely isolated Worker which simulates the old Putt origin.
+  // It is NOT connected to putt.hanage.app, hanage.app or production D1.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "putt-legacy-preview",
+  "main": "./src/server/worker.ts",
+  "compatibility_date": "2026-08-01",
+  "assets": {
+    "directory": "./dist",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "none",
+    "run_worker_first": ["/api/*"]
+  },
+  "vars": { "GAMEPLAY_ANALYTICS": "false" },
+  "observability": { "enabled": true }
+}
