@@ -1,0 +1,22 @@
+{
+  // Local-only D1 integration testing. Database ID is deliberately synthetic;
+  // no --remote flag, production binding or shared remote database is used.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "putt-hub-local-ranking-test",
+  "main": "./src/server/worker.ts",
+  "compatibility_date": "2026-08-01",
+  "assets": {
+    "directory": "./dist",
+    "base_path": "/games/putt/play",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "none",
+    "run_worker_first": ["/api/*", "/games/putt/play/api/*"]
+  },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "putt-ranking-hub-test-local-only",
+    "database_id": "00000000-0000-4000-8000-000000000002",
+    "migrations_dir": "migrations"
+  }],
+  "vars": { "GAMEPLAY_ANALYTICS": "false" }
+}
