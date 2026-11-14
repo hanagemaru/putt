@@ -1,5 +1,14 @@
 # 現在地 / Project Status
 
+## 2026-11-14: ハブからの同タブ起動とPuttから紹介・遊び方へ戻る導線を追加
+
+- 新Putt（`/games/putt/play/`）だけトップメニューに「ゲーム紹介に戻る」を追加。既存「遊び方」とともに、実`hanage.app`同一オリジンでは同じタブに移動する。旧Puttの別タブ動作・3Dプレイは維持。
+- 新Puttのcanonicalを`https://hanage.app/games/putt/play/`に固定。旧Puttは新URL案内を本番公開後に有効化した場合のみcanonicalを新URLへ変更。2つの独立プレビューはnoindex。
+- ブラウザ検証では旧サイトの動作・保存データ分離に加え、新Puttのメニュー2リンクと同一オリジンに見立てた画面の戻り先をテスト。
+- ハブの紹介文・制作ノートは変更なし。プレビューとPRのみ、本番`main`・URL・DBは未変更。
+- 実装プレビュー: https://putt-hub-preview.jibunnha.workers.dev/games/putt/play/ 。
+
+
 ## 2026-11-14: Cloudflare新パス・本番D1接続の検証成功（公開は未実施）
 
 - Cloudflare本番Zoneのread-only監査で、`hanage.app`は`hanage-hub` Custom Domain、Zone Routeは0件、新Puttパスは404で未使用と確認。
