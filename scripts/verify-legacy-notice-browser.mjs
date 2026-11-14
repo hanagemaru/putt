@@ -40,6 +40,15 @@ try {
   assert.equal(new URL(newTab.url()).origin, new URL(NEW).origin);
   assert.equal(await newTab.getByTestId('new-putt-link').count(), 0, 'new site must not show old-site notice');
   assert.equal(await newTab.getByRole('button', { name: '通常ツアー' }).count(), 1);
+  const details = newTab.getByTestId('hub-game-details');
+  const howTo = newTab.getByTestId('hub-game-how-to');
+  await details.waitFor();
+  assert.equal(await details.getAttribute('href'), 'https://hanage.app/games/putt/');
+  assert.equal(await howTo.getAttribute('href'), 'https://hanage.app/games/putt/how-to-play/');
+  // In the independent preview origin, external hub links still open safely
+  // in new tabs. When hosted at hanage.app, they use same-tab navigation.
+  assert.equal(await details.getAttribute('target'), '_blank');
+  assert.equal(await old.getByTestId('hub-game-details').count(), 0);
   assert.equal(await old.evaluate(() => localStorage.getItem('old-game-data-still-here')), 'unchanged');
   assert.equal(await newTab.evaluate(() => localStorage.getItem('old-game-data-still-here')), null);
 
