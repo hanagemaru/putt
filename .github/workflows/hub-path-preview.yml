@@ -10,11 +10,13 @@ on:
       - 'scripts/report-gameplay-activity.mjs'
       - 'scripts/verify-legacy-migration.ts'
       - 'scripts/verify-handoff-browser.mjs'
+      - 'scripts/verify-hub-ranking-local.ts'
       - 'vite.config.ts'
       - 'package.json'
       - 'package-lock.json'
       - 'wrangler.hub-preview.jsonc'
       - 'wrangler.legacy-preview.jsonc'
+      - 'wrangler.hub-local-ranking.jsonc'
       - '.github/workflows/hub-path-preview.yml'
   workflow_dispatch:
 
@@ -63,6 +65,8 @@ jobs:
         run: npm run verify:hub-api
       - name: Verify local score migration safeguards
         run: npm run verify:legacy-migration
+      - name: Verify real ranking CRUD against disposable local D1
+        run: npm run verify:hub-ranking-local
       - name: Disable preview indexing
         run: |
           printf '/games/putt/play/*\n  X-Robots-Tag: noindex, nofollow\n' > dist/_headers
