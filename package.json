@@ -11,7 +11,6 @@
     "build:hub-preview": "PUTT_BASE=/games/putt/play/ npm run build",
     "verify:hub-preview": "node scripts/verify-hub-preview.mjs",
     "verify:hub-api": "node --experimental-transform-types --import ./scripts/ts-resolve.mjs scripts/verify-hub-api.ts",
-    "verify:legacy-migration": "node --experimental-transform-types --import ./scripts/ts-resolve.mjs scripts/verify-legacy-migration.ts",
     "verify:hub-ranking-local": "node --experimental-transform-types --import ./scripts/ts-resolve.mjs scripts/verify-hub-ranking-local.ts",
     "deploy": "wrangler deploy",
     "db:migrate:local": "wrangler d1 migrations apply putt-ranking --local",
