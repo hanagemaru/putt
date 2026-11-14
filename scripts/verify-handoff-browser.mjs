@@ -2,11 +2,13 @@
 // No production data, player identifiers, secrets, or token values are logged.
 // Expected environments: putt-legacy-preview / putt-hub-preview.
 import assert from 'node:assert/strict';
-import { chromium } from 'playwright';
+import { chromium, webkit } from 'playwright';
 
 const OLD = 'https://putt-legacy-preview.jibunnha.workers.dev/';
 const NEW = 'https://putt-hub-preview.jibunnha.workers.dev/games/putt/play/';
-const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
+const browserName = process.env.HANDOFF_BROWSER === 'webkit' ? 'webkit' : 'chromium';
+const browserType = browserName === 'webkit' ? webkit : chromium;
+const browser = await browserType.launch({ headless: true, ...(browserName === 'chromium' ? { args: ['--no-sandbox'] } : {}) });
 
 async function seedOld(context) {
   const old = await context.newPage();
@@ -101,7 +103,7 @@ try {
     console.log('PASS: direct old-origin access cannot transfer records without opener');
     await context.close();
   }
-  console.log('PASS: all cross-origin Putt handoff browser checks');
+  console.log(`PASS: all cross-origin Putt handoff browser checks (${browserName})`);
 } finally {
   await browser.close();
 }
