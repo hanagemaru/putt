@@ -1,7 +1,9 @@
 # Puttをhanage.app配下に追加する検証
 
+> **検証時点の記録:** Puttの新URL `https://hanage.app/games/putt/play/` は2026-11-14に本番公開済みです。本文の「未公開」「本番前」は公開前の状況です。現在の稼働状態と検証証跡は [PROJECT_STATUS.md](../PROJECT_STATUS.md) 冒頭を優先してください。
+
 更新日: 2026-11-14
-**現行方針:** 旧URLを維持し、新URLを追加する。**手動の記録引き継ぎ機能は採用しない**。詳細は[ハブ共通計画](https://github.com/hanagemaru/hanage-hub/blob/plan/putt-hub-path-20261113/docs/GAME_URL_AND_PLAYER_MIGRATION_2026-11-14.md)。
+**現行方針:** 旧URLを維持し、新URLを追加する。**手動の記録引き継ぎ機能は採用しない**。詳細は[ハブ共通計画](https://github.com/hanagemaru/hanage-hub/blob/main/docs/GAME_URL_AND_PLAYER_MIGRATION_2026-11-14.md)。
 
 ## 提供するURL
 
