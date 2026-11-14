@@ -77,7 +77,7 @@ try {
   const sameTabHowTo = simulatedHubGame.getByTestId('hub-game-how-to');
   await sameTabDetail.waitFor({ timeout: 15000 });
   assert.equal(await sameTabDetail.getAttribute('target'), null);
-  assert.equal(await sameTabHowTo.getAttribute('target'), null);
+  assert.equal(await sameTabHowTo.getAttribute('target'), '_blank');
   assert.equal(await sameTabDetail.getAttribute('href'), 'https://hanage.app/games/putt/');
   assert.equal(await sameTabHowTo.getAttribute('href'), 'https://hanage.app/games/putt/how-to-play/');
   await sameTabDetail.click();
