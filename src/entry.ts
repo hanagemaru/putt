@@ -36,6 +36,8 @@ import {
   canOfferHandoff,
   prepareLegacyHandoff,
   startHandoffFromHub,
+  canSeedPreviewRecords,
+  seedPreviewRecords,
 } from './legacy-handoff';
 
 installWebAnalytics();
@@ -413,6 +415,26 @@ function renderTopMenu(): void {
     panel.append(previewNote);
   }
   panel.append(actions, secondary, languageToggle(renderTopMenu));
+  if (canSeedPreviewRecords()) {
+    const seedNote = document.createElement('p');
+    seedNote.setAttribute('role', 'status');
+    seedNote.style.cssText = 'margin: 8px 0; font-size: 12px; text-align: center; color: #f1d883;';
+    const seedButton = menuButton('引き継ぎ用テスト記録を作る', () => {
+      try {
+        if (!seedPreviewRecords(localStorage)) {
+          seedNote.textContent = 'テスト用の記録はすでにあります（既存データは上書きしません）。';
+          return;
+        }
+        const tour = DEFAULT_TOUR;
+        new TourBestScoreStore(tour.id, tour.seeds).record(45, 36);
+        seedNote.textContent = 'テスト記録を保存しました。新しいPuttで「以前の記録を引き継ぐ」を試してください。';
+      } catch {
+        seedNote.textContent = 'テスト記録の保存に失敗しました。';
+      }
+    });
+    seedButton.classList.add('menu-button-sub');
+    panel.append(seedButton, seedNote);
+  }
   if (canOfferHandoff()) {
     const migrate = menuButton(language() === 'ja' ? '以前の記録を引き継ぐ' : 'Import previous records', () => {
       startHandoffFromHub(text => { migrationStatus.textContent = text; });
