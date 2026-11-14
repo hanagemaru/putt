@@ -120,9 +120,13 @@ jobs:
       - name: Install headless browser for cross-origin handoff test
         run: |
           npm install --no-save --no-package-lock --ignore-scripts playwright@1.56.1
-          npx playwright install chromium --with-deps
-      - name: Cross-origin handoff browser E2E
+          npx playwright install chromium webkit --with-deps
+      - name: Cross-origin handoff Chromium E2E
         run: node scripts/verify-handoff-browser.mjs
+      - name: Cross-origin handoff WebKit E2E
+        run: node scripts/verify-handoff-browser.mjs
+        env:
+          HANDOFF_BROWSER: webkit
       - name: Record preview URL
         if: always()
         run: |
