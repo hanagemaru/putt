@@ -1,0 +1,151 @@
+name: Hub path preview (isolated)
+
+on:
+  push:
+    branches: [feature/hub-path-putt-20261113]
+    paths:
+      - 'src/**'
+      - 'scripts/verify-hub-preview.mjs'
+      - 'scripts/verify-hub-api.ts'
+      - 'scripts/report-gameplay-activity.mjs'
+      - 'scripts/verify-legacy-notice-browser.mjs'
+      - 'scripts/verify-hub-ranking-local.ts'
+      - 'scripts/audit-hub-routing-readonly.mjs'
+      - 'wrangler.hub-production.jsonc'
+      - 'vite.config.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'wrangler.hub-preview.jsonc'
+      - 'wrangler.legacy-preview.jsonc'
+      - 'wrangler.hub-local-ranking.jsonc'
+      - '.github/workflows/hub-path-preview.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: hub-path-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    # mainへのデプロイWorkflowとは別。独立Workerにのみ配信する。
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build isolated legacy-origin preview at /
+        run: npm run build:cloudflare
+        env:
+          VITE_GAMEPLAY_ANALYTICS: 'false'
+          VITE_RANKING_API_ENABLED: 'false'
+          VITE_RANKING_DEFAULT_MOCK: 'true'
+          VITE_LEGACY_NEW_SITE_URL: 'https://putt-hub-preview.jibunnha.workers.dev/games/putt/play/'
+      - name: Disable old-origin preview indexing
+        run: |
+          printf '/*\\n  X-Robots-Tag: noindex, nofollow\\n' > dist/_headers
+      - name: Deploy separate legacy-origin preview Worker
+        run: npx --yes wrangler@4.148.0 deploy --config wrangler.legacy-preview.jsonc
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Build under /games/putt/play/
+        run: npm run build:hub-preview
+        env:
+          VITE_GAMEPLAY_ANALYTICS: 'false'
+          VITE_RANKING_API_ENABLED: 'false'
+          VITE_RANKING_DEFAULT_MOCK: 'true'
+      - name: Verify path and PWA output
+        run: npm run verify:hub-preview
+      - name: Verify API URL variants without D1
+        run: npm run verify:hub-api
+      - name: Verify real ranking CRUD against disposable local D1
+        run: npm run verify:hub-ranking-local
+      - name: Disable preview indexing
+        run: |
+          printf '/games/putt/play/*\n  X-Robots-Tag: noindex, nofollow\n' > dist/_headers
+      - name: Deploy a dedicated preview Worker
+        run: npx --yes wrangler@4.148.0 deploy --config wrangler.hub-preview.jsonc
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: "Smoke test: assets, API, isolation"
+        env:
+          BASE_URL: https://putt-hub-preview.jibunnha.workers.dev/games/putt/play
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          const base = process.env.BASE_URL;
+          let res;
+          for (let attempt = 1; attempt <= 12; attempt++) {
+            res = await fetch(base + '/', { cache: 'no-store' });
+            console.log(`Attempt ${attempt}: GET ${base}/ => ${res.status}`);
+            if (res.status === 200) break;
+            await new Promise(resolve => setTimeout(resolve, 3000));
+          }
+          if (res.status !== 200) {
+            for (const path of ['/index.html', '/games/putt/play/index.html', '/games/putt/play/api/health', '/api/health']) {
+              const diagnostic = await fetch(new URL(path, base));
+              console.log(`Diagnostics ${path} => ${diagnostic.status}`);
+            }
+          }
+          assert.equal(res.status, 200, 'game must be accessible');
+          const html = await res.text();
+          assert.ok(html.includes('/games/putt/play/assets/'), 'assets must use the new prefix');
+          assert.match(res.headers.get('x-robots-tag') || '', /noindex/i, 'preview must not be indexed');
+          const files = [...html.matchAll(/src="([^"]+\.js)"/g)].map(match => match[1]);
+          const entry = files.find(path => path.startsWith('/games/putt/play/assets/'));
+          assert.ok(entry, 'entry JS must use new prefix');
+          res = await fetch(new URL(entry, base));
+          assert.equal(res.status, 200, 'entry JS unavailable');
+          res = await fetch(base + '/manifest.webmanifest');
+          assert.equal(res.status, 200, 'PWA manifest unavailable');
+          assert.equal((await res.json()).scope, '/games/putt/play/');
+          res = await fetch(base + '/sw.js');
+          assert.equal(res.status, 200, 'service worker unavailable');
+          res = await fetch(base + '/api/health');
+          assert.equal(res.status, 200, 'API health unavailable');
+          const health = await res.json();
+          assert.equal(health.database, false, 'preview must not bind production D1');
+          res = await fetch(base + '/api/records', { method: 'POST' });
+          assert.equal(res.status, 503, 'preview must reject ranking writes');
+          console.log('PASS: Putt subpath assets, PWA, noindex, and API isolation');
+          NODE
+      - name: Install browsers for legacy-link validation
+        run: |
+          npm install --no-save --no-package-lock --ignore-scripts playwright@1.56.1
+          npx playwright install chromium webkit --with-deps
+      - name: Legacy-site notice and navigation on Chromium
+        run: node scripts/verify-legacy-notice-browser.mjs
+      - name: Legacy-site notice and navigation on WebKit
+        run: node scripts/verify-legacy-notice-browser.mjs
+        env:
+          NOTICE_BROWSER: webkit
+      - name: Audit existing hanage.app routing (read-only)
+        run: node scripts/audit-hub-routing-readonly.mjs
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Build prospective release with real ranking API (no publish)
+        run: npm run build:hub-preview
+        env:
+          VITE_RANKING_API_ENABLED: 'true'
+          VITE_GAMEPLAY_ANALYTICS: 'true'
+          VITE_CF_BEACON_TOKEN: ${{ vars.CF_BEACON_TOKEN }}
+      - name: Dry-run release Worker routes and existing D1 binding (no deploy)
+        run: npx --yes wrangler@4.148.0 deploy --dry-run --config wrangler.hub-production.jsonc --outdir /tmp/putt-release-check
+      - name: Record preview URL
+        if: always()
+        run: |
+          {
+            echo '### Putt path preview (not production)'
+            echo
+            echo 'https://putt-hub-preview.jibunnha.workers.dev/games/putt/play/'
+            echo 'Legacy test origin: https://putt-legacy-preview.jibunnha.workers.dev/'
+            echo
+            echo 'Independent Worker: no hanage.app routes and no production D1 binding.'
+          } >> "$GITHUB_STEP_SUMMARY"

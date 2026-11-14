@@ -23,6 +23,9 @@ jobs:
         env:
           VITE_GAMEPLAY_ANALYTICS: 'true'
           VITE_CF_BEACON_TOKEN: ${{ vars.CF_BEACON_TOKEN }}
+          # 新Puttの実URLと共有ランキングを確認した後だけ設定する。
+          # 既定で空なら既存の旧URLトップには新URL案内を出さない。
+          VITE_LEGACY_NEW_SITE_URL: ${{ vars.PUTT_HUB_PLAY_URL }}
       - name: Verify published analytics disclosure
         run: |
           node --input-type=module <<'NODE'

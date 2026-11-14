@@ -1,0 +1,28 @@
+name: Verify separate Worker against existing Putt D1 (read-only)
+
+on:
+  push:
+    branches: [feature/hub-path-putt-20261113]
+    paths:
+      - src/server/readonly-ranking-audit.ts
+      - scripts/verify-prod-shared-ranking-readonly.ts
+      - .github/workflows/audit-shared-d1-once.yml
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Read-only compare real public rankings from separate temporary Worker
+        run: node --experimental-transform-types --import ./scripts/ts-resolve.mjs scripts/verify-prod-shared-ranking-readonly.ts
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

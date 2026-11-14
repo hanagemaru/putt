@@ -1,0 +1,29 @@
+{
+  // Release candidate ONLY. Do not run deploy without production approval.
+  // Old putt.hanage.app and hanage-hub custom domains must be kept.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "putt-hub",
+  "main": "./src/server/worker.ts",
+  "compatibility_date": "2026-08-01",
+  "routes": [
+    { "pattern": "hanage.app/games/putt/play", "zone_name": "hanage.app" },
+    { "pattern": "hanage.app/games/putt/play/*", "zone_name": "hanage.app" }
+  ],
+  "assets": {
+    "directory": "./dist",
+    "base_path": "/games/putt/play",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "none",
+    "run_worker_first": ["/games/putt/play/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "putt-ranking",
+      "database_id": "e86f3491-0b57-404d-8662-bb8628803b5d",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": { "GAMEPLAY_ANALYTICS": "true" },
+  "observability": { "enabled": true }
+}

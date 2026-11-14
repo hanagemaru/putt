@@ -7,6 +7,7 @@ declare const process: { env: Record<string, string | undefined> };
 // 配信先ごとにベースパスが違う。
 // - GitHub Pages（従来）: プロジェクトサイトなので `/putt/` 配下
 // - Cloudflare Workers（putt.hanage.app）: 独自ドメインの直下なので `/`
+// - hanage.app配下の検証: `/games/putt/play/`（静的資産とPWAのscopeを揃える）
 // 既定は GitHub Pages。Cloudflare 向けのビルドだけ `PUTT_BASE=/` を渡す。
 const base = process.env.PUTT_BASE ?? '/putt/';
 
@@ -59,7 +60,21 @@ function puttPwa(basePath: string): Plugin {
     transformIndexHtml: {
       order: 'post',
       handler(html: string) {
-        return html.split(`"/${MANIFEST_FILE}"`).join(`"${basePath}${MANIFEST_FILE}"`);
+        let result = html.split(`"/${MANIFEST_FILE}"`).join(`"${basePath}${MANIFEST_FILE}"`);
+        const hubPlayUrl = 'https://hanage.app/games/putt/play/';
+        // New path: signal the preferred indexable game URL to crawlers.
+        // Old Putt: only switch canonical after the new game is actually live.
+        // Both preview Workers explicitly return X-Robots-Tag: noindex.
+        const canonicalToHub =
+          basePath === '/games/putt/play/' ||
+          (basePath === '/' && process.env.VITE_LEGACY_NEW_SITE_URL === hubPlayUrl);
+        if (canonicalToHub) {
+          result = result.replace(
+            '</head>',
+            `    <link rel="canonical" href="${hubPlayUrl}" />\n  </head>`,
+          );
+        }
+        return result;
       },
     },
     configureServer(server) {

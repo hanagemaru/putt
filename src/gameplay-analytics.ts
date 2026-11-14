@@ -8,9 +8,11 @@ const sent = new Set<string>();
 
 function enabled(): boolean {
   if (!import.meta.env.PROD || import.meta.env.VITE_GAMEPLAY_ANALYTICS !== 'true') return false;
-  if (location.hostname !== 'putt.hanage.app' || !['/', '/index.html'].includes(location.pathname)) return false;
+  const legacy = location.hostname === 'putt.hanage.app' && ['/', '/index.html'].includes(location.pathname);
+  const hub = location.hostname === 'hanage.app' && ['/games/putt/play/', '/games/putt/play/index.html'].includes(location.pathname);
+  if (!legacy && !hub) return false;
   const params = new URLSearchParams(location.search);
-  return !['social', 'debug', 'ranking', 'rankingMock', 'tune', 'theme', 'seed', 'gen', 'course', 'setup'].some(key => params.has(key));
+  return !['social', 'debug', 'ranking', 'rankingMock', 'tune', 'theme', 'seed', 'gen', 'course', 'setup', 'legacyHandoff'].some(key => params.has(key));
 }
 
 /** A tab visit with a 30-minute idle timeout; no cross-day visitor identity. */
@@ -33,7 +35,7 @@ function send(payload: GameplayPayload): void {
   if (sent.has(key)) return;
   sent.add(key);
   // No ranking credentials/cookies. A missing schema, offline device or rejected request never blocks play.
-  void fetch('/api/gameplay-events', {
+  void fetch(`${import.meta.env.BASE_URL}api/gameplay-events`, {
     method: 'POST', credentials: 'omit', keepalive: true,
     headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
   }).then(response => { if (!response.ok) sent.delete(key); }).catch(() => { sent.delete(key); });

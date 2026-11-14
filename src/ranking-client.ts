@@ -69,9 +69,14 @@ function stickyChoice<T extends string>(
  * 配信先の見分けはベースパス1本（`DEPLOY.md`）。`/` なら Cloudflare Workers。
  */
 export function rankingSource(): RankingSource {
+  // Preview is intentionally isolated from production D1. Even ?ranking=api must not
+  // activate server-backed rankings; use local test data instead.
+  if (import.meta.env.VITE_RANKING_DEFAULT_MOCK === 'true') {
+    return new URLSearchParams(window.location.search).get('ranking') === 'off' ? 'off' : 'mock';
+  }
   const source =
     stickyChoice<RankingSource>('ranking', R.sourceStorageKey, ['api', 'mock', 'off']) ?? R.source;
-  if (source === 'api' && import.meta.env.BASE_URL !== '/') return 'off';
+  if (source === 'api' && import.meta.env.BASE_URL !== '/' && import.meta.env.VITE_RANKING_API_ENABLED !== 'true') return 'off';
   return source;
 }
 
@@ -242,7 +247,7 @@ async function request<T>(path: string, init: RequestInit): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), R.requestTimeoutMs);
   try {
-    const response = await fetch(path, { ...init, signal: controller.signal, cache: 'no-store' });
+    const response = await fetch(`${import.meta.env.BASE_URL}${path.replace(/^\/+/, '')}`, { ...init, signal: controller.signal, cache: 'no-store' });
     if (!response.ok) throw new Error(`ranking api ${response.status}`);
     return (await response.json()) as T;
   } finally {

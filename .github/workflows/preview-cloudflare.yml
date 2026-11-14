@@ -7,7 +7,7 @@ name: Preview on Cloudflare Workers
 # 動かすには Cloudflare 側で Worker の Preview URLs を有効にしておく（DEPLOY.md 参照）。
 on:
   push:
-    branches-ignore: [main]
+    branches-ignore: [main, feature/hub-path-putt-20261113]
   workflow_dispatch:
 
 # 同じブランチへ続けて push したら、古いプレビューの作成は止める

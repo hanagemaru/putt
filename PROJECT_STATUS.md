@@ -1,5 +1,44 @@
 # 現在地 / Project Status
 
+## 2026-11-14: ハブからの同タブ起動とPuttから紹介・遊び方へ戻る導線を追加
+
+- 新Putt（`/games/putt/play/`）だけトップメニューに「ゲーム紹介に戻る」を追加。既存「遊び方」とともに、実`hanage.app`同一オリジンでは同じタブに移動する。旧Puttの別タブ動作・3Dプレイは維持。
+- 新Puttのcanonicalを`https://hanage.app/games/putt/play/`に固定。旧Puttは新URL案内を本番公開後に有効化した場合のみcanonicalを新URLへ変更。2つの独立プレビューはnoindex。
+- ブラウザ検証では旧サイトの動作・保存データ分離に加え、新Puttのメニュー2リンクと同一オリジンに見立てた画面の戻り先をテスト。
+- ハブの紹介文・制作ノートは変更なし。プレビューとPRのみ、本番`main`・URL・DBは未変更。
+- 実装プレビュー: https://putt-hub-preview.jibunnha.workers.dev/games/putt/play/ 。
+
+
+## 2026-11-14: Cloudflare新パス・本番D1接続の検証成功（公開は未実施）
+
+- Cloudflare本番Zoneのread-only監査で、`hanage.app`は`hanage-hub` Custom Domain、Zone Routeは0件、新Puttパスは404で未使用と確認。
+- `wrangler.hub-production.jsonc`に別Worker`putt-hub`、旧Puttと同じ`putt-ranking` D1、新パスRoute（末尾/ありなし）を準備。Wrangler dry-run成功。**本番Route未登録**。
+- 一時的なread-only Workerから実本番D1に接続し、Puttの4コースの総合ランキングが旧Workerと完全一致（35/16/8/10件）し、書き込みAPI拒否・一時Worker削除も成功。
+- Cloudflare監査: https://github.com/hanagemaru/putt/actions/runs/43594376873 、実D1共用の確認: https://github.com/hanagemaru/putt/actions/runs/43595040164 。
+- ハブでの本番Route作成と公開後の新URLからの登録・PWA確認は未実施。旧サイトとハブの本番`main`は不変。
+- 公開ゲート: https://github.com/hanagemaru/hanage-hub/blob/plan/putt-hub-path-20261113/docs/PUTT_HUB_RELEASE_GATE_2026-11-14.md
+
+## 2026-11-14: 旧URL維持＋新URL追加の並行公開方式に決定
+
+- **最新方針:** 旧Puttは引き続き遊べるまま残す。新Puttは`hanage.app/games/putt/play/`に追加予定。**手動のプレイヤー記録引き継ぎ機能は提供しない。**
+- ランキングは旧・新サイトとも既存`putt-ranking` D1を使い、総合順位を共通にする。ローカルのプレイヤーID/認証鍵/自己ベストは**URLごとに別**。旧スコアは新URLから本人の記録として更新・削除できない。
+- 旧サイトに新URLの紹介リンクとランキング/プレイヤーIDの説明文を追加。ただし新URLが本番稼働する前は案内を表示しない（明示ビルドフラグ制御）。
+- 以前の`postMessage`型引き継ぎUI/コード/テストを作業ブランチから撤去。自動ブラウザテスト（Chromium/WebKit）は**旧サイトの案内表示・新URLへのリンク・旧サイト継続・localStorage分離**に変更した。
+- **2026-11-14のActions成功:** https://github.com/hanagemaru/putt/actions/runs/43593549252
+- 一時的なローカルD1で旧・新APIの登録/表示/名前変更/認証/削除を検証済み。本番D1の新Workerへのバインド・Cloudflare本番Route・PWA/旧サイト回帰は未実施。
+- ユーザーは新URLプレビューのゲーム挙動とモックランキング画面を確認済み。
+- **本番**`putt.hanage.app`、`hanage.app`、D1、`main`は未変更。次は本番公開のルート競合とD1共用の検証。
+- 技術・検証の現状: `docs/hub-path-preview.md`。共通方針はハブ側の`GAME_URL_AND_PLAYER_MIGRATION_2026-11-14.md`。
+
+## 2026-11-13: hanage.app配下Puttの検証（本番未変更）
+
+- 作業ブランチ: `feature/hub-path-putt-20261113`。
+- `/games/putt/play/` 配下の配信・PWA・APIパスを独立Worker `putt-hub-preview` で検証する。
+- 本番D1バインディングなし、ランキングと計測は無効。既存 `putt.hanage.app` はそのまま維持。
+- プレビューの自動検証成功: https://github.com/hanagemaru/putt/actions/runs/43437337388 。独立WorkerがHTTP 200、JS/PWA/APIの検証を通過。その後ユーザーがiPhoneでゲーム操作・モックランキング画面を確認済み。本番の経路設定は別フェーズ。
+- 正本: `docs/hub-path-preview.md`。全体の判断・計画は `hanage-hub` 側に記録。
+
+
 最終更新: 2026-09-20（**コースごとの雰囲気（テーマ）・木の作り直し・OB境界の見え方は実機確認まで終わってマージ済み**。
 見た目の調整パネル `?tune=1` を追加。
 OB境界の線・カップぎわのけられ・旗竿の反発は確定済み。**オンラインランキングは公開済み**。

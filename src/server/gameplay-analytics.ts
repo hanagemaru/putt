@@ -21,7 +21,7 @@ function valid(value: unknown): value is GameplayPayload {
 export async function receiveGameplay(request: Request, db: Database | undefined, enabled: boolean): Promise<Response> {
   if (!enabled) return new Response(null, { status: 204 });
   const origin = new URL(request.url).origin;
-  if (origin !== 'https://putt.hanage.app' || request.headers.get('Origin') !== origin) return new Response(null, { status: 403 });
+  if (!['https://putt.hanage.app', 'https://hanage.app'].includes(origin) || request.headers.get('Origin') !== origin) return new Response(null, { status: 403 });
   if (!request.headers.get('Content-Type')?.startsWith('application/json')) return new Response(null, { status: 415 });
   if (!db) return new Response(null, { status: 503 });
   try {

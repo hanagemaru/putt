@@ -36,6 +36,8 @@ installWebAnalytics();
 trackGameplay('visit');
 
 const HUB_ORIGIN = 'https://hanage.app';
+const HUB_PLAY_PATH = '/games/putt/play/';
+const GAME_DETAIL_PATH = '/games/putt/';
 const HOW_TO_PATH = '/games/putt/how-to-play/';
 const PRIVACY_PATH = '/privacy/';
 const params = new URLSearchParams(window.location.search);
@@ -356,11 +358,76 @@ function renderTopMenu(): void {
   secondary.className = 'menu-secondary';
   secondary.setAttribute('aria-label', copy.guideLabel);
 
+  // 紹介ページへはゲームのタブから戻る。遊び方・プライバシーは
+  // プレイ中のタブを残せるよう別タブで開く。
+  // 旧サブドメインPuttは従来の別タブ動作を維持する。
+  const inHubGame = import.meta.env.BASE_URL === HUB_PLAY_PATH;
+  const sameTab = inHubGame && window.location.origin === HUB_ORIGIN;
   const howTo = externalMenuLink(copy.howTo, hubUrl(HOW_TO_PATH));
   const privacy = externalMenuLink(copy.privacy, hubUrl(PRIVACY_PATH));
 
+  if (inHubGame) {
+    secondary.classList.add('menu-secondary-hub');
+    const detail = externalMenuLink(
+      language() === 'ja' ? 'ゲーム紹介に戻る' : 'Back to game details',
+      hubUrl(GAME_DETAIL_PATH),
+      sameTab,
+    );
+    detail.setAttribute('data-testid', 'hub-game-details');
+    howTo.setAttribute('data-testid', 'hub-game-how-to');
+    secondary.append(detail);
+  }
   secondary.append(howTo, privacy);
-  panel.append(title, subtitle, actions, secondary, languageToggle(renderTopMenu));
+  panel.append(title, subtitle);
+  if (import.meta.env.VITE_RANKING_DEFAULT_MOCK === 'true') {
+    const previewNote = document.createElement('p');
+    previewNote.textContent = language() === 'ja'
+      ? '検証版：ランキングはテストデータです'
+      : 'Preview: leaderboard uses test data';
+    previewNote.style.cssText = 'margin: 8px 0; font-size: 12px; text-align: center; color: #f1d883;';
+    panel.append(previewNote);
+  }
+  panel.append(actions);
+
+  // Keep the existing domain fully usable. Show the new site only after the
+  // new game route is live, via an explicit build-time flag and exact URL.
+  // Both versions share a ranking D1, not browser localStorage identities.
+  const newSite = import.meta.env.VITE_LEGACY_NEW_SITE_URL;
+  const oldHost = location.hostname === 'putt.hanage.app';
+  const previewHost = location.hostname === 'putt-legacy-preview.jibunnha.workers.dev';
+  const expected = oldHost
+    ? 'https://hanage.app/games/putt/play/'
+    : previewHost
+      ? 'https://putt-hub-preview.jibunnha.workers.dev/games/putt/play/'
+      : null;
+  if (expected && newSite === expected) {
+    const notice = document.createElement('aside');
+    notice.className = 'menu-legacy-notice';
+    notice.setAttribute('aria-label', language() === 'ja' ? '新しいPuttについて' : 'About the new Putt');
+    notice.style.cssText = 'margin: 14px 0; padding: 12px; border: 1px solid rgba(255,255,255,.20); border-radius: 10px; text-align: center;';
+    const intro = document.createElement('p');
+    intro.textContent = language() === 'ja'
+      ? '新しいPuttも公開しています。こちらのPuttも引き続き遊べます。'
+      : 'A new Putt is available. You can keep playing here.';
+    intro.style.cssText = 'margin: 0 0 8px; font-size: 13px; line-height: 1.5;';
+    const description = document.createElement('p');
+    description.textContent = previewHost
+      ? (language() === 'ja'
+        ? '検証版のランキングはテストデータです。本番ランキングとは共有されません。'
+        : 'Preview rankings use test data and are not shared with the live game.')
+      : (language() === 'ja'
+        ? 'ランキングの記録は新旧共通ですが、プレイヤーIDや端末内の自己ベストはURLごとに別管理です。'
+        : 'Both sites share a leaderboard, but player IDs and locally saved best scores are separate.');
+    description.style.cssText = 'margin: 0 0 8px; font-size: 12px; line-height: 1.5; opacity: .8;';
+    const newLink = externalMenuLink(
+      language() === 'ja' ? '新しいPuttで遊ぶ' : 'Play the new Putt',
+      expected,
+    );
+    newLink.setAttribute('data-testid', 'new-putt-link');
+    notice.append(intro, description, newLink);
+    panel.append(notice);
+  }
+  panel.append(secondary, languageToggle(renderTopMenu));
   root.append(panel);
 }
 
@@ -414,6 +481,15 @@ function renderRanking(tour: TourDefinition = DEFAULT_TOUR): void {
   const panel = document.createElement('main');
   panel.className = 'menu-panel course-panel ranking-panel';
   panel.append(menuHeading(copy.rankingTitle, renderTopMenu));
+
+  if (import.meta.env.VITE_RANKING_DEFAULT_MOCK === 'true') {
+    const demoNotice = document.createElement('p');
+    demoNotice.textContent = language() === 'ja'
+      ? 'テスト用ランキングです。実際のスコアは登録されません。'
+      : 'Test leaderboard. No scores are submitted to the live service.';
+    demoNotice.style.cssText = 'margin: 10px 0; font-size: 12px; line-height: 1.5; text-align: center; color: #f1d883;';
+    panel.append(demoNotice);
+  }
 
   // 板の切り替え。押した先も同じ画面なので、戻る道が増えない
   const tabs = document.createElement('div');
@@ -937,12 +1013,16 @@ function hubUrl(path: string): string {
   return `${HUB_ORIGIN}${language() === 'en' ? '/en' : ''}${path}`;
 }
 
-function externalMenuLink(label: string, href: string): HTMLAnchorElement {
+function externalMenuLink(label: string, href: string, sameTab = false): HTMLAnchorElement {
   const link = document.createElement('a');
   link.className = 'menu-text-link';
   link.href = href;
-  link.target = '_blank';
-  link.rel = 'noopener noreferrer';
+  // In the new, same-origin Putt, navigate naturally back to the hub.
+  // Existing standalone Putt on its old subdomain keeps opening a separate tab.
+  if (!sameTab) {
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+  }
   link.textContent = label;
   return link;
 }
@@ -1220,6 +1300,10 @@ function ensureMenuStyles(): void {
       justify-content: center;
       gap: 20px;
       margin-top: 24px;
+    }
+    .menu-secondary-hub {
+      flex-wrap: wrap;
+      gap: 4px 16px;
     }
     .menu-text-link {
       min-height: 44px;
