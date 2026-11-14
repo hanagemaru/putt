@@ -31,14 +31,6 @@ import {
   type PutterShapeId,
 } from './putter-shape';
 import { registerSW } from 'virtual:pwa-register';
-import {
-  isLegacyHandoffPage,
-  canOfferHandoff,
-  prepareLegacyHandoff,
-  startHandoffFromHub,
-  canSeedPreviewRecords,
-  seedPreviewRecords,
-} from './legacy-handoff';
 
 installWebAnalytics();
 trackGameplay('visit');
@@ -62,8 +54,6 @@ if (!resultPreview) void flushPendingSubmissions();
 
 if (resultPreview) {
   void import('./result-preview-view');
-} else if (isLegacyHandoffPage()) {
-  renderLegacyHandoff();
 } else if (params.get('menu') === 'ranking') {
   // **ゲームは始めない**ので、直接プレイの判定より先に見る。
   // `?tour=` はどのタブを開くかの指定で、無ければ最初のコース
@@ -320,41 +310,6 @@ function matchesTour(result: RoundResult, tour: TourDefinition): boolean {
   );
 }
 
-/** Old origin: explicit click before transferring local-only records to hanage.app. */
-function renderLegacyHandoff(): void {
-  const root = prepareMenuRoot();
-  root.replaceChildren();
-  const panel = document.createElement('main');
-  panel.className = 'menu-panel';
-  const heading = document.createElement('h1');
-  heading.className = 'menu-title';
-  heading.textContent = language() === 'ja' ? '記録の引き継ぎ' : 'Transfer records';
-  const explanation = document.createElement('p');
-  explanation.className = 'menu-subtitle';
-  explanation.textContent = language() === 'ja'
-    ? '旧Puttに保存された記録を新しいPuttへ移します。記録は旧サイトにも残ります。'
-    : 'Transfer your locally saved records to the new Putt. Original records remain here.';
-  const submit = menuButton(language() === 'ja' ? '記録を移す' : 'Transfer records', () => {});
-  submit.hidden = true;
-  const status = document.createElement('p');
-  status.className = 'menu-subtitle';
-  status.setAttribute('role', 'status');
-  panel.append(heading, explanation, submit, status);
-  root.append(panel);
-  prepareLegacyHandoff(
-    approve => {
-      submit.hidden = false;
-      // Recreate the button to attach exactly one explicit-user-gesture handler.
-      const button = menuButton(submit.textContent ?? 'Transfer', () => {
-        button.disabled = true;
-        approve();
-      });
-      submit.replaceWith(button);
-    },
-    text => { status.textContent = text; },
-  );
-}
-
 function renderTopMenu(): void {
   const root = prepareMenuRoot();
   root.replaceChildren();
@@ -414,37 +369,47 @@ function renderTopMenu(): void {
     previewNote.style.cssText = 'margin: 8px 0; font-size: 12px; text-align: center; color: #f1d883;';
     panel.append(previewNote);
   }
-  panel.append(actions, secondary, languageToggle(renderTopMenu));
-  if (canSeedPreviewRecords()) {
-    const seedNote = document.createElement('p');
-    seedNote.setAttribute('role', 'status');
-    seedNote.style.cssText = 'margin: 8px 0; font-size: 12px; text-align: center; color: #f1d883;';
-    const seedButton = menuButton('引き継ぎ用テスト記録を作る', () => {
-      try {
-        if (!seedPreviewRecords(localStorage)) {
-          seedNote.textContent = 'テスト用の記録はすでにあります（既存データは上書きしません）。';
-          return;
-        }
-        const tour = DEFAULT_TOUR;
-        new TourBestScoreStore(tour.id, tour.seeds).record(45, 36);
-        seedNote.textContent = 'テスト記録を保存しました。新しいPuttで「以前の記録を引き継ぐ」を試してください。';
-      } catch {
-        seedNote.textContent = 'テスト記録の保存に失敗しました。';
-      }
-    });
-    seedButton.classList.add('menu-button-sub');
-    panel.append(seedButton, seedNote);
+  panel.append(actions);
+
+  // Keep the existing domain fully usable. Show the new site only after the
+  // new game route is live, via an explicit build-time flag and exact URL.
+  // Both versions share a ranking D1, not browser localStorage identities.
+  const newSite = import.meta.env.VITE_LEGACY_NEW_SITE_URL;
+  const oldHost = location.hostname === 'putt.hanage.app';
+  const previewHost = location.hostname === 'putt-legacy-preview.jibunnha.workers.dev';
+  const expected = oldHost
+    ? 'https://hanage.app/games/putt/play/'
+    : previewHost
+      ? 'https://putt-hub-preview.jibunnha.workers.dev/games/putt/play/'
+      : null;
+  if (expected && newSite === expected) {
+    const notice = document.createElement('aside');
+    notice.className = 'menu-legacy-notice';
+    notice.setAttribute('aria-label', language() === 'ja' ? '新しいPuttについて' : 'About the new Putt');
+    notice.style.cssText = 'margin: 14px 0; padding: 12px; border: 1px solid rgba(255,255,255,.20); border-radius: 10px; text-align: center;';
+    const intro = document.createElement('p');
+    intro.textContent = language() === 'ja'
+      ? '新しいPuttも公開しています。こちらのPuttも引き続き遊べます。'
+      : 'A new Putt is available. You can keep playing here.';
+    intro.style.cssText = 'margin: 0 0 8px; font-size: 13px; line-height: 1.5;';
+    const description = document.createElement('p');
+    description.textContent = previewHost
+      ? (language() === 'ja'
+        ? '検証版のランキングはテストデータです。本番ランキングとは共有されません。'
+        : 'Preview rankings use test data and are not shared with the live game.')
+      : (language() === 'ja'
+        ? 'ランキングの記録は新旧共通ですが、プレイヤーIDや端末内の自己ベストはURLごとに別管理です。'
+        : 'Both sites share a leaderboard, but player IDs and locally saved best scores are separate.');
+    description.style.cssText = 'margin: 0 0 8px; font-size: 12px; line-height: 1.5; opacity: .8;';
+    const newLink = externalMenuLink(
+      language() === 'ja' ? '新しいPuttで遊ぶ' : 'Play the new Putt',
+      expected,
+    );
+    newLink.setAttribute('data-testid', 'new-putt-link');
+    notice.append(intro, description, newLink);
+    panel.append(notice);
   }
-  if (canOfferHandoff()) {
-    const migrate = menuButton(language() === 'ja' ? '以前の記録を引き継ぐ' : 'Import previous records', () => {
-      startHandoffFromHub(text => { migrationStatus.textContent = text; });
-    });
-    migrate.classList.add('menu-button-sub');
-    const migrationStatus = document.createElement('p');
-    migrationStatus.setAttribute('role', 'status');
-    migrationStatus.style.cssText = 'margin: 8px 0; font-size: 12px; line-height: 1.5; text-align: center;';
-    panel.append(migrate, migrationStatus);
-  }
+  panel.append(secondary, languageToggle(renderTopMenu));
   root.append(panel);
 }
 
