@@ -6,6 +6,7 @@ on:
     paths:
       - 'src/**'
       - 'scripts/verify-hub-preview.mjs'
+      - 'scripts/verify-hub-api.ts'
       - 'vite.config.ts'
       - 'package.json'
       - 'package-lock.json'
@@ -38,6 +39,8 @@ jobs:
           VITE_RANKING_DEFAULT_MOCK: 'true'
       - name: Verify path and PWA output
         run: npm run verify:hub-preview
+      - name: Verify API URL variants without D1
+        run: npm run verify:hub-api
       - name: Disable preview indexing
         run: |
           printf '/games/putt/play/*\n  X-Robots-Tag: noindex, nofollow\n' > dist/_headers
