@@ -1,20 +1,23 @@
 # 現在地 / Project Status
 
-## 2026-11-14: 旧URLから新URLへの記録引き継ぎ・ランキングの検証
+## 2026-11-14: 旧URL維持＋新URL追加の並行公開方式に決定
 
-- 2つの独立プレビューWorkerで、明示許可・匿名認証情報・自己ベストの引き継ぎをChromiumとWebKit（iPhone相当の画面/タッチ）でE2E検証し、成功。
-- 登録済み別IDとの衝突時に上書きされないこと、旧記録が残ることを確認。
-- ローカル専用D1を使い、ランキングの旧新両API・登録・重複防止・名前変更・認証・削除を自動検証し成功。
-- 成功したActions: https://github.com/hanagemaru/putt/actions/runs/43591313342
-- **次はiPhone Safari実機確認**。既存本番`putt.hanage.app`・`hanage.app`・本番D1は変更していない。
-- 詳細と実機手順: `docs/hub-path-preview.md`。
+- **最新方針:** 旧Puttは引き続き遊べるまま残す。新Puttは`hanage.app/games/putt/play/`に追加予定。**手動のプレイヤー記録引き継ぎ機能は提供しない。**
+- ランキングは旧・新サイトとも既存`putt-ranking` D1を使い、総合順位を共通にする。ローカルのプレイヤーID/認証鍵/自己ベストは**URLごとに別**。旧スコアは新URLから本人の記録として更新・削除できない。
+- 旧サイトに新URLの紹介リンクとランキング/プレイヤーIDの説明文を追加。ただし新URLが本番稼働する前は案内を表示しない（明示ビルドフラグ制御）。
+- 以前の`postMessage`型引き継ぎUI/コード/テストを作業ブランチから撤去。自動ブラウザテスト（Chromium/WebKit）は**旧サイトの案内表示・新URLへのリンク・旧サイト継続・localStorage分離**に変更した。
+- **2026-11-14のActions成功:** https://github.com/hanagemaru/putt/actions/runs/43593549252
+- 一時的なローカルD1で旧・新APIの登録/表示/名前変更/認証/削除を検証済み。本番D1の新Workerへのバインド・Cloudflare本番Route・PWA/旧サイト回帰は未実施。
+- ユーザーは新URLプレビューのゲーム挙動とモックランキング画面を確認済み。
+- **本番**`putt.hanage.app`、`hanage.app`、D1、`main`は未変更。次は本番公開のルート競合とD1共用の検証。
+- 技術・検証の現状: `docs/hub-path-preview.md`。共通方針はハブ側の`GAME_URL_AND_PLAYER_MIGRATION_2026-11-14.md`。
 
 ## 2026-11-13: hanage.app配下Puttの検証（本番未変更）
 
 - 作業ブランチ: `feature/hub-path-putt-20261113`。
 - `/games/putt/play/` 配下の配信・PWA・APIパスを独立Worker `putt-hub-preview` で検証する。
 - 本番D1バインディングなし、ランキングと計測は無効。既存 `putt.hanage.app` はそのまま維持。
-- プレビューの自動検証成功: https://github.com/hanagemaru/putt/actions/runs/43437337388 。独立WorkerがHTTP 200、JS/PWA/APIの検証を通過。**iPhone実機の操作は未確認**。本番の経路設定・保存データ移行は別フェーズ。
+- プレビューの自動検証成功: https://github.com/hanagemaru/putt/actions/runs/43437337388 。独立WorkerがHTTP 200、JS/PWA/APIの検証を通過。その後ユーザーがiPhoneでゲーム操作・モックランキング画面を確認済み。本番の経路設定は別フェーズ。
 - 正本: `docs/hub-path-preview.md`。全体の判断・計画は `hanage-hub` 側に記録。
 
 
