@@ -7,6 +7,10 @@ const manifest = JSON.parse(readFileSync('dist/manifest.webmanifest', 'utf8'));
 
 assert.ok(html.includes(`${prefix}manifest.webmanifest`), 'manifest URL must be under hub path');
 assert.ok(html.includes(`${prefix}assets/`), 'Vite asset URLs must be under hub path');
+assert.ok(
+  html.includes('<link rel="canonical" href="https://hanage.app/games/putt/play/" />'),
+  'hub Putt build needs a canonical root-domain game URL',
+);
 assert.equal(manifest.start_url, prefix);
 assert.equal(manifest.scope, prefix);
 assert.equal(manifest.id, prefix);
