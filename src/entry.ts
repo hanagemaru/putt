@@ -366,6 +366,7 @@ function renderTopMenu(): void {
   const privacy = externalMenuLink(copy.privacy, hubUrl(PRIVACY_PATH), sameTab);
 
   if (inHubGame) {
+    secondary.classList.add('menu-secondary-hub');
     const detail = externalMenuLink(
       language() === 'ja' ? 'ゲーム紹介に戻る' : 'Back to game details',
       hubUrl(GAME_DETAIL_PATH),
@@ -1298,6 +1299,10 @@ function ensureMenuStyles(): void {
       justify-content: center;
       gap: 20px;
       margin-top: 24px;
+    }
+    .menu-secondary-hub {
+      flex-wrap: wrap;
+      gap: 4px 16px;
     }
     .menu-text-link {
       min-height: 44px;
