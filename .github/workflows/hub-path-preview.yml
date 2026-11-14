@@ -10,6 +10,8 @@ on:
       - 'scripts/report-gameplay-activity.mjs'
       - 'scripts/verify-legacy-notice-browser.mjs'
       - 'scripts/verify-hub-ranking-local.ts'
+      - 'scripts/audit-hub-routing-readonly.mjs'
+      - 'wrangler.hub-production.jsonc'
       - 'vite.config.ts'
       - 'package.json'
       - 'package-lock.json'
@@ -123,6 +125,19 @@ jobs:
         run: node scripts/verify-legacy-notice-browser.mjs
         env:
           NOTICE_BROWSER: webkit
+      - name: Audit existing hanage.app routing (read-only)
+        run: node scripts/audit-hub-routing-readonly.mjs
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Build prospective release with real ranking API (no publish)
+        run: npm run build:hub-preview
+        env:
+          VITE_RANKING_API_ENABLED: 'true'
+          VITE_GAMEPLAY_ANALYTICS: 'true'
+          VITE_CF_BEACON_TOKEN: ${{ vars.CF_BEACON_TOKEN }}
+      - name: Dry-run release Worker routes and existing D1 binding (no deploy)
+        run: npx --yes wrangler@4.148.0 deploy --dry-run --config wrangler.hub-production.jsonc --outdir /tmp/putt-release-check
       - name: Record preview URL
         if: always()
         run: |
