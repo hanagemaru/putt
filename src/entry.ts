@@ -31,6 +31,12 @@ import {
   type PutterShapeId,
 } from './putter-shape';
 import { registerSW } from 'virtual:pwa-register';
+import {
+  isLegacyHandoffPage,
+  canOfferHandoff,
+  prepareLegacyHandoff,
+  startHandoffFromHub,
+} from './legacy-handoff';
 
 installWebAnalytics();
 trackGameplay('visit');
@@ -54,6 +60,8 @@ if (!resultPreview) void flushPendingSubmissions();
 
 if (resultPreview) {
   void import('./result-preview-view');
+} else if (isLegacyHandoffPage()) {
+  renderLegacyHandoff();
 } else if (params.get('menu') === 'ranking') {
   // **ゲームは始めない**ので、直接プレイの判定より先に見る。
   // `?tour=` はどのタブを開くかの指定で、無ければ最初のコース
@@ -310,6 +318,41 @@ function matchesTour(result: RoundResult, tour: TourDefinition): boolean {
   );
 }
 
+/** Old origin: explicit click before transferring local-only records to hanage.app. */
+function renderLegacyHandoff(): void {
+  const root = prepareMenuRoot();
+  root.replaceChildren();
+  const panel = document.createElement('main');
+  panel.className = 'menu-panel';
+  const heading = document.createElement('h1');
+  heading.className = 'menu-title';
+  heading.textContent = language() === 'ja' ? '記録の引き継ぎ' : 'Transfer records';
+  const explanation = document.createElement('p');
+  explanation.className = 'menu-subtitle';
+  explanation.textContent = language() === 'ja'
+    ? '旧Puttに保存された記録を新しいPuttへ移します。記録は旧サイトにも残ります。'
+    : 'Transfer your locally saved records to the new Putt. Original records remain here.';
+  const submit = menuButton(language() === 'ja' ? '記録を移す' : 'Transfer records', () => {});
+  submit.hidden = true;
+  const status = document.createElement('p');
+  status.className = 'menu-subtitle';
+  status.setAttribute('role', 'status');
+  panel.append(heading, explanation, submit, status);
+  root.append(panel);
+  prepareLegacyHandoff(
+    approve => {
+      submit.hidden = false;
+      // Recreate the button to attach exactly one explicit-user-gesture handler.
+      const button = menuButton(submit.textContent ?? 'Transfer', () => {
+        button.disabled = true;
+        approve();
+      });
+      submit.replaceWith(button);
+    },
+    text => { status.textContent = text; },
+  );
+}
+
 function renderTopMenu(): void {
   const root = prepareMenuRoot();
   root.replaceChildren();
@@ -370,6 +413,16 @@ function renderTopMenu(): void {
     panel.append(previewNote);
   }
   panel.append(actions, secondary, languageToggle(renderTopMenu));
+  if (canOfferHandoff()) {
+    const migrate = menuButton(language() === 'ja' ? '以前の記録を引き継ぐ' : 'Import previous records', () => {
+      startHandoffFromHub(text => { migrationStatus.textContent = text; });
+    });
+    migrate.classList.add('menu-button-sub');
+    const migrationStatus = document.createElement('p');
+    migrationStatus.setAttribute('role', 'status');
+    migrationStatus.style.cssText = 'margin: 8px 0; font-size: 12px; line-height: 1.5; text-align: center;';
+    panel.append(migrate, migrationStatus);
+  }
   root.append(panel);
 }
 
