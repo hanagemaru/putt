@@ -9,10 +9,12 @@ on:
       - 'scripts/verify-hub-api.ts'
       - 'scripts/report-gameplay-activity.mjs'
       - 'scripts/verify-legacy-migration.ts'
+      - 'scripts/verify-handoff-browser.mjs'
       - 'vite.config.ts'
       - 'package.json'
       - 'package-lock.json'
       - 'wrangler.hub-preview.jsonc'
+      - 'wrangler.legacy-preview.jsonc'
       - '.github/workflows/hub-path-preview.yml'
   workflow_dispatch:
 
@@ -33,12 +35,28 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Build isolated legacy-origin preview at /
+        run: npm run build:cloudflare
+        env:
+          VITE_GAMEPLAY_ANALYTICS: 'false'
+          VITE_RANKING_API_ENABLED: 'false'
+          VITE_RANKING_DEFAULT_MOCK: 'true'
+          VITE_HANDOFF_ENV: 'preview-source'
+      - name: Disable old-origin preview indexing
+        run: |
+          printf '/*\\n  X-Robots-Tag: noindex, nofollow\\n' > dist/_headers
+      - name: Deploy separate legacy-origin preview Worker
+        run: npx --yes wrangler@4.148.0 deploy --config wrangler.legacy-preview.jsonc
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Build under /games/putt/play/
         run: npm run build:hub-preview
         env:
           VITE_GAMEPLAY_ANALYTICS: 'false'
           VITE_RANKING_API_ENABLED: 'false'
           VITE_RANKING_DEFAULT_MOCK: 'true'
+          VITE_HANDOFF_ENV: 'preview-target'
       - name: Verify path and PWA output
         run: npm run verify:hub-preview
       - name: Verify API URL variants without D1
@@ -95,6 +113,12 @@ jobs:
           assert.equal(res.status, 503, 'preview must reject ranking writes');
           console.log('PASS: Putt subpath assets, PWA, noindex, and API isolation');
           NODE
+      - name: Install headless browser for cross-origin handoff test
+        run: |
+          npm install --no-save --no-package-lock --ignore-scripts playwright@1.56.1
+          npx playwright install chromium --with-deps
+      - name: Cross-origin handoff browser E2E
+        run: node scripts/verify-handoff-browser.mjs
       - name: Record preview URL
         if: always()
         run: |
@@ -102,6 +126,7 @@ jobs:
             echo '### Putt path preview (not production)'
             echo
             echo 'https://putt-hub-preview.jibunnha.workers.dev/games/putt/play/'
+            echo 'Legacy test origin: https://putt-legacy-preview.jibunnha.workers.dev/'
             echo
             echo 'Independent Worker: no hanage.app routes and no production D1 binding.'
           } >> "$GITHUB_STEP_SUMMARY"
