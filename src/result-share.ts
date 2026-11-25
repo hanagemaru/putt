@@ -18,7 +18,7 @@ export function resultShareData(result: ShareResult, language: Language): { text
   const text = language === 'ja'
     ? `Putt｜${result.tourName}\n${result.totalStrokes}打（${score}）${note}`
     : `Putt | ${result.tourName}\n${result.totalStrokes} strokes (${score})${note}`;
-  const game = new URL('https://putt.hanage.app/');
+  const game = new URL('https://hanage.app/games/putt/play/');
   game.search = new URLSearchParams({ tour: result.tourId, lang: language, utm_source: 'share', utm_medium: 'share' }).toString();
   return { text, url: game.toString() };
 }
