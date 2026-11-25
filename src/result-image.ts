@@ -42,7 +42,7 @@ export async function createResultImage(result: ShareResult, scores: readonly Ho
   text(result.gaveUp
     ? lang === 'ja' ? '* ギブアップあり' : '* Includes a conceded hole'
     : '', L.padding, L.footerY, L.labelSize);
-  text('putt.hanage.app', L.padding, L.urlY, L.courseSize, '#a5de7f');
+  text('hanage.app', L.padding, L.urlY, L.courseSize, '#a5de7f');
   const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('Image encoding failed')), 'image/png'));
   return new File([blob], 'putt-score.png', { type: 'image/png' });
 }
