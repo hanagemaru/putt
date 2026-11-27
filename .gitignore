@@ -14,3 +14,9 @@ dist
 
 # npm run maps の出力（1MBの生成物。シードを変えるたびに作り直す）
 docs/course-maps.html
+
+# Reproducible social captures
+social-plan.json
+social-video-raw/
+putt-social.mp4
+social-post.txt
